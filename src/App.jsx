@@ -281,19 +281,16 @@ const CONV_DATA = [
   { page:"/contact", rate:"1.2%",traffic:"1.2k/mo", issue:"Contact form has 7 fields",    action:"Reduce form to 3 fields" },
 ];
 
-// ─── AI helper ────────────────────────────────────────────────
+// ─── AI helper — routes through Worker to avoid CORS ─────────
 async function callClaude(userMsg, systemMsg) {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method:"POST",
-    headers:{ "Content-Type":"application/json" },
-    body:JSON.stringify({
-      model:"claude-sonnet-4-20250514", max_tokens:1000,
-      system: systemMsg || "You are a concise SEO and CRO expert.",
-      messages:[{ role:"user", content:userMsg }],
-    }),
+  const res = await fetch(`${WORKER_URL}/api/ai`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userMsg, systemMsg }),
   });
+  if (!res.ok) throw new Error(`AI request failed: ${res.status}`);
   const d = await res.json();
-  return d.content?.map(b=>b.text||"").join("") || "";
+  return d.text || "";
 }
 
 // ─── Main component ───────────────────────────────────────────
