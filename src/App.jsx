@@ -570,7 +570,7 @@ export default function RankActions() {
         </div>
         {siteOpen && (
           <div className="site-dropdown">
-            {["mywebsite.com","clientsite.co.uk"].map(s=>(
+            {["e2e-integration.co.uk","clientsite.co.uk"].map(s=>(
               <div key={s} className={`site-opt ${s===selectedSite?"sel":""}`}
                 onClick={()=>{setSelectedSite(s);setSiteOpen(false);setSiteData(null);setAiSummary(null);}}>
                 {s}
