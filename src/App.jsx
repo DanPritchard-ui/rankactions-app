@@ -1,4 +1,8 @@
 import { useState, useEffect } from "react";
+import {
+  SignIn, SignUp, UserButton,
+  useUser, useClerk, SignedIn, SignedOut
+} from "@clerk/clerk-react";
 
 // ─────────────────────────────────────────────────────────────
 // ⚙️  CONFIG — paste your Worker URL here after deploying it
@@ -228,6 +232,43 @@ const CSS = `
 ::-webkit-scrollbar{width:5px;height:5px;}
 ::-webkit-scrollbar-track{background:transparent;}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px;}
+
+/* ── Auth screens ── */
+.auth-wrap{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem;background:radial-gradient(ellipse 900px 400px at 50% 0%,#0c1530 0%,var(--bg) 65%);}
+.auth-logo{font-size:1.4rem;font-weight:800;letter-spacing:-.04em;margin-bottom:.5rem;}
+.auth-logo em{color:var(--green);font-style:normal;}
+.auth-tagline{font-size:.875rem;color:var(--text2);margin-bottom:2rem;}
+.auth-tabs{display:flex;gap:.5rem;margin-bottom:1.5rem;}
+.auth-tab{padding:.5rem 1.25rem;border-radius:8px;font-family:var(--font);font-size:.875rem;font-weight:500;cursor:pointer;border:1px solid var(--border);background:var(--s2);color:var(--text2);transition:all .15s;}
+.auth-tab.active{background:var(--blue);color:#fff;border-color:var(--blue);}
+
+/* ── Plan selection ── */
+.plan-wrap{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem;background:radial-gradient(ellipse 900px 400px at 50% 0%,#0c1530 0%,var(--bg) 65%);}
+.plan-logo{font-size:1.4rem;font-weight:800;letter-spacing:-.04em;margin-bottom:.5rem;}
+.plan-logo em{color:var(--green);font-style:normal;}
+.plan-sub{font-size:.9rem;color:var(--text2);margin-bottom:2.5rem;}
+.plan-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem;width:100%;max-width:560px;margin-bottom:1.5rem;}
+.plan-card{background:var(--s1);border:2px solid var(--border);border-radius:16px;padding:1.5rem;cursor:pointer;transition:all .2s;}
+.plan-card:hover{border-color:var(--blue);}
+.plan-card.selected{border-color:var(--blue);background:var(--bdim);}
+.plan-card.featured{border-color:var(--green);}
+.plan-card.featured.selected{background:var(--gdim);}
+.plan-name{font-size:1rem;font-weight:700;margin-bottom:.25rem;}
+.plan-price{font-size:1.75rem;font-weight:800;font-family:var(--mono);letter-spacing:-.03em;margin-bottom:.25rem;}
+.plan-period{font-size:.75rem;color:var(--text2);margin-bottom:1rem;}
+.plan-features{list-style:none;display:flex;flex-direction:column;gap:.4rem;}
+.plan-features li{font-size:.8rem;color:var(--text2);display:flex;align-items:center;gap:.4rem;}
+.plan-features li::before{content:"✓";color:var(--green);font-weight:700;flex-shrink:0;}
+.plan-badge{display:inline-block;background:var(--green);color:#000;font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:.15rem .45rem;border-radius:4px;margin-bottom:.5rem;}
+.plan-continue-btn{width:100%;max-width:560px;padding:.9rem;background:var(--blue);border:none;border-radius:10px;color:#fff;font-family:var(--font);font-size:.95rem;font-weight:600;cursor:pointer;transition:opacity .15s;}
+.plan-continue-btn:hover{opacity:.88;}
+.plan-continue-btn:disabled{opacity:.35;cursor:not-allowed;}
+.plan-skip{font-size:.8rem;color:var(--text3);cursor:pointer;margin-top:.75rem;}
+.plan-skip:hover{color:var(--text2);}
+
+/* ── User plan badge in topbar ── */
+.plan-pill{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:.2rem .55rem;border-radius:5px;background:var(--bdim);color:var(--blue);}
+.plan-pill.pro{background:var(--gdim);color:var(--green);}
 `;
 
 // ─── Demo fallback data ───────────────────────────────────────
@@ -295,6 +336,15 @@ async function callClaude(userMsg, systemMsg) {
 
 // ─── Main component ───────────────────────────────────────────
 export default function RankActions() {
+  const { user, isLoaded, isSignedIn } = useUser();
+  const { signOut }                    = useClerk();
+
+  // Auth UI state
+  const [authView,  setAuthView]  = useState("signin"); // signin | signup
+  const [showPlan,  setShowPlan]  = useState(false);
+  const [plan,      setPlan]      = useState(() => localStorage.getItem("rankactions_plan") || "free");
+  const [selPlan,   setSelPlan]   = useState("free");
+
   // Auth & real data
   const [userId,       setUserId]       = useState(null);
   const [isConnected,  setIsConnected]  = useState(false);
@@ -323,6 +373,13 @@ export default function RankActions() {
   const [modalData,    setModalData]    = useState(null);
   const [modalLoading, setModalLoading] = useState(false);
   const [modalApplied, setModalApplied] = useState(new Set());
+
+  // ── Show plan selection on first sign-in ───────────────────
+  useEffect(() => {
+    if (isSignedIn && !localStorage.getItem("rankactions_plan_chosen")) {
+      setShowPlan(true);
+    }
+  }, [isSignedIn]);
 
   // ── On mount: check if returning from Google OAuth ──────────
   // The Worker redirects back with ?userId=xxx&auth=success
@@ -517,6 +574,85 @@ Return ONLY valid JSON:
   };
 
   // ─────────────────────────────────────────────────────────────
+  // AUTH WALL — show sign in/up if not logged in
+  // ─────────────────────────────────────────────────────────────
+  if (!isLoaded) return (
+    <><style>{CSS}</style>
+    <div className="gos" style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh"}}>
+      <div className="spinner" style={{width:28,height:28}}/>
+    </div></>
+  );
+
+  if (!isSignedIn) return (
+    <><style>{CSS}</style>
+    <div className="gos">
+      <div className="auth-wrap">
+        <div className="auth-logo">Rank<em>Actions</em></div>
+        <div className="auth-tagline">Know exactly what to fix on your website each week</div>
+        <div className="auth-tabs">
+          <div className={`auth-tab ${authView==="signin"?"active":""}`} onClick={()=>setAuthView("signin")}>Sign in</div>
+          <div className={`auth-tab ${authView==="signup"?"active":""}`} onClick={()=>setAuthView("signup")}>Create account</div>
+        </div>
+        {authView==="signin"
+          ? <SignIn routing="hash" afterSignInUrl="/" appearance={{variables:{colorPrimary:"#4d7bff",colorBackground:"#0c0e1a",colorInputBackground:"#07080f",colorText:"#dde2f5",colorTextSecondary:"#8590b8",colorInputText:"#dde2f5",borderRadius:"10px"}}}/>
+          : <SignUp routing="hash" afterSignUpUrl="/" appearance={{variables:{colorPrimary:"#4d7bff",colorBackground:"#0c0e1a",colorInputBackground:"#07080f",colorText:"#dde2f5",colorTextSecondary:"#8590b8",colorInputText:"#dde2f5",borderRadius:"10px"}}}/>
+        }
+      </div>
+    </div></>
+  );
+
+  // ─────────────────────────────────────────────────────────────
+  // PLAN SELECTION — show on first sign-in
+  // ─────────────────────────────────────────────────────────────
+  if (showPlan) return (
+    <><style>{CSS}</style>
+    <div className="gos">
+      <div className="plan-wrap">
+        <div className="plan-logo">Rank<em>Actions</em></div>
+        <div className="plan-sub">Choose your plan — upgrade or downgrade any time</div>
+        <div className="plan-grid">
+          <div className={`plan-card ${selPlan==="free"?"selected":""}`} onClick={()=>setSelPlan("free")}>
+            <div className="plan-name">Free</div>
+            <div className="plan-price">£0</div>
+            <div className="plan-period">forever</div>
+            <ul className="plan-features">
+              <li>1 website</li>
+              <li>Top 3 weekly actions</li>
+              <li>AI-written suggestions</li>
+              <li>Search Console data</li>
+            </ul>
+          </div>
+          <div className={`plan-card featured ${selPlan==="pro"?"selected":""}`} onClick={()=>setSelPlan("pro")}>
+            <div className="plan-badge">Most popular</div>
+            <div className="plan-name">Pro</div>
+            <div className="plan-price">£29</div>
+            <div className="plan-period">per month</div>
+            <ul className="plan-features">
+              <li>Unlimited websites</li>
+              <li>Full action list</li>
+              <li>Unlimited AI fixes</li>
+              <li>Conversion tracking</li>
+              <li>Weekly email digest</li>
+            </ul>
+          </div>
+        </div>
+        <button className="plan-continue-btn" onClick={()=>{
+          setPlan(selPlan);
+          localStorage.setItem("rankactions_plan", selPlan);
+          localStorage.setItem("rankactions_plan_chosen", "1");
+          setShowPlan(false);
+        }}>
+          {selPlan==="pro" ? "Start 14-day free trial →" : "Continue with Free →"}
+        </button>
+        <div className="plan-skip" onClick={()=>{
+          localStorage.setItem("rankactions_plan_chosen","1");
+          setShowPlan(false);
+        }}>Skip for now</div>
+      </div>
+    </div></>
+  );
+
+  // ─────────────────────────────────────────────────────────────
   // ONBOARDING
   // ─────────────────────────────────────────────────────────────
   if (screen === "onboarding") return (
@@ -646,10 +782,11 @@ Return ONLY valid JSON:
         {dataLoading  ? <span className="topbar-badge demo">⏳ Fetching…</span>
          : isConnected && siteData ? <span className="topbar-badge">✓ Live data</span>
          : <span className="topbar-badge demo">⚠ Demo data</span>}
+        <span className={`plan-pill ${plan==="pro"?"pro":""}`}>{plan==="pro"?"Pro":"Free"}</span>
         {isConnected
-          ? <button className="disconnect-btn" onClick={disconnect}>Disconnect</button>
+          ? <button className="disconnect-btn" onClick={disconnect}>Disconnect GSC</button>
           : <button className="connect-btn" onClick={()=>window.location.href=`${WORKER_URL}/auth/google`}>🔗 Connect Google</button>}
-        <div className="avatar">DW</div>
+        <UserButton afterSignOutUrl="/" appearance={{variables:{colorPrimary:"#4d7bff"}}}/>
       </div>
     </div>
   );
