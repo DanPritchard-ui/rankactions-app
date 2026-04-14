@@ -590,15 +590,16 @@ Return ONLY valid JSON:
   // Add site helper
   // ─────────────────────────────────────────────────────────────
   const addSite = () => {
-    if (!newSiteInput.trim()) return;
-    const clean = newSiteInput.trim().replace(/^https?:\/\//,"").replace(/\/$/,"");
+    const input = window.prompt("Enter your website URL:", "e.g. mysite.com");
+    if (!input || !input.trim()) return;
+    const clean = input.trim().replace(/^https?:\/\//,"").replace(/\/$/,"");
+    if (!clean) return;
     const updated = [...new Set([...sites, clean])];
     setSites(updated);
     localStorage.setItem("rankactions_sites", JSON.stringify(updated));
     setSelectedSite(clean);
     localStorage.setItem("rankactions_selectedSite", clean);
-    setSiteData(null); setAiSummary(null);
-    setNewSiteInput(""); setAddingSite(false); setSiteOpen(false);
+    setSiteData(null); setAiSummary(null); setSiteOpen(false);
   };
 
   // ─────────────────────────────────────────────────────────────
@@ -637,26 +638,7 @@ Return ONLY valid JSON:
                 {s}
               </div>
             ))}
-            {addingSite ? (
-              <div style={{padding:".65rem .75rem",borderTop:"1px solid var(--border)"}}>
-                <div style={{display:"flex",gap:".4rem"}}>
-                  <input
-                    placeholder="e.g. mysite.com"
-                    value={newSiteInput}
-                    onChange={e=>setNewSiteInput(e.target.value)}
-                    onKeyDown={e=>{
-                      if(e.key==="Enter") addSite();
-                      if(e.key==="Escape"){setAddingSite(false);setNewSiteInput("");}
-                    }}
-                    style={{flex:1,background:"var(--bg)",border:"1px solid var(--border)",borderRadius:"6px",padding:".4rem .6rem",color:"var(--text)",fontFamily:"var(--font)",fontSize:".82rem",outline:"none"}}
-                  />
-                  <button onClick={addSite} style={{background:"var(--blue)",border:"none",borderRadius:"6px",padding:".4rem .7rem",color:"#fff",fontFamily:"var(--font)",fontSize:".78rem",cursor:"pointer",whiteSpace:"nowrap"}}>Add</button>
-                </div>
-                <div style={{fontSize:".7rem",color:"var(--text3)",marginTop:".3rem"}}>Press Enter or click Add · Esc to cancel</div>
-              </div>
-            ) : (
-              <div className="site-add" onClick={()=>setAddingSite(true)}>➕ Add site</div>
-            )}
+            <div className="site-add" onClick={addSite}>➕ Add site</div>
           </div>
         )}
       </div>
