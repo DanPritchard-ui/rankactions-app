@@ -467,36 +467,43 @@ export default function RankActions() {
   const openModal = async (fix) => {
     setModal(fix); setModalData(null); setModalLoading(true);
     try {
-      // Build rich context from real site data if available
+      // Build rich context — top keywords, impressions, site name
+      const topKws = siteData?.keywords?.slice(0,8).map(k=>`"${k.keyword}" (pos #${k.position}, ${k.impressions} impressions/mo)`).join(", ") || "unknown";
+      const keyword = fix.title.match(/"([^"]+)"/)?.[1] || fix.current?.replace(/Not fully optimised for |"/g,"") || "";
       const siteContext = siteData
-        ? `Website: ${selectedSite}. Top keywords: ${siteData.keywords?.slice(0,5).map(k=>`"${k.keyword}" (#${k.position})`).join(", ")}. Total clicks: ${siteData.totals?.clicks}, avg position: ${siteData.totals?.avgPosition}.`
-        : `Website: ${selectedSite}.`;
+        ? `Site: ${selectedSite}. Top keywords from Search Console: ${topKws}. Avg position: ${siteData.totals?.avgPosition}, CTR: ${siteData.totals?.avgCtr}.`
+        : `Site: ${selectedSite}.`;
 
       const txt = await callClaude(
-        `You are an SEO/CRO expert writing specific copy improvements for a real website.
+        `You are a senior SEO copywriter improving a real website's rankings.
 
-Site context: ${siteContext}
-Fix needed: ${fix.title}
-Problem: ${fix.desc}
-Field to improve: ${fix.field}
-Current value: "${fix.current}"
+${siteContext}
+Target keyword to optimise for: "${keyword}"
+Current position: ${fix.m1}
+Goal: ${fix.m2}
 
-Generate 2 specific, realistic alternatives for "${fix.field}" that are directly relevant to this website and keyword.
-Do NOT use generic examples from other industries.
-Make the suggestions specific to the actual keyword and site context provided.
+Generate 2 specific, ready-to-use alternatives. Each must:
+- Include the exact keyword "${keyword}" naturally
+- Be under 60 characters for title tags, under 160 for meta descriptions
+- Sound professional and compelling to a real visitor
+- Be completely specific — no placeholders, no generics
 
-Return ONLY valid JSON (no markdown, no explanation):
-{"option1":"...","option2":"..."${fix.metaDesc?',"metaDesc":"..."':''},"tip":"one specific actionable tip max 12 words"}`,
-        "You are an expert SEO/CRO copywriter. Return valid JSON only. No markdown backticks. Be specific to the website and keywords provided."
+Return ONLY valid JSON:
+{
+  "option1": "exact ready-to-use title tag or heading here",
+  "option2": "second specific alternative here",
+  "metaDesc": "compelling meta description including ${keyword} under 155 chars",
+  "tip": "one specific actionable next step for this keyword, max 12 words"
+}`,
+        "Senior SEO copywriter. Return valid JSON only. No markdown. Every suggestion must be specific, ready-to-publish copy — never a template or placeholder."
       );
       setModalData(JSON.parse(txt.replace(/```json|```/g,"").trim()));
     } catch {
-      // Generic fallback — no industry-specific content
       setModalData({
-        option1: fix.recommended,
-        option2: `${fix.field} optimised for "${fix.current?.replace("Not fully optimised for ","") || selectedSite}"`,
-        metaDesc: fix.metaDesc || null,
-        tip: "Use the exact keyword in the first 60 characters"
+        option1: `${keyword} | Professional Services | ${selectedSite}`,
+        option2: `Expert ${keyword} Support — Get Help Today`,
+        metaDesc: `Professional ${keyword} services. Expert guidance and support for businesses. Contact us today.`,
+        tip: `Add "${keyword}" to your H1 and first paragraph`
       });
     }
     setModalLoading(false);
@@ -583,6 +590,21 @@ Return ONLY valid JSON (no markdown, no explanation):
   );
 
   // ─────────────────────────────────────────────────────────────
+  // Add site helper
+  // ─────────────────────────────────────────────────────────────
+  const addSite = () => {
+    if (!newSiteInput.trim()) return;
+    const clean = newSiteInput.trim().replace(/^https?:\/\//,"").replace(/\/$/,"");
+    const updated = [...new Set([...sites, clean])];
+    setSites(updated);
+    localStorage.setItem("rankactions_sites", JSON.stringify(updated));
+    setSelectedSite(clean);
+    localStorage.setItem("rankactions_selectedSite", clean);
+    setSiteData(null); setAiSummary(null);
+    setNewSiteInput(""); setAddingSite(false); setSiteOpen(false);
+  };
+
+  // ─────────────────────────────────────────────────────────────
   // Reusable sub-components
   // ─────────────────────────────────────────────────────────────
   const Sidebar = () => (
@@ -619,28 +641,21 @@ Return ONLY valid JSON (no markdown, no explanation):
               </div>
             ))}
             {addingSite ? (
-              <div style={{padding:".5rem .75rem",borderTop:"1px solid var(--border)"}}>
-                <input
-                  autoFocus
-                  placeholder="e.g. mysite.com"
-                  value={newSiteInput}
-                  onChange={e=>setNewSiteInput(e.target.value)}
-                  onKeyDown={e=>{
-                    if(e.key==="Enter" && newSiteInput.trim()){
-                      const clean = newSiteInput.trim().replace(/^https?:\/\//,"");
-                      const updated = [...new Set([...sites, clean])];
-                      setSites(updated);
-                      localStorage.setItem("rankactions_sites", JSON.stringify(updated));
-                      setSelectedSite(clean);
-                      localStorage.setItem("rankactions_selectedSite", clean);
-                      setSiteData(null);setAiSummary(null);
-                      setNewSiteInput("");setAddingSite(false);setSiteOpen(false);
-                    }
-                    if(e.key==="Escape"){setAddingSite(false);setNewSiteInput("");}
-                  }}
-                  style={{width:"100%",background:"var(--bg)",border:"1px solid var(--border)",borderRadius:"6px",padding:".4rem .6rem",color:"var(--text)",fontFamily:"var(--font)",fontSize:".82rem",outline:"none"}}
-                />
-                <div style={{fontSize:".7rem",color:"var(--text3)",marginTop:".3rem"}}>Press Enter to add · Esc to cancel</div>
+              <div style={{padding:".65rem .75rem",borderTop:"1px solid var(--border)"}}>
+                <div style={{display:"flex",gap:".4rem"}}>
+                  <input
+                    placeholder="e.g. mysite.com"
+                    value={newSiteInput}
+                    onChange={e=>setNewSiteInput(e.target.value)}
+                    onKeyDown={e=>{
+                      if(e.key==="Enter") addSite();
+                      if(e.key==="Escape"){setAddingSite(false);setNewSiteInput("");}
+                    }}
+                    style={{flex:1,background:"var(--bg)",border:"1px solid var(--border)",borderRadius:"6px",padding:".4rem .6rem",color:"var(--text)",fontFamily:"var(--font)",fontSize:".82rem",outline:"none"}}
+                  />
+                  <button onClick={addSite} style={{background:"var(--blue)",border:"none",borderRadius:"6px",padding:".4rem .7rem",color:"#fff",fontFamily:"var(--font)",fontSize:".78rem",cursor:"pointer",whiteSpace:"nowrap"}}>Add</button>
+                </div>
+                <div style={{fontSize:".7rem",color:"var(--text3)",marginTop:".3rem"}}>Press Enter or click Add · Esc to cancel</div>
               </div>
             ) : (
               <div className="site-add" onClick={()=>setAddingSite(true)}>➕ Add site</div>
@@ -819,7 +834,15 @@ Return ONLY valid JSON (no markdown, no explanation):
                     <td className="td-mono" style={{color:row.pos<=10?"var(--amber)":"var(--text)"}}>#{row.pos}</td>
                     <td className="td-mono" style={{color:"var(--text2)"}}>{row.vol}</td>
                     <td style={{color:"var(--text2)",fontSize:"0.8rem"}}>{row.gap}</td>
-                    <td><span className="td-link" onClick={()=>openModal(fixes[0])}>Fix →</span></td>
+                    <td><span className="td-link" onClick={()=>openModal({
+                      id:`seo-${i}`, level:"medium", color:"#f5a623", label:"OPPORTUNITY", type:"SEO",
+                      title:`Improve ranking for "${row.kw}"`,
+                      desc:`Currently at position #${row.pos} with ${row.vol} impressions. ${row.gap}.`,
+                      m1:`Position: #${row.pos}`, m2:row.vol,
+                      field:"Title Tag & Page Content",
+                      current:`Not fully optimised for "${row.kw}"`,
+                      recommended:row.gap, metaDesc:null,
+                    })}>Fix →</span></td>
                   </tr>
                 ))}
               </tbody>
