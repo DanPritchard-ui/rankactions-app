@@ -241,32 +241,31 @@ const DEMO_KPI = [
 const DEMO_FIXES = [
   { id:"f1", level:"high",   color:"#f03e5f", label:"HIGH IMPACT", type:"SEO",
     title:"Improve homepage ranking",
-    desc:'Homepage ranks #7 for "plumber london" — top 3 is within reach.',
+    desc:"Your homepage ranks outside the top 5 for your main keyword — a title tag update could move you into the top 3.",
     m1:"Position: #7", m2:"Target: Top 3",
-    suggestion:'Rewrite your title tag to:\n"Emergency Plumber London | 24/7 Fast Response"',
-    field:"Title Tag", current:"London Plumber | Plumbing Services",
-    recommended:"Emergency Plumber London | 24/7 Fast Response",
-    metaDesc:"Need an emergency plumber in London? Available 24/7 with rapid response. Call now." },
+    suggestion:"Rewrite your title tag to include your primary keyword in the first 60 characters with a clear value proposition.",
+    field:"Title Tag", current:"Homepage | Your Business Name",
+    recommended:"Primary Keyword | Clear Value Proposition | Brand",
+    metaDesc:"Connect Google Search Console to see your real keyword data and get specific AI suggestions for your site." },
   { id:"f2", level:"medium", color:"#f5a623", label:"OPPORTUNITY",  type:"CRO",
-    title:"Increase conversions on /services",
-    desc:"840 visits/month but converts at 0.4% — industry average is 2.1%.",
-    m1:"Conv: 0.4%", m2:"Industry: 2.1%",
-    suggestion:'Move CTA above the fold.\nChange copy to: "Get a free quote in 60 seconds"',
-    field:"CTA Copy", current:"Contact us today",
-    recommended:"Get a free quote in 60 seconds", metaDesc:null },
+    title:"Increase conversions on your key service page",
+    desc:"Your main service page gets good traffic but converts below the industry average.",
+    m1:"Conv: below avg", m2:"Industry: 2.1%",
+    suggestion:"Move your primary CTA above the fold and make the benefit clear in the button text.",
+    field:"CTA Copy", current:"Contact us", recommended:"Get a free quote today", metaDesc:null },
   { id:"f3", level:"low",    color:"#0fdb8a", label:"QUICK WIN",    type:"SEO",
-    title:"Link to 5 orphan pages",
-    desc:"5 pages have zero inbound links, limiting their Google authority.",
-    m1:"5 orphan pages", m2:"Easy fix",
-    suggestion:"Add 3–5 contextual internal links pointing to each orphaned page.",
+    title:"Add internal links to orphan pages",
+    desc:"Several pages on your site have no inbound links, limiting their Google authority.",
+    m1:"Orphan pages", m2:"Easy fix",
+    suggestion:"Add 3–5 contextual internal links from your most visited pages to these orphaned pages.",
     field:"Internal Links", current:"0 links", recommended:"3–5 links each", metaDesc:null },
 ];
 
 const DEMO_SEO = [
-  { page:"/services",       kw:"emergency plumber london", pos:7,  vol:"2,400/mo", gap:"Add keyword 3× in body copy",   opp:true  },
-  { page:"/about",          kw:"plumbing company london",  pos:18, vol:"880/mo",   gap:"Rewrite H1 and meta title",     opp:true  },
-  { page:"/blog/leaky-tap", kw:"how to fix a leaky tap",  pos:24, vol:"1,200/mo", gap:"Expand article to 1,500+ words",opp:false },
-  { page:"/contact",        kw:"plumber near me",          pos:31, vol:"5,400/mo", gap:"Add location-specific content", opp:false },
+  { page:"/",        kw:"your main keyword",       pos:7,  vol:"connect GSC", gap:"Add keyword to title tag and H1",      opp:true  },
+  { page:"/services",kw:"your service keyword",    pos:18, vol:"connect GSC", gap:"Rewrite H1 and meta title",            opp:true  },
+  { page:"/about",   kw:"your brand keyword",      pos:24, vol:"connect GSC", gap:"Expand page content to 800+ words",    opp:false },
+  { page:"/contact", kw:"local service keyword",   pos:31, vol:"connect GSC", gap:"Add location-specific content",        opp:false },
 ];
 
 const ISSUES_DATA = [
@@ -440,7 +439,7 @@ export default function RankActions() {
     try {
       const context = siteData
         ? `REAL DATA for ${selectedSite}: ${siteData.totals.clicks.toLocaleString()} clicks, ${siteData.totals.impressions.toLocaleString()} impressions in 28 days. Avg position: ${siteData.totals.avgPosition}. CTR: ${siteData.totals.avgCtr}. Top opportunity: "${siteData.topOpportunities[0]?.keyword}" at #${siteData.topOpportunities[0]?.position}.`
-        : `DEMO DATA: organic traffic down 8%, homepage ranking #7 for "plumber london", /services converts at 0.4% vs 2.1% average, 5 orphan pages found.`;
+        : `DEMO DATA: Connect Google Search Console to see your real traffic, rankings, and opportunities.`;
       const txt = await callClaude(
         `Generate a 3-bullet AI weekly summary using this data:\n${context}\nFormat: exactly 3 bullet points starting with •. Each max 18 words. Use the actual numbers.`,
         "Output exactly 3 bullet points starting with •. Nothing else."
@@ -449,7 +448,7 @@ export default function RankActions() {
     } catch {
       setAiSummary(siteData
         ? `• Site received ${siteData.totals.clicks.toLocaleString()} clicks from ${siteData.totals.impressions.toLocaleString()} impressions this month\n• Average position ${siteData.totals.avgPosition} — ${siteData.topOpportunities.length} keywords have ranking opportunities\n• CTR is ${siteData.totals.avgCtr} — improving title tags could push this higher`
-        : "• Traffic dropped 8% — 3 blog posts lost key rankings this week\n• Homepage close to top 3 for \"plumber london\" — title tag is the lever\n• /services converts at 0.4% vs 2.1% average — CTA position is the fix"
+        : "• Connect Google Search Console to see your real traffic and ranking data\n• Your top keywords and positions will appear here once connected\n• AI will generate specific actions based on your actual site performance"
       );
     }
     setSummaryLoading(false);
@@ -461,13 +460,37 @@ export default function RankActions() {
   const openModal = async (fix) => {
     setModal(fix); setModalData(null); setModalLoading(true);
     try {
+      // Build rich context from real site data if available
+      const siteContext = siteData
+        ? `Website: ${selectedSite}. Top keywords: ${siteData.keywords?.slice(0,5).map(k=>`"${k.keyword}" (#${k.position})`).join(", ")}. Total clicks: ${siteData.totals?.clicks}, avg position: ${siteData.totals?.avgPosition}.`
+        : `Website: ${selectedSite}.`;
+
       const txt = await callClaude(
-        `Generate 2 improved ${fix.field} alternatives.\nFix: ${fix.title}\nContext: ${fix.desc}\nCurrent: "${fix.current}"\n\nReturn ONLY valid JSON (no markdown):\n{"option1":"...","option2":"..."${fix.metaDesc?',"metaDesc":"..."':''},"tip":"one tip, max 12 words"}`,
-        "Expert SEO/CRO copywriter. Return valid JSON only. No markdown."
+        `You are an SEO/CRO expert writing specific copy improvements for a real website.
+
+Site context: ${siteContext}
+Fix needed: ${fix.title}
+Problem: ${fix.desc}
+Field to improve: ${fix.field}
+Current value: "${fix.current}"
+
+Generate 2 specific, realistic alternatives for "${fix.field}" that are directly relevant to this website and keyword.
+Do NOT use generic examples from other industries.
+Make the suggestions specific to the actual keyword and site context provided.
+
+Return ONLY valid JSON (no markdown, no explanation):
+{"option1":"...","option2":"..."${fix.metaDesc?',"metaDesc":"..."':''},"tip":"one specific actionable tip max 12 words"}`,
+        "You are an expert SEO/CRO copywriter. Return valid JSON only. No markdown backticks. Be specific to the website and keywords provided."
       );
       setModalData(JSON.parse(txt.replace(/```json|```/g,"").trim()));
     } catch {
-      setModalData({ option1:fix.recommended, option2:"Fast London Plumbers – Same Day Emergency Service", metaDesc:fix.metaDesc||null, tip:"Use numbers and urgency to boost CTR" });
+      // Generic fallback — no industry-specific content
+      setModalData({
+        option1: fix.recommended,
+        option2: `${fix.field} optimised for "${fix.current?.replace("Not fully optimised for ","") || selectedSite}"`,
+        metaDesc: fix.metaDesc || null,
+        tip: "Use the exact keyword in the first 60 characters"
+      });
     }
     setModalLoading(false);
   };
@@ -570,7 +593,7 @@ export default function RankActions() {
         </div>
         {siteOpen && (
           <div className="site-dropdown">
-            {["e2e-integration.co.uk","clientsite.co.uk"].map(s=>(
+            {["mywebsite.com","clientsite.co.uk"].map(s=>(
               <div key={s} className={`site-opt ${s===selectedSite?"sel":""}`}
                 onClick={()=>{setSelectedSite(s);setSiteOpen(false);setSiteData(null);setAiSummary(null);}}>
                 {s}
