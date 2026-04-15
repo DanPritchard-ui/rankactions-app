@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   SignIn, SignUp, UserButton,
   useUser, useClerk, SignedIn, SignedOut
@@ -511,7 +511,7 @@ export default function RankActions() {
   const [modalData,    setModalData]    = useState(null);
   const [modalLoading, setModalLoading] = useState(false);
   const [modalApplied, setModalApplied] = useState(new Set());
-  const [contentPreset,setContentPreset]= useState(null);
+  const contentPresetRef = useRef(null);
   const [aiFixCount,   setAiFixCount]   = useState(() => {
     const stored = JSON.parse(localStorage.getItem("rankactions_ai_fix_usage") || '{"count":0,"month":""}');
     const thisMonth = new Date().toISOString().slice(0,7);
@@ -1198,7 +1198,7 @@ Return ONLY valid JSON — no markdown, no explanation:
                         ) : isPro ? (
                           // Pro user → go to content generator pre-filled
                           <span className="td-link" style={{color:btnColor}} onClick={()=>{
-                            setContentPreset({ kw:row.kw, biz:"", notes:`Targeting position #${row.pos} — currently getting ${row.vol} impressions/month` });
+                            contentPresetRef.current = { kw:row.kw, biz:"", notes:`Targeting position #${row.pos} — currently getting ${row.vol} impressions/month` };
                             setScreen("content");
                           }}>
                             {btnLabel}
@@ -1344,13 +1344,14 @@ Return ONLY valid JSON — no markdown, no explanation:
   // CONTENT GENERATOR
   // ─────────────────────────────────────────────────────────────
   const ContentGenerator = () => {
-    const [kw,        setKw]        = useState(contentPreset?.kw    || "");
-    const [biz,       setBiz]       = useState(contentPreset?.biz   || "");
+    const preset = contentPresetRef.current;
+    const [kw,        setKw]        = useState(preset?.kw    || "");
+    const [biz,       setBiz]       = useState(preset?.biz   || "");
     const [tone,      setTone]      = useState("professional");
     const [wordCount, setWordCount] = useState("1000");
     const [cta,       setCta]       = useState("");
-    const [notes,     setNotes]     = useState(contentPreset?.notes || "");
-    const [prefilledKw] = useState(!!contentPreset?.kw); // remember if we arrived with a keyword
+    const [notes,     setNotes]     = useState(preset?.notes || "");
+    const [prefilledKw] = useState(!!preset?.kw);
     const [loading,   setLoading]   = useState(false);
     const [output,    setOutput]    = useState(null);
     const [error,     setError]     = useState(null);
@@ -1371,8 +1372,8 @@ Return ONLY valid JSON — no markdown, no explanation:
       "Finalising meta tags…",
     ];
 
-    // Clear preset immediately so it doesn't re-apply on revisit
-    useEffect(()=>{ setContentPreset(null); },[]);
+    // Clear ref immediately so revisiting content tab starts fresh
+    useEffect(()=>{ contentPresetRef.current = null; },[]);
 
     const suggestedKw = siteData?.topOpportunities?.[0]?.keyword || "";
 
