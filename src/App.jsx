@@ -293,6 +293,67 @@ const CSS = `
 .upgrade-modal-cta:hover{opacity:.88;}
 .upgrade-modal-skip{font-size:.8rem;color:var(--text3);cursor:pointer;}
 .upgrade-modal-skip:hover{color:var(--text2);}
+
+/* ── Content Generator ── */
+.cg-wrap{padding:2rem;flex:1;display:flex;flex-direction:column;gap:1.5rem;}
+.cg-header{}
+.cg-title{font-size:1.1rem;font-weight:700;letter-spacing:-.03em;margin-bottom:.25rem;}
+.cg-sub{font-size:.85rem;color:var(--text2);}
+.cg-privacy{display:flex;align-items:flex-start;gap:.6rem;background:var(--bdim);border:1px solid rgba(77,123,255,.15);border-radius:8px;padding:.75rem 1rem;font-size:.78rem;color:var(--blue);line-height:1.55;}
+.cg-privacy-icon{flex-shrink:0;font-size:.9rem;margin-top:.05rem;}
+.cg-grid{display:grid;grid-template-columns:300px 1fr;gap:1.5rem;flex:1;}
+.cg-panel{background:var(--s1);border:1px solid var(--border);border-radius:14px;overflow:hidden;display:flex;flex-direction:column;}
+.cg-panel-hd{background:var(--s2);border-bottom:1px solid var(--border);padding:1rem 1.25rem;}
+.cg-panel-hd-title{font-size:.85rem;font-weight:700;margin-bottom:.15rem;}
+.cg-panel-hd-sub{font-size:.72rem;color:var(--text3);}
+.cg-panel-bd{padding:1rem 1.25rem;display:flex;flex-direction:column;gap:.85rem;flex:1;}
+.cg-field label{display:block;font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--text3);margin-bottom:.4rem;}
+.cg-field input,.cg-field select,.cg-field textarea{width:100%;background:var(--bg);border:1.5px solid var(--border);border-radius:8px;padding:.6rem .8rem;color:var(--text);font-family:var(--font);font-size:.85rem;outline:none;transition:border-color .2s;}
+.cg-field input:focus,.cg-field select,.cg-field select:focus,.cg-field textarea:focus{border-color:var(--blue);}
+.cg-field select{cursor:pointer;}
+.cg-field textarea{resize:vertical;min-height:72px;line-height:1.5;}
+.cg-field input::placeholder,.cg-field textarea::placeholder{color:var(--text3);}
+.cg-field-row{display:grid;grid-template-columns:1fr 1fr;gap:.65rem;}
+.cg-divider{height:1px;background:var(--border);margin:.25rem 0;}
+.cg-gen-btn{width:100%;padding:.75rem;background:var(--blue);color:#fff;border:none;border-radius:8px;font-family:var(--font);font-size:.875rem;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:.5rem;transition:opacity .15s;}
+.cg-gen-btn:hover:not(:disabled){opacity:.88;}
+.cg-gen-btn:disabled{opacity:.4;cursor:not-allowed;}
+.cg-output{background:var(--s1);border:1px solid var(--border);border-radius:14px;overflow:hidden;display:flex;flex-direction:column;min-height:500px;}
+.cg-toolbar{padding:.65rem 1rem;background:var(--s2);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;}
+.cg-status{display:flex;align-items:center;gap:.5rem;font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);}
+.cg-status-dot{width:7px;height:7px;border-radius:50%;background:var(--border2);}
+.cg-status-dot.ready{background:var(--green);}
+.cg-status-dot.loading{background:var(--blue);animation:pulse 1s ease-in-out infinite;}
+.cg-status-dot.error{background:var(--red);}
+.cg-actions{display:flex;gap:.5rem;}
+.cg-act{padding:.35rem .85rem;border-radius:6px;border:1px solid var(--border);background:var(--s1);font-family:var(--font);font-size:.775rem;font-weight:500;color:var(--text2);cursor:pointer;transition:all .15s;}
+.cg-act:hover{border-color:var(--blue);color:var(--blue);}
+.cg-act:disabled{opacity:.3;cursor:not-allowed;}
+.cg-act.primary{background:var(--blue);color:#fff;border-color:var(--blue);}
+.cg-act.primary:hover{opacity:.88;}
+.cg-tabs{display:flex;gap:2px;padding:0 1rem;background:var(--s2);border-bottom:1px solid var(--border);}
+.cg-tab{padding:.6rem .9rem;background:none;border:none;border-bottom:2px solid transparent;font-family:var(--font);font-size:.72rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);cursor:pointer;margin-bottom:-1px;}
+.cg-tab.on{color:var(--blue);border-bottom-color:var(--blue);}
+.cg-seo-bar{display:grid;grid-template-columns:repeat(3,1fr);gap:.75rem;padding:.85rem 1rem;border-bottom:1px solid var(--border);}
+.cg-seo-c{background:var(--s2);border-radius:8px;padding:.65rem .85rem;}
+.cg-seo-l{font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--text3);margin-bottom:.25rem;}
+.cg-seo-v{font-size:.8rem;color:var(--text);}
+.cg-seo-v.ok{color:var(--green);}
+.cg-seo-v.warn{color:var(--amber);}
+.cg-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3rem;text-align:center;}
+.cg-empty-icon{font-size:2rem;opacity:.25;margin-bottom:.75rem;}
+.cg-empty h3{font-size:.95rem;font-weight:600;margin-bottom:.4rem;}
+.cg-empty p{font-size:.825rem;color:var(--text2);max-width:240px;line-height:1.6;}
+.cg-preview{flex:1;overflow:auto;background:white;}
+.cg-preview iframe{width:100%;height:100%;min-height:500px;border:none;display:block;}
+.cg-code{flex:1;background:#0d1117;padding:1rem;overflow:auto;}
+.cg-code pre{font-family:var(--mono);font-size:.75rem;color:#a8d8d0;line-height:1.65;white-space:pre-wrap;word-break:break-word;}
+.cg-error{margin:1rem;padding:.85rem 1rem;background:var(--rdim);border:1px solid var(--red);border-radius:8px;font-size:.83rem;color:var(--red);line-height:1.6;}
+.cg-tip{font-size:.75rem;color:var(--text3);line-height:1.5;padding:.65rem .85rem;background:var(--s2);border-radius:7px;border-left:2px solid var(--blue);margin-top:.25rem;}
+.cg-loading-msgs{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.75rem;padding:3rem;}
+.cg-loading-msgs .spinner{width:22px;height:22px;}
+.cg-loading-msg{font-size:.85rem;color:var(--text2);text-align:center;}
+@media(max-width:900px){.cg-grid{grid-template-columns:1fr;}}
 `;
 
 // ─── Demo fallback data ───────────────────────────────────────
@@ -799,11 +860,20 @@ Return ONLY valid JSON:
     <div className="sidebar">
       <div className="sidebar-logo">Rank<em>Actions</em></div>
       <div className="sidebar-nav">
-        {[{id:"dashboard",icon:"⬡",label:"Dashboard"},{id:"siteDetail",icon:"◎",label:"Site Detail"},{id:"reports",icon:"📄",label:"Reports"},{id:"settings",icon:"⚙",label:"Settings"}]
-          .map(n=>(
+        {[
+          {id:"dashboard",  icon:"⬡", label:"Dashboard"},
+          {id:"siteDetail", icon:"◎", label:"Site Detail"},
+          {id:"content",    icon:"✍", label:"Content"},
+          {id:"reports",    icon:"📄", label:"Reports"},
+          {id:"settings",   icon:"⚙", label:"Settings"},
+        ].map(n=>(
           <div key={n.id} className={`nav-item ${screen===n.id?"active":""}`}
-            onClick={()=>{if(n.id==="dashboard"||n.id==="siteDetail")setScreen(n.id);}}>
-            <span style={{fontSize:"0.9rem"}}>{n.icon}</span>{n.label}
+            onClick={()=>{
+              if(n.id==="dashboard"||n.id==="siteDetail"||n.id==="content") setScreen(n.id);
+            }}>
+            <span style={{fontSize:"0.9rem"}}>{n.icon}</span>
+            {n.label}
+            {n.id==="content" && !isPro && <span style={{fontSize:".6rem",marginLeft:"auto",color:"var(--text3)"}}>Pro</span>}
           </div>
         ))}
       </div>
@@ -1148,6 +1218,309 @@ Return ONLY valid JSON:
   );
 
   // ─────────────────────────────────────────────────────────────
+  // CONTENT GENERATOR
+  // ─────────────────────────────────────────────────────────────
+  const ContentGenerator = () => {
+    const [kw,        setKw]        = useState("");
+    const [biz,       setBiz]       = useState("");
+    const [tone,      setTone]      = useState("professional");
+    const [wordCount, setWordCount] = useState("1000");
+    const [cta,       setCta]       = useState("");
+    const [notes,     setNotes]     = useState("");
+    const [loading,   setLoading]   = useState(false);
+    const [output,    setOutput]    = useState(null);
+    const [error,     setError]     = useState(null);
+    const [tab,       setTab]       = useState("preview");
+    const [copied,    setCopied]    = useState(false);
+    const [loadMsg,   setLoadMsg]   = useState("Researching your keyword…");
+
+    const loadMsgs = [
+      "Researching your keyword…",
+      "Writing SEO-optimised content…",
+      "Structuring headings and subheadings…",
+      "Adding internal link suggestions…",
+      "Finalising meta tags…",
+    ];
+
+    // Pre-fill keyword from current site's top opportunity
+    const suggestedKw = siteData?.topOpportunities?.[0]?.keyword || "";
+
+    const seoStats = output ? {
+      titleLen:   (output.match(/<title>(.*?)<\/title>/i)?.[1] || "").length,
+      descLen:    (output.match(/meta name="description" content="(.*?)"/i)?.[1] || "").length,
+      h2Count:    (output.match(/<h2/gi) || []).length,
+      wordEst:    Math.round((output.replace(/<[^>]*>/g,"").split(/\s+/).length)),
+      hasKw:      kw && output.toLowerCase().includes(kw.toLowerCase()),
+    } : null;
+
+    const generate = async () => {
+      if (!kw.trim()) return;
+      setLoading(true); setError(null); setOutput(null);
+      let mi = 0;
+      const iv = setInterval(()=>{ mi=(mi+1)%loadMsgs.length; setLoadMsg(loadMsgs[mi]); }, 3200);
+      try {
+        const prompt = `You are an expert SEO content writer. Generate a complete, production-ready HTML blog post.
+
+OUTPUT ONLY raw HTML starting with <!DOCTYPE html>. No markdown, no code fences, no explanation.
+
+INPUTS:
+- Target keyword: "${kw.trim()}"
+- Business/niche: ${biz.trim() || "general business"}
+- Tone: ${tone}
+- Target word count: ~${wordCount} words
+- Primary CTA: ${cta.trim() || "Contact us to find out more"}
+- Additional notes: ${notes.trim() || "none"}
+- Website: ${selectedSite}
+
+DATA NOTICE: This content is being generated for ${selectedSite}. Only the keyword, business context and tone provided above are sent to the AI. No personal data is included.
+
+BUILD THIS STRUCTURE:
+1. HEAD: title tag (50-60 chars, keyword first), meta description (145-155 chars, include keyword), canonical URL (https://${selectedSite}/[keyword-slug]/), robots, Open Graph tags, JSON-LD Article schema with author, datePublished today
+2. SIMPLE NAV: white background, site name left, 3-4 nav links right
+3. HERO SECTION: dark background (#0f0e0c), H1 with exact keyword, subtitle, author and date meta, read time estimate
+4. ARTICLE BODY: max-width 760px, margin auto, padding 3rem 2rem
+   - Strong opening paragraph with keyword in first 100 words
+   - 4-6 H2 sections with keyword-rich headings
+   - At least one H3 subsection
+   - One highlighted tip/callout box (border-left: 3px solid #0fdb8a)
+   - Natural keyword usage throughout (not stuffed)
+   - Internal link placeholders: <a href="/[related-page]/">[related topic]</a>
+5. CTA SECTION: background #0f0e0c, centred, heading, subtext, green button: "${cta.trim() || "Get in touch today"}"
+6. FOOTER: simple, site name, copyright ${new Date().getFullYear()}
+
+STYLING:
+- Font: system-ui, -apple-system, sans-serif
+- Body text: #3d3b35, line-height 1.75, font-size 1.05rem
+- Headings: #0f0e0c, font-weight 700
+- Accent colour: #0fdb8a
+- All links: #0fdb8a
+- Mobile responsive with one media query at 768px
+- Clean, minimal, fast-loading — no external dependencies except Google Fonts optional`;
+
+        const text = await callClaude(prompt,
+          "You are an expert SEO content writer. Output ONLY raw HTML. No markdown. No explanations. Start with <!DOCTYPE html>."
+        );
+        clearInterval(iv);
+        const clean = text.replace(/^```html\s*/i,"").replace(/^```\s*/i,"").replace(/```\s*$/i,"").trim();
+        setOutput(clean);
+        setTab("preview");
+      } catch(e) {
+        clearInterval(iv);
+        setError("Generation failed — please try again. If the problem persists, check your Worker is deployed.");
+      }
+      setLoading(false);
+    };
+
+    const copyHtml = () => {
+      if (!output) return;
+      navigator.clipboard.writeText(output).catch(()=>{});
+      setCopied(true); setTimeout(()=>setCopied(false), 1800);
+    };
+
+    const download = () => {
+      if (!output) return;
+      const slug = kw.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([output],{type:"text/html"}));
+      a.download = `${slug || "article"}.html`;
+      a.click();
+    };
+
+    // Gate for free users
+    if (!isPro) return (
+      <div className="content">
+        <div className="cg-header">
+          <div className="cg-title">Content Generator</div>
+          <div className="cg-sub">AI-written SEO blog posts for your target keywords</div>
+        </div>
+        <div className="upgrade-wall" style={{maxWidth:480,margin:"3rem auto",textAlign:"center"}}>
+          <div className="upgrade-wall-icon">✍</div>
+          <div className="upgrade-wall-h">Content Generator is a Pro feature</div>
+          <div className="upgrade-wall-sub">
+            Pick a keyword from your dashboard, generate a fully SEO-optimised blog post in 30 seconds. Ready to publish, complete with meta tags, structured headings and a call to action.
+          </div>
+          <button className="upgrade-wall-btn" onClick={()=>setShowUpgrade(true)}>Upgrade to Pro — £29/month</button>
+        </div>
+      </div>
+    );
+
+    return (
+      <div className="cg-wrap">
+        <div className="cg-header">
+          <div className="cg-title">Content Generator</div>
+          <div className="cg-sub">Generate SEO-optimised blog posts from your target keywords</div>
+        </div>
+
+        {/* Privacy notice — shown prominently per GDPR best practice */}
+        <div className="cg-privacy">
+          <span className="cg-privacy-icon">🔒</span>
+          <span><strong>Data notice:</strong> Only the keyword, business context and tone you enter below are sent to the AI to generate content. No personal data, no Search Console data, and no user information is included in the request. Generated articles are not stored — they exist in your browser only until you download or copy them.</span>
+        </div>
+
+        <div className="cg-grid">
+          {/* ── Input panel ── */}
+          <div className="cg-panel">
+            <div className="cg-panel-hd">
+              <div className="cg-panel-hd-title">Article settings</div>
+              <div className="cg-panel-hd-sub">Fill in the details below to generate</div>
+            </div>
+            <div className="cg-panel-bd">
+              <div className="cg-field">
+                <label>Target keyword *</label>
+                <input placeholder={suggestedKw || "e.g. sar support services uk"}
+                  value={kw} onChange={e=>setKw(e.target.value)}
+                  onKeyDown={e=>e.key==="Enter"&&kw.trim()&&!loading&&generate()}/>
+                {suggestedKw && !kw && (
+                  <div className="cg-tip" style={{cursor:"pointer"}} onClick={()=>setKw(suggestedKw)}>
+                    💡 Suggested from your dashboard: "{suggestedKw}" — click to use
+                  </div>
+                )}
+              </div>
+              <div className="cg-field">
+                <label>Business / niche</label>
+                <input placeholder="e.g. Data protection consultancy"
+                  value={biz} onChange={e=>setBiz(e.target.value)}/>
+              </div>
+              <div className="cg-field-row">
+                <div className="cg-field">
+                  <label>Tone</label>
+                  <select value={tone} onChange={e=>setTone(e.target.value)}>
+                    <option value="professional">Professional</option>
+                    <option value="friendly">Friendly</option>
+                    <option value="authoritative">Authoritative</option>
+                    <option value="conversational">Conversational</option>
+                    <option value="technical">Technical</option>
+                  </select>
+                </div>
+                <div className="cg-field">
+                  <label>Word count</label>
+                  <select value={wordCount} onChange={e=>setWordCount(e.target.value)}>
+                    <option value="600">~600 words</option>
+                    <option value="1000">~1,000 words</option>
+                    <option value="1500">~1,500 words</option>
+                    <option value="2000">~2,000 words</option>
+                  </select>
+                </div>
+              </div>
+              <div className="cg-field">
+                <label>Primary call to action</label>
+                <input placeholder="e.g. Book a free consultation"
+                  value={cta} onChange={e=>setCta(e.target.value)}/>
+              </div>
+              <div className="cg-divider"/>
+              <div className="cg-field">
+                <label>Additional notes (optional)</label>
+                <textarea placeholder="Any specific points to cover, products to mention, things to avoid..."
+                  value={notes} onChange={e=>setNotes(e.target.value)} rows={3}/>
+              </div>
+              <button className="cg-gen-btn" disabled={!kw.trim()||loading} onClick={generate}>
+                {loading ? <><span className="spinner-sm"/>{" Generating…"}</> : "✨ Generate article"}
+              </button>
+              <div className="cg-tip">
+                ⏱ Generation takes 20–40 seconds. The article is created in your browser and never stored on our servers.
+              </div>
+            </div>
+          </div>
+
+          {/* ── Output panel ── */}
+          <div className="cg-output">
+            <div className="cg-toolbar">
+              <div className="cg-status">
+                <div className={`cg-status-dot ${loading?"loading":output?"ready":error?"error":""}`}/>
+                <span>{loading ? loadMsg : output ? "Article ready" : error ? "Error" : "Ready to generate"}</span>
+              </div>
+              <div className="cg-actions">
+                <button className="cg-act" disabled={!output} onClick={copyHtml}>
+                  {copied ? "✓ Copied" : "📋 Copy HTML"}
+                </button>
+                <button className="cg-act primary" disabled={!output} onClick={download}>
+                  ⬇ Download
+                </button>
+              </div>
+            </div>
+
+            {output && (
+              <div className="cg-tabs">
+                {["preview","html","seo"].map(t=>(
+                  <button key={t} className={`cg-tab ${tab===t?"on":""}`} onClick={()=>setTab(t)}>
+                    {t==="preview"?"Preview":t==="html"?"HTML":"SEO Check"}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* SEO stats bar */}
+            {output && tab==="seo" && seoStats && (
+              <div className="cg-seo-bar">
+                <div className="cg-seo-c">
+                  <div className="cg-seo-l">Title tag</div>
+                  <div className={`cg-seo-v ${seoStats.titleLen>=50&&seoStats.titleLen<=60?"ok":"warn"}`}>
+                    {seoStats.titleLen} chars {seoStats.titleLen>=50&&seoStats.titleLen<=60?"✓ Good":"⚠ Adjust"}
+                  </div>
+                </div>
+                <div className="cg-seo-c">
+                  <div className="cg-seo-l">Meta description</div>
+                  <div className={`cg-seo-v ${seoStats.descLen>=145&&seoStats.descLen<=160?"ok":"warn"}`}>
+                    {seoStats.descLen} chars {seoStats.descLen>=145&&seoStats.descLen<=160?"✓ Good":"⚠ Adjust"}
+                  </div>
+                </div>
+                <div className="cg-seo-c">
+                  <div className="cg-seo-l">Keyword present</div>
+                  <div className={`cg-seo-v ${seoStats.hasKw?"ok":"warn"}`}>
+                    {seoStats.hasKw?"✓ Found in content":"⚠ Not detected"}
+                  </div>
+                </div>
+                <div className="cg-seo-c">
+                  <div className="cg-seo-l">H2 headings</div>
+                  <div className={`cg-seo-v ${seoStats.h2Count>=3?"ok":"warn"}`}>
+                    {seoStats.h2Count} headings {seoStats.h2Count>=3?"✓ Good":"⚠ Add more"}
+                  </div>
+                </div>
+                <div className="cg-seo-c">
+                  <div className="cg-seo-l">Est. word count</div>
+                  <div className={`cg-seo-v ${seoStats.wordEst>=600?"ok":"warn"}`}>
+                    ~{seoStats.wordEst.toLocaleString()} words
+                  </div>
+                </div>
+                <div className="cg-seo-c">
+                  <div className="cg-seo-l">Data stored</div>
+                  <div className="cg-seo-v ok">✓ None — browser only</div>
+                </div>
+              </div>
+            )}
+
+            {/* States */}
+            {loading && (
+              <div className="cg-loading-msgs">
+                <div className="spinner"/>
+                <div className="cg-loading-msg">{loadMsg}</div>
+              </div>
+            )}
+            {!loading && error && <div className="cg-error">⚠ {error}</div>}
+            {!loading && !output && !error && (
+              <div className="cg-empty">
+                <div className="cg-empty-icon">✍</div>
+                <h3>Your article will appear here</h3>
+                <p>Fill in the keyword and settings, then click Generate. Your article will be ready in about 30 seconds.</p>
+              </div>
+            )}
+            {!loading && output && tab==="preview" && (
+              <div className="cg-preview">
+                <iframe srcDoc={output} sandbox="allow-same-origin" title="Article preview"/>
+              </div>
+            )}
+            {!loading && output && tab==="html" && (
+              <div className="cg-code">
+                <pre>{output}</pre>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ─────────────────────────────────────────────────────────────
   // ROOT
   // ─────────────────────────────────────────────────────────────
   return (
@@ -1159,6 +1532,7 @@ Return ONLY valid JSON:
           <TopBar/>
           {screen==="dashboard"  && <DashboardContent/>}
           {screen==="siteDetail" && <SiteDetailContent/>}
+          {screen==="content"    && <ContentGenerator/>}
         </div>
       </div>
       {modal        && <FixModal/>}
