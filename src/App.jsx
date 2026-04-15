@@ -269,6 +269,30 @@ const CSS = `
 /* ── User plan badge in topbar ── */
 .plan-pill{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:.2rem .55rem;border-radius:5px;background:var(--bdim);color:var(--blue);}
 .plan-pill.pro{background:var(--gdim);color:var(--green);}
+
+/* ── Upgrade prompt ── */
+.upgrade-wall{background:var(--s2);border:1.5px dashed var(--border2);border-radius:12px;padding:2rem;text-align:center;margin:1rem 0;}
+.upgrade-wall-icon{font-size:1.75rem;margin-bottom:.75rem;}
+.upgrade-wall-h{font-size:.95rem;font-weight:700;margin-bottom:.35rem;}
+.upgrade-wall-sub{font-size:.85rem;color:var(--text2);margin-bottom:1.25rem;line-height:1.6;}
+.upgrade-wall-btn{background:var(--green);color:#000;border:none;border-radius:8px;padding:.6rem 1.4rem;font-family:var(--font);font-size:.875rem;font-weight:700;cursor:pointer;}
+.upgrade-wall-btn:hover{opacity:.88;}
+.ai-fix-counter{font-size:.72rem;color:var(--text3);margin-left:.5rem;}
+.ai-fix-counter.warn{color:var(--amber);}
+.tab-btn.locked{opacity:.45;}
+.tab-btn.locked::after{content:" 🔒";font-size:.65rem;}
+.upgrade-overlay{position:fixed;inset:0;background:rgba(7,8,15,.88);backdrop-filter:blur(6px);z-index:400;display:flex;align-items:center;justify-content:center;padding:1.5rem;}
+.upgrade-modal{background:var(--s1);border:1px solid var(--border);border-radius:16px;width:100%;max-width:440px;padding:2rem;text-align:center;}
+.upgrade-modal-badge{display:inline-block;background:var(--green);color:#000;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:.25rem .65rem;border-radius:999px;margin-bottom:1rem;}
+.upgrade-modal h2{font-size:1.3rem;font-weight:800;letter-spacing:-.03em;margin-bottom:.5rem;}
+.upgrade-modal p{font-size:.875rem;color:var(--text2);margin-bottom:1.5rem;line-height:1.6;}
+.upgrade-modal-features{text-align:left;background:var(--s2);border-radius:10px;padding:1rem;margin-bottom:1.5rem;}
+.upgrade-modal-features li{font-size:.85rem;color:var(--text2);padding:.3rem 0;list-style:none;display:flex;align-items:center;gap:.5rem;}
+.upgrade-modal-features li::before{content:"✓";color:var(--green);font-weight:700;}
+.upgrade-modal-cta{width:100%;padding:.85rem;background:var(--green);color:#000;border:none;border-radius:10px;font-family:var(--font);font-size:.95rem;font-weight:700;cursor:pointer;margin-bottom:.75rem;}
+.upgrade-modal-cta:hover{opacity:.88;}
+.upgrade-modal-skip{font-size:.8rem;color:var(--text3);cursor:pointer;}
+.upgrade-modal-skip:hover{color:var(--text2);}
 `;
 
 // ─── Demo fallback data ───────────────────────────────────────
@@ -373,6 +397,25 @@ export default function RankActions() {
   const [modalData,    setModalData]    = useState(null);
   const [modalLoading, setModalLoading] = useState(false);
   const [modalApplied, setModalApplied] = useState(new Set());
+  const [aiFixCount,   setAiFixCount]   = useState(() => {
+    const stored = JSON.parse(localStorage.getItem("rankactions_ai_fix_usage") || '{"count":0,"month":""}');
+    const thisMonth = new Date().toISOString().slice(0,7);
+    if (stored.month !== thisMonth) return 0; // reset each month
+    return stored.count;
+  });
+  const [showUpgrade,  setShowUpgrade]  = useState(false);
+
+  // ── Plan helpers ────────────────────────────────────────────
+  const isPro = plan === "pro";
+  const AI_FIX_LIMIT = 5; // free tier monthly limit
+  const aiFixesLeft = Math.max(0, AI_FIX_LIMIT - aiFixCount);
+
+  const trackAiFixUsage = () => {
+    const thisMonth = new Date().toISOString().slice(0,7);
+    const newCount  = aiFixCount + 1;
+    setAiFixCount(newCount);
+    localStorage.setItem("rankactions_ai_fix_usage", JSON.stringify({ count:newCount, month:thisMonth }));
+  };
 
   // ── Show plan selection on first sign-in ───────────────────
   useEffect(() => {
@@ -519,6 +562,12 @@ export default function RankActions() {
   // Fix modal
   // ─────────────────────────────────────────────────────────────
   const openModal = async (fix) => {
+    // Gate: free users get 5 AI fixes per month
+    if (!isPro && aiFixCount >= AI_FIX_LIMIT) {
+      setShowUpgrade(true);
+      return;
+    }
+    if (!isPro) trackAiFixUsage();
     setModal(fix); setModalData(null); setModalLoading(true);
     try {
       // Build rich context — top keywords, impressions, site name
@@ -726,6 +775,11 @@ Return ONLY valid JSON:
   // Add site helper
   // ─────────────────────────────────────────────────────────────
   const addSite = () => {
+    // Gate: free users can only have 1 site
+    if (!isPro && sites.length >= 1) {
+      setShowUpgrade(true);
+      return;
+    }
     const input = window.prompt("Enter your website URL:", "e.g. mysite.com");
     if (!input || !input.trim()) return;
     const clean = input.trim().replace(/^https?:\/\//,"").replace(/\/$/,"");
@@ -825,10 +879,15 @@ Return ONLY valid JSON:
               ✦ This week's summary
               <span className={`ai-pill ${siteData?"live":""}`}>{siteData?"Live AI":"AI"}</span>
             </div>
-            <button className="ai-regen-btn" onClick={generateSummary} disabled={summaryLoading}>
-              {summaryLoading?<span className="spinner-sm"/>:"↻"}
-              {summaryLoading?" Generating…":" Regenerate"}
-            </button>
+            {isPro
+              ? <button className="ai-regen-btn" onClick={generateSummary} disabled={summaryLoading}>
+                  {summaryLoading?<span className="spinner-sm"/>:"↻"}
+                  {summaryLoading?" Generating…":" Regenerate"}
+                </button>
+              : <button className="ai-regen-btn" onClick={()=>setShowUpgrade(true)} title="Pro feature">
+                  🔒 Pro only
+                </button>
+            }
           </div>
           <div className="ai-bullets">
             {summaryLoading
@@ -878,7 +937,10 @@ Return ONLY valid JSON:
                       <div className="fix-sugg-text">{fix.suggestion}</div>
                     </div>
                     <div className="fix-actions">
-                      <button className="fa-btn primary" onClick={()=>openModal(fix)}>✨ Generate alternatives</button>
+                      <button className="fa-btn primary" onClick={()=>openModal(fix)}>
+                        ✨ Generate alternatives
+                        {!isPro && <span className={`ai-fix-counter ${aiFixesLeft<=2?"warn":""}`}>({aiFixesLeft} left)</span>}
+                      </button>
                       <button className="fa-btn" onClick={()=>copyText(fix.suggestion,fix.id+"-c")}>
                         {copiedId===fix.id+"-c"?"✓ Copied":"📋 Copy fix"}
                       </button>
@@ -908,9 +970,16 @@ Return ONLY valid JSON:
         <div className="site-detail-name">{selectedSite}</div>
         <div className="site-detail-meta">{siteData?`Live data · ${siteData.dateRange.startDate} to ${siteData.dateRange.endDate}`:"Demo data · connect Google for real numbers"}</div>
         <div className="tabs-row">
-          {["Overview","SEO Opportunities","Conversions","Issues"].map(t=>(
-            <button key={t} className={`tab-btn ${activeTab===t?"active":""}`} onClick={()=>setActiveTab(t)}>{t}</button>
-          ))}
+          {["Overview","SEO Opportunities","Conversions","Issues"].map(t=>{
+            const locked = !isPro && (t==="Conversions"||t==="Issues");
+            return (
+              <button key={t}
+                className={`tab-btn ${activeTab===t?"active":""} ${locked?"locked":""}`}
+                onClick={()=>{ if(locked){ setShowUpgrade(true); return; } setActiveTab(t); }}>
+                {t}
+              </button>
+            );
+          })}
         </div>
 
         {activeTab==="Overview" && <>
@@ -1049,6 +1118,36 @@ Return ONLY valid JSON:
   );
 
   // ─────────────────────────────────────────────────────────────
+  // UPGRADE MODAL
+  // ─────────────────────────────────────────────────────────────
+  const UpgradeModal = () => (
+    <div className="upgrade-overlay" onClick={e=>e.target===e.currentTarget&&setShowUpgrade(false)}>
+      <div className="upgrade-modal">
+        <div className="upgrade-modal-badge">Pro Feature</div>
+        <h2>Upgrade to Pro</h2>
+        <p>You've reached the limit of the free plan. Upgrade to unlock unlimited AI fixes, more sites, conversion tracking and more.</p>
+        <ul className="upgrade-modal-features">
+          <li>Unlimited websites</li>
+          <li>Unlimited AI fix generator</li>
+          <li>On-demand AI summary regeneration</li>
+          <li>Conversions tab — find pages losing leads</li>
+          <li>Issues tab — auto-detected technical problems</li>
+          <li>Full SEO keyword opportunities</li>
+          <li>Weekly email digest</li>
+        </ul>
+        <button className="upgrade-modal-cta" onClick={()=>{
+          // TODO: wire to Stripe checkout in Phase 2
+          setPlan("pro");
+          localStorage.setItem("rankactions_plan","pro");
+          setShowUpgrade(false);
+          alert("Stripe payments coming in Phase 2 — plan set to Pro for testing.");
+        }}>Upgrade to Pro — £29/month</button>
+        <div className="upgrade-modal-skip" onClick={()=>setShowUpgrade(false)}>Maybe later</div>
+      </div>
+    </div>
+  );
+
+  // ─────────────────────────────────────────────────────────────
   // ROOT
   // ─────────────────────────────────────────────────────────────
   return (
@@ -1062,7 +1161,8 @@ Return ONLY valid JSON:
           {screen==="siteDetail" && <SiteDetailContent/>}
         </div>
       </div>
-      {modal && <FixModal/>}
+      {modal        && <FixModal/>}
+      {showUpgrade  && <UpgradeModal/>}
     </div></>
   );
 }
