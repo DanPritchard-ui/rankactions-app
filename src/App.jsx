@@ -247,7 +247,7 @@ const CSS = `
 .plan-logo{font-size:1.4rem;font-weight:800;letter-spacing:-.04em;margin-bottom:.5rem;}
 .plan-logo em{color:var(--green);font-style:normal;}
 .plan-sub{font-size:.9rem;color:var(--text2);margin-bottom:2.5rem;}
-.plan-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem;width:100%;max-width:560px;margin-bottom:1.5rem;}
+.plan-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;width:100%;max-width:860px;margin-bottom:1.5rem;}
 .plan-card{background:var(--s1);border:2px solid var(--border);border-radius:16px;padding:1.5rem;cursor:pointer;transition:all .2s;}
 .plan-card:hover{border-color:var(--blue);}
 .plan-card.selected{border-color:var(--blue);background:var(--bdim);}
@@ -797,12 +797,29 @@ Return ONLY valid JSON — no markdown, no explanation:
   // ─────────────────────────────────────────────────────────────
   // PLAN SELECTION — show on first sign-in
   // ─────────────────────────────────────────────────────────────
-  if (showPlan) return (
+  if (showPlan) {
+    const [billing, setBilling] = useState("monthly");
+    const isAnnual = billing === "annual";
+    return (
     <><style>{CSS}</style>
     <div className="gos">
       <div className="plan-wrap">
         <div className="plan-logo">Rank<em>Actions</em></div>
         <div className="plan-sub">Choose your plan — upgrade or downgrade any time</div>
+
+        {/* Billing toggle */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:".75rem",marginBottom:"1.75rem"}}>
+          <span style={{fontSize:".875rem",fontWeight:isAnnual?400:700,color:isAnnual?"var(--text3)":"var(--text)"}}>Monthly</span>
+          <div onClick={()=>setBilling(b=>b==="monthly"?"annual":"monthly")}
+            style={{width:44,height:24,background:"var(--green)",borderRadius:999,position:"relative",cursor:"pointer",flexShrink:0}}>
+            <div style={{position:"absolute",top:3,left:3,width:18,height:18,background:"#fff",borderRadius:"50%",transition:"transform .2s",transform:isAnnual?"translateX(20px)":"translateX(0)"}}/>
+          </div>
+          <span style={{fontSize:".875rem",fontWeight:isAnnual?700:400,color:isAnnual?"var(--text)":"var(--text3)"}}>
+            Annual
+            <span style={{background:"var(--green)",color:"#000",fontSize:".65rem",fontWeight:700,padding:".15rem .45rem",borderRadius:999,marginLeft:".4rem"}}>2 months free</span>
+          </span>
+        </div>
+
         <div className="plan-grid">
           <div className={`plan-card ${selPlan==="free"?"selected":""}`} onClick={()=>setSelPlan("free")}>
             <div className="plan-name">Free</div>
@@ -811,39 +828,55 @@ Return ONLY valid JSON — no markdown, no explanation:
             <ul className="plan-features">
               <li>1 website</li>
               <li>Top 3 weekly actions</li>
-              <li>AI-written suggestions</li>
+              <li>5 AI fix suggestions/month</li>
               <li>Search Console data</li>
             </ul>
           </div>
           <div className={`plan-card featured ${selPlan==="pro"?"selected":""}`} onClick={()=>setSelPlan("pro")}>
             <div className="plan-badge">Most popular</div>
             <div className="plan-name">Pro</div>
-            <div className="plan-price">£29</div>
-            <div className="plan-period">per month</div>
+            <div className="plan-price">{isAnnual ? "£500" : "£50"}</div>
+            <div className="plan-period">{isAnnual ? "per year — £41.67/mo" : "per month"}</div>
+            {isAnnual && <div style={{fontSize:".78rem",color:"var(--green)",fontWeight:600,marginBottom:".5rem"}}>Save £100 vs monthly</div>}
             <ul className="plan-features">
               <li>Unlimited websites</li>
               <li>Full action list</li>
               <li>Unlimited AI fixes</li>
+              <li>AI content generator</li>
               <li>Conversion tracking</li>
               <li>Weekly email digest</li>
             </ul>
           </div>
+          <div className={`plan-card ${selPlan==="agency"?"selected":""}`} onClick={()=>setSelPlan("agency")}>
+            <div className="plan-name">Agency</div>
+            <div className="plan-price">{isAnnual ? "£900" : "£90"}</div>
+            <div className="plan-period">{isAnnual ? "per year — £75/mo" : "per month"}</div>
+            {isAnnual && <div style={{fontSize:".78rem",color:"var(--green)",fontWeight:600,marginBottom:".5rem"}}>Save £180 vs monthly</div>}
+            <ul className="plan-features">
+              <li>Everything in Pro</li>
+              <li>Unlimited client sites</li>
+              <li>DataForSEO data (soon)</li>
+              <li>Competitor tracking (soon)</li>
+              <li>White-label reports (soon)</li>
+            </ul>
+          </div>
         </div>
         <button className="plan-continue-btn" onClick={()=>{
-          setPlan(selPlan);
-          localStorage.setItem("rankactions_plan", selPlan);
+          setPlan(selPlan==="agency"?"pro":selPlan); // treat agency as pro until Stripe
+          localStorage.setItem("rankactions_plan", selPlan==="agency"?"pro":selPlan);
           localStorage.setItem("rankactions_plan_chosen", "1");
+          localStorage.setItem("rankactions_billing", billing);
           setShowPlan(false);
         }}>
-          {selPlan==="pro" ? "Start 14-day free trial →" : "Continue with Free →"}
+          {selPlan==="free" ? "Continue with Free →" : `Start with ${selPlan==="agency"?"Agency":"Pro"} ${isAnnual?"(Annual)":"(Monthly)"} →`}
         </button>
         <div className="plan-skip" onClick={()=>{
           localStorage.setItem("rankactions_plan_chosen","1");
           setShowPlan(false);
-        }}>Skip for now</div>
+        }}>Skip for now — start with Free</div>
       </div>
     </div></>
-  );
+  );};
 
   // ─────────────────────────────────────────────────────────────
   // ONBOARDING
@@ -1313,32 +1346,53 @@ Return ONLY valid JSON — no markdown, no explanation:
   // ─────────────────────────────────────────────────────────────
   // UPGRADE MODAL
   // ─────────────────────────────────────────────────────────────
-  const UpgradeModal = () => (
+  const UpgradeModal = () => {
+    const [billing, setBilling] = useState("monthly");
+    return (
     <div className="upgrade-overlay" onClick={e=>e.target===e.currentTarget&&setShowUpgrade(false)}>
       <div className="upgrade-modal">
         <div className="upgrade-modal-badge">Pro Feature</div>
         <h2>Upgrade to Pro</h2>
-        <p>You've reached the limit of the free plan. Upgrade to unlock unlimited AI fixes, more sites, conversion tracking and more.</p>
+        <p>Unlock unlimited AI fixes, content generation, conversion tracking and more.</p>
+
+        {/* Billing toggle */}
+        <div style={{display:"flex",background:"var(--s2)",borderRadius:999,padding:3,gap:3,marginBottom:"1.25rem"}}>
+          {[["monthly","£50/month"],["annual","£500/year"]].map(([b,label])=>(
+            <button key={b} onClick={()=>setBilling(b)}
+              style={{flex:1,padding:".45rem",borderRadius:999,border:"none",fontFamily:"var(--font)",fontSize:".82rem",fontWeight:600,cursor:"pointer",background:billing===b?"var(--green)":"none",color:billing===b?"#000":"var(--text2)",transition:"all .15s"}}>
+              {label}
+              {b==="annual" && <span style={{display:"block",fontSize:".68rem",fontWeight:500,opacity:.8}}>save £100</span>}
+            </button>
+          ))}
+        </div>
+
         <ul className="upgrade-modal-features">
           <li>Unlimited websites</li>
           <li>Unlimited AI fix generator</li>
-          <li>On-demand AI summary regeneration</li>
+          <li>AI content generator — blog posts in 30 seconds</li>
           <li>Conversions tab — find pages losing leads</li>
-          <li>Issues tab — auto-detected technical problems</li>
+          <li>Issues tab — technical SEO problems</li>
           <li>Full SEO keyword opportunities</li>
           <li>Weekly email digest</li>
         </ul>
         <button className="upgrade-modal-cta" onClick={()=>{
-          // TODO: wire to Stripe checkout in Phase 2
           setPlan("pro");
           localStorage.setItem("rankactions_plan","pro");
           setShowUpgrade(false);
-          alert("Stripe payments coming in Phase 2 — plan set to Pro for testing.");
-        }}>Upgrade to Pro — £29/month</button>
+          alert(`Stripe payments coming in Phase 2 — plan set to Pro for testing. (${billing === "annual" ? "£500/year" : "£50/month"} selected)`);
+        }}>
+          {billing==="annual" ? "Upgrade to Pro — £500/year" : "Upgrade to Pro — £50/month"}
+        </button>
+        {billing==="monthly" && (
+          <div style={{fontSize:".75rem",color:"var(--green)",textAlign:"center",margin:".5rem 0",cursor:"pointer"}} onClick={()=>setBilling("annual")}>
+            💡 Switch to annual and save £100/year
+          </div>
+        )}
         <div className="upgrade-modal-skip" onClick={()=>setShowUpgrade(false)}>Maybe later</div>
       </div>
     </div>
-  );
+    );
+  };
 
   // ─────────────────────────────────────────────────────────────
   // CONTENT GENERATOR
@@ -1531,7 +1585,7 @@ IMPORTANT — Label internal links clearly so non-technical users know what they
           <div className="upgrade-wall-sub">
             Pick a keyword from your dashboard, generate a fully SEO-optimised blog post in 30 seconds. Ready to publish, complete with meta tags, structured headings and a call to action.
           </div>
-          <button className="upgrade-wall-btn" onClick={()=>setShowUpgrade(true)}>Upgrade to Pro — £29/month</button>
+          <button className="upgrade-wall-btn" onClick={()=>setShowUpgrade(true)}>Upgrade to Pro — £50/month</button>
         </div>
       </div>
     );
