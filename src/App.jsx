@@ -171,7 +171,25 @@ const CSS = `
 .td-link:hover{text-decoration:underline;}
 .td-opp{font-size:.68rem;font-weight:700;padding:.15rem .45rem;border-radius:4px;background:var(--adim);color:var(--amber);margin-left:.4rem;}
 .issues-list{display:flex;flex-direction:column;gap:.75rem;}
-.issue-row{background:var(--s1);border:1px solid var(--border);border-radius:10px;padding:1rem 1.25rem;display:flex;align-items:center;gap:1rem;}
+.issue-row{background:var(--s1);border:1px solid var(--border);border-radius:10px;overflow:hidden;}
+.issue-row-header{padding:1rem 1.25rem;display:flex;align-items:center;gap:1rem;cursor:pointer;user-select:none;transition:background .1s;}
+.issue-row-header:hover{background:var(--s2);}
+.issue-chevron{margin-left:auto;color:var(--text3);font-size:.75rem;transition:transform .2s;flex-shrink:0;}
+.issue-chevron.open{transform:rotate(180deg);}
+.issue-pages{border-top:1px solid var(--border);}
+.issue-pages-header{display:grid;grid-template-columns:2fr 3fr 1fr auto;gap:1rem;padding:.5rem 1.25rem;background:var(--s2);font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);}
+.issue-page-row{display:grid;grid-template-columns:2fr 3fr 1fr auto;gap:1rem;padding:.75rem 1.25rem;border-top:1px solid var(--border);align-items:center;font-size:.825rem;}
+.issue-page-row:hover{background:var(--s2);}
+.issue-page-url{font-family:var(--mono);font-size:.8rem;color:var(--blue);}
+.issue-page-detail{color:var(--text2);font-size:.8rem;}
+.issue-priority{font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:.15rem .45rem;border-radius:4px;}
+.issue-priority.high{background:var(--rdim);color:var(--red);}
+.issue-priority.medium{background:var(--adim);color:var(--amber);}
+.issue-priority.low{background:var(--bdim);color:var(--blue);}
+.issue-fix-btn{background:none;border:1px solid var(--border);border-radius:6px;padding:.3rem .65rem;font-family:var(--font);font-size:.72rem;font-weight:600;color:var(--text2);cursor:pointer;white-space:nowrap;transition:all .15s;}
+.issue-fix-btn:hover{border-color:var(--blue);color:var(--blue);}
+.issue-summary-bar{padding:.65rem 1.25rem;background:var(--s2);border-top:1px solid var(--border);font-size:.8rem;color:var(--text2);display:flex;align-items:center;gap:.5rem;}
+.issue-data-note{margin-top:1rem;background:var(--bdim);border:1px solid rgba(77,123,255,.15);border-radius:8px;padding:.75rem 1rem;font-size:.78rem;color:var(--blue);line-height:1.6;}
 .issue-icon-wrap{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1.05rem;flex-shrink:0;}
 .issue-icon-wrap.error{background:var(--rdim);}
 .issue-icon-wrap.warning{background:var(--adim);}
@@ -448,10 +466,49 @@ const DEMO_SEO = [
 ];
 
 const ISSUES_DATA = [
-  { t:"error",   icon:"⚠",  label:"Missing meta descriptions",pages:"4 pages",fix:"Add unique meta descriptions to boost CTR" },
-  { t:"warning", icon:"⏱",  label:"Slow page speed",          pages:"2 pages",fix:"Compress images and enable browser caching" },
-  { t:"warning", icon:"🔗",  label:"Broken internal links",    pages:"1 page", fix:"Update or remove 3 broken anchor links" },
-  { t:"info",    icon:"📋",  label:"Missing schema markup",    pages:"6 pages",fix:"Add LocalBusiness schema for better listings" },
+  {
+    t:"error", icon:"⚠", label:"Missing meta descriptions",
+    summary:"4 pages have no meta description — Google writes its own, often poorly.",
+    fix:"Write a unique 145-155 character meta description for each page to improve click-through rate.",
+    pages:[
+      { url:"/services/",       detail:"No meta description set",                      priority:"high"   },
+      { url:"/about/",          detail:"No meta description set",                      priority:"high"   },
+      { url:"/contact/",        detail:"No meta description set",                      priority:"medium" },
+      { url:"/case-studies/",   detail:"No meta description set",                      priority:"medium" },
+    ]
+  },
+  {
+    t:"warning", icon:"⏱", label:"Slow page speed",
+    summary:"2 pages load slowly on mobile — Google uses mobile speed as a ranking factor.",
+    fix:"Compress images, enable lazy loading and remove unused JavaScript to improve load time.",
+    pages:[
+      { url:"/services/",       detail:"Load time: 4.8s on mobile · Images not compressed",  priority:"high"   },
+      { url:"/",                detail:"Load time: 3.9s on mobile · Render-blocking JS",      priority:"medium" },
+    ]
+  },
+  {
+    t:"warning", icon:"🔗", label:"Broken internal links",
+    summary:"3 internal links point to pages that no longer exist — this wastes link authority.",
+    fix:"Update each broken link to point to the correct current page, or remove it entirely.",
+    pages:[
+      { url:"/blog/",           detail:'Link to "/old-services/" returns 404',          priority:"high"   },
+      { url:"/about/",          detail:'Link to "/team/" returns 404',                  priority:"medium" },
+      { url:"/contact/",        detail:'Link to "/pricing-old/" returns 404',           priority:"medium" },
+    ]
+  },
+  {
+    t:"info", icon:"📋", label:"Missing schema markup",
+    summary:"6 pages have no structured data — schema helps Google display rich results.",
+    fix:"Add LocalBusiness, Article or FAQ schema to help Google understand your pages better.",
+    pages:[
+      { url:"/",                detail:"Missing: LocalBusiness schema",                 priority:"high"   },
+      { url:"/services/",       detail:"Missing: Service schema",                       priority:"high"   },
+      { url:"/about/",          detail:"Missing: Organization schema",                  priority:"medium" },
+      { url:"/blog/",           detail:"Missing: Blog / Article schema",                priority:"medium" },
+      { url:"/contact/",        detail:"Missing: ContactPage schema",                   priority:"low"    },
+      { url:"/faq/",            detail:"Missing: FAQPage schema",                       priority:"low"    },
+    ]
+  },
 ];
 
 const CONV_DATA = [
@@ -1284,16 +1341,69 @@ Return ONLY valid JSON — no markdown, no explanation:
         {activeTab==="Issues" && <>
           <div className="section-head" style={{marginBottom:"1.25rem"}}>
             <div className="section-title">Technical Issues</div>
-            <div className="section-sub">{ISSUES_DATA.length} issues detected</div>
+            <div className="section-sub">{ISSUES_DATA.reduce((a,i)=>a+i.pages.length,0)} affected pages across {ISSUES_DATA.length} issue types</div>
           </div>
           <div className="issues-list">
-            {ISSUES_DATA.map((issue,i)=>(
-              <div key={i} className="issue-row">
-                <div className={`issue-icon-wrap ${issue.t}`}>{issue.icon}</div>
-                <div className="issue-info"><div className="issue-name">{issue.label}</div><div className="issue-fix-hint">{issue.fix}</div></div>
-                <div className="issue-pages-badge">{issue.pages}</div>
-              </div>
-            ))}
+            {ISSUES_DATA.map((issue,i)=>{
+              const isOpen = expandedFix===`issue-${i}`;
+              return (
+                <div key={i} className="issue-row">
+                  {/* Header row — click to expand */}
+                  <div className="issue-row-header" onClick={()=>setExpandedFix(isOpen?null:`issue-${i}`)}>
+                    <div className={`issue-icon-wrap ${issue.t}`}>{issue.icon}</div>
+                    <div className="issue-info">
+                      <div className="issue-name">{issue.label}</div>
+                      <div className="issue-fix-hint">{issue.summary}</div>
+                    </div>
+                    <div className="issue-pages-badge">{issue.pages.length} {issue.pages.length===1?"page":"pages"}</div>
+                    <div className={`issue-chevron ${isOpen?"open":""}`}>▼</div>
+                  </div>
+
+                  {/* Expanded — page list */}
+                  {isOpen && (
+                    <div className="issue-pages">
+                      <div className="issue-summary-bar">
+                        💡 {issue.fix}
+                      </div>
+                      <div className="issue-pages-header">
+                        <span>Page</span>
+                        <span>Issue detail</span>
+                        <span>Priority</span>
+                        <span>Action</span>
+                      </div>
+                      {issue.pages.map((pg,j)=>(
+                        <div key={j} className="issue-page-row">
+                          <div className="issue-page-url">{pg.url}</div>
+                          <div className="issue-page-detail">{pg.detail}</div>
+                          <div><span className={`issue-priority ${pg.priority}`}>{pg.priority}</span></div>
+                          <button className="issue-fix-btn" onClick={()=>openModal({
+                            id:`issue-${i}-${j}`,
+                            level: pg.priority==="high"?"high":"medium",
+                            color: pg.priority==="high"?"#f03e5f":"#f5a623",
+                            label: issue.label,
+                            type:  "Technical",
+                            title: `Fix: ${issue.label} on ${pg.url}`,
+                            desc:  pg.detail,
+                            m1:    pg.url,
+                            m2:    pg.priority + " priority",
+                            field: issue.label,
+                            current: pg.detail,
+                            recommended: issue.fix,
+                            metaDesc: null,
+                            page: pg.url,
+                          })}>✨ Fix</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Data notice */}
+          <div className="issue-data-note">
+            🔍 <strong>These are demo issues.</strong> Connect Google Search Console and the PageSpeed Insights API (Phase 2) to see real technical issues specific to your site — including actual slow pages, real broken links and missing meta descriptions detected by crawling your live site.
           </div>
         </>}
       </div>
