@@ -447,7 +447,43 @@ const CSS = `
 .cro-list-item{display:flex;align-items:flex-start;gap:.5rem;font-size:.85rem;color:var(--text2);line-height:1.5;}
 .cro-list-item::before{content:"✓";color:var(--green);font-weight:700;flex-shrink:0;}
 .cro-list-item.remove::before{content:"✕";color:var(--red);}
-`;
+
+/* ── Reports tab ── */
+.reports-wrap{padding:2rem;display:flex;flex-direction:column;gap:2rem;}
+.reports-section{background:var(--s1);border:1px solid var(--border);border-radius:14px;overflow:hidden;}
+.reports-section-head{padding:1.25rem 1.5rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;}
+.reports-section-title{font-size:.95rem;font-weight:700;}
+.reports-section-sub{font-size:.78rem;color:var(--text2);margin-top:.15rem;}
+.reports-filter-row{display:flex;gap:.4rem;flex-wrap:wrap;}
+.reports-filter-btn{background:none;border:1px solid var(--border);border-radius:6px;padding:.3rem .75rem;font-family:var(--font);font-size:.75rem;font-weight:500;color:var(--text2);cursor:pointer;transition:all .15s;}
+.reports-filter-btn:hover{border-color:var(--blue);color:var(--blue);}
+.reports-filter-btn.high.active{background:var(--rdim);border-color:var(--red);color:var(--red);}
+.reports-filter-btn.medium.active{background:var(--adim);border-color:var(--amber);color:var(--amber);}
+.reports-filter-btn.low.active{background:var(--gdim);border-color:var(--green);color:var(--green);}
+.reports-filter-btn.all.active{background:var(--bdim);border-color:var(--blue);color:var(--blue);}
+.reports-charts-row{display:grid;grid-template-columns:240px 1fr;gap:0;align-items:stretch;}
+.reports-donut-wrap{padding:1.5rem;border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;}
+.reports-donut-legend{display:flex;flex-direction:column;gap:.5rem;width:100%;}
+.reports-legend-item{display:flex;align-items:center;gap:.6rem;font-size:.82rem;}
+.reports-legend-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+.reports-legend-label{flex:1;color:var(--text2);}
+.reports-legend-count{font-weight:700;font-family:var(--mono);color:var(--text);}
+.reports-bar-wrap{padding:1.5rem;overflow-x:auto;}
+.reports-bar-title{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:1rem;}
+.reports-site-row{display:grid;grid-template-columns:140px 1fr auto;gap:.75rem;align-items:center;margin-bottom:.85rem;}
+.reports-site-name{font-size:.8rem;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.reports-bar-track{height:20px;background:var(--s2);border-radius:4px;overflow:hidden;display:flex;}
+.reports-bar-total{font-size:.75rem;font-weight:700;font-family:var(--mono);color:var(--text2);white-space:nowrap;}
+.reports-perf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1px;background:var(--border);}
+.reports-perf-card{background:var(--s1);padding:1.25rem 1.5rem;}
+.reports-perf-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;margin-top:.75rem;}
+.reports-perf-kpi{background:var(--s2);border-radius:7px;padding:.5rem .65rem;}
+.reports-perf-kpi-val{font-size:1rem;font-weight:700;font-family:var(--mono);}
+.reports-perf-kpi-lbl{font-size:.65rem;color:var(--text3);margin-top:.15rem;}
+.reports-actions-list{display:flex;flex-direction:column;gap:.4rem;margin-top:.85rem;}
+.reports-action-item{display:flex;align-items:center;gap:.5rem;font-size:.78rem;color:var(--text2);background:var(--s2);border-radius:6px;padding:.4rem .65rem;}
+.reports-priority-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+@media(max-width:800px){.reports-charts-row{grid-template-columns:1fr;}.reports-donut-wrap{border-right:none;border-bottom:1px solid var(--border);}}`;
 
 // ─── Demo fallback data ───────────────────────────────────────
 const DEMO_KPI = [
@@ -1227,7 +1263,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
         ].map(n=>(
           <div key={n.id} className={`nav-item ${screen===n.id?"active":""}`}
             onClick={()=>{
-              if(["dashboard","siteDetail","content","admin"].includes(n.id)) setScreen(n.id);
+              if(["dashboard","siteDetail","content","admin","reports"].includes(n.id)) setScreen(n.id);
             }}>
             <span style={{fontSize:"0.9rem"}}>{n.icon}</span>
             {n.label}
@@ -2663,6 +2699,253 @@ IMPORTANT — Label internal links clearly so non-technical users know what they
   };
 
   // ─────────────────────────────────────────────────────────────
+  // REPORTS
+  // ─────────────────────────────────────────────────────────────
+  const ReportsTab = () => {
+    const [priorityFilter, setPriorityFilter] = useState("all");
+
+    // Build per-site data from live or demo data
+    const siteReports = sites.map(site => {
+      const isActive = site === selectedSite;
+      const kpis = isActive && siteData ? {
+        traffic:  siteData.totals.clicks.toLocaleString(),
+        position: siteData.totals.avgPosition,
+        ctr:      siteData.totals.avgCtr,
+        live: true,
+      } : {
+        traffic:  Math.floor(Math.random()*3000+500).toLocaleString(),
+        position: (Math.random()*20+5).toFixed(1),
+        ctr:      (Math.random()*5+1).toFixed(1) + "%",
+        live: false,
+      };
+
+      // Generate demo actions per site
+      const seed = site.length;
+      const actions = [
+        ...(seed%3===0 ? [{level:"high",   color:"#f03e5f", label:"HIGH IMPACT",  text:"Improve homepage title tag"}]  : []),
+        ...(seed%2===0 ? [{level:"high",   color:"#f03e5f", label:"HIGH IMPACT",  text:"Fix missing meta descriptions"}] : []),
+        {level:"medium", color:"#f5a623", label:"OPPORTUNITY", text:"Improve CTR on /services page"},
+        {level:"medium", color:"#f5a623", label:"OPPORTUNITY", text:"Add internal links to blog posts"},
+        {level:"low",    color:"#0fdb8a", label:"QUICK WIN",   text:"Add schema markup to homepage"},
+      ];
+      return { site, kpis, actions };
+    });
+
+    // Aggregate priority counts across all sites
+    const totals = siteReports.reduce((acc, sr) => {
+      sr.actions.forEach(a => {
+        if (a.level==="high")   acc.high++;
+        else if (a.level==="medium") acc.medium++;
+        else acc.low++;
+      });
+      return acc;
+    }, {high:0, medium:0, low:0});
+    const total = totals.high + totals.medium + totals.low;
+
+    // Donut chart via SVG
+    const DonutChart = () => {
+      const cx=90, cy=90, r=65, stroke=22;
+      const circ = 2 * Math.PI * r;
+      const segments = [
+        {label:"High",    count:totals.high,   color:"#f03e5f"},
+        {label:"Medium",  count:totals.medium, color:"#f5a623"},
+        {label:"Quick Win", count:totals.low,  color:"#0fdb8a"},
+      ];
+      let offset = 0;
+      const arcs = segments.map(seg => {
+        const pct  = total > 0 ? seg.count / total : 0;
+        const dash = pct * circ;
+        const gap  = circ - dash;
+        const arc  = { ...seg, dash, gap, offset: offset * circ };
+        offset += pct;
+        return arc;
+      });
+      return (
+        <svg width="180" height="180" viewBox="0 0 180 180">
+          {total === 0 ? (
+            <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--border)" strokeWidth={stroke}/>
+          ) : arcs.map((arc, i) => (
+            <circle key={i} cx={cx} cy={cy} r={r} fill="none"
+              stroke={arc.color} strokeWidth={stroke}
+              strokeDasharray={`${arc.dash} ${arc.gap}`}
+              strokeDashoffset={-arc.offset}
+              style={{transform:"rotate(-90deg)",transformOrigin:"50% 50%"}}/>
+          ))}
+          <text x={cx} y={cy-8}  textAnchor="middle" style={{fill:"var(--text)",fontSize:24,fontWeight:700,fontFamily:"var(--mono)"}}>{total}</text>
+          <text x={cx} y={cy+12} textAnchor="middle" style={{fill:"var(--text3)",fontSize:11,fontFamily:"system-ui"}}>total actions</text>
+        </svg>
+      );
+    };
+
+    // Filter actions for bar chart and list
+    const filteredSiteReports = siteReports.map(sr => ({
+      ...sr,
+      actions: priorityFilter==="all" ? sr.actions : sr.actions.filter(a=>a.level===priorityFilter)
+    }));
+
+    return (
+      <div className="reports-wrap">
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:"1rem"}}>
+          <div>
+            <div style={{fontSize:"1.1rem",fontWeight:700,letterSpacing:"-.03em"}}>Reports</div>
+            <div style={{fontSize:".82rem",color:"var(--text2)",marginTop:".2rem"}}>
+              {sites.length} site{sites.length!==1?"s":""} · {total} actions outstanding · {siteData?"Live data":"Demo data"}
+            </div>
+          </div>
+          {/* Priority filter */}
+          <div className="reports-filter-row">
+            {[
+              {id:"all",    label:"All"},
+              {id:"high",   label:"🔴 High"},
+              {id:"medium", label:"🟡 Medium"},
+              {id:"low",    label:"🟢 Quick Wins"},
+            ].map(f=>(
+              <button key={f.id} className={`reports-filter-btn ${f.id} ${priorityFilter===f.id?"active":""}`}
+                onClick={()=>setPriorityFilter(f.id)}>
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Section 1: Priority Overview ── */}
+        <div className="reports-section">
+          <div className="reports-section-head">
+            <div>
+              <div className="reports-section-title">Priority Overview</div>
+              <div className="reports-section-sub">Actions outstanding across all your sites</div>
+            </div>
+          </div>
+          <div className="reports-charts-row">
+            {/* Donut */}
+            <div className="reports-donut-wrap">
+              <DonutChart/>
+              <div className="reports-donut-legend">
+                {[
+                  {label:"High impact",  count:totals.high,   color:"#f03e5f"},
+                  {label:"Opportunity",  count:totals.medium, color:"#f5a623"},
+                  {label:"Quick wins",   count:totals.low,    color:"#0fdb8a"},
+                ].map(({label,count,color})=>(
+                  <div key={label} className="reports-legend-item">
+                    <div className="reports-legend-dot" style={{background:color}}/>
+                    <span className="reports-legend-label">{label}</span>
+                    <span className="reports-legend-count">{count}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Bar chart per site */}
+            <div className="reports-bar-wrap">
+              <div className="reports-bar-title">Actions by site</div>
+              {filteredSiteReports.map(({site, actions}) => {
+                const high   = actions.filter(a=>a.level==="high").length;
+                const medium = actions.filter(a=>a.level==="medium").length;
+                const low    = actions.filter(a=>a.level==="low").length;
+                const tot    = high + medium + low;
+                const pct    = (n,t) => t>0 ? `${(n/t*100).toFixed(0)}%` : "0%";
+                return (
+                  <div key={site} className="reports-site-row"
+                    style={{cursor:"pointer"}} onClick={()=>{setSelectedSite(site);setScreen("siteDetail");}}>
+                    <div className="reports-site-name" title={site}>
+                      {site===selectedSite && <span style={{color:"var(--green)",marginRight:.3+"rem"}}>●</span>}
+                      {site}
+                    </div>
+                    <div className="reports-bar-track">
+                      {high>0   && <div className="reports-bar-seg" style={{width:pct(high,tot),  background:"#f03e5f"}}/>}
+                      {medium>0 && <div className="reports-bar-seg" style={{width:pct(medium,tot),background:"#f5a623"}}/>}
+                      {low>0    && <div className="reports-bar-seg" style={{width:pct(low,tot),   background:"#0fdb8a"}}/>}
+                      {tot===0  && <div className="reports-bar-seg" style={{width:"100%",background:"var(--border)"}}/>}
+                    </div>
+                    <div className="reports-bar-total">{tot}</div>
+                  </div>
+                );
+              })}
+              {/* Legend */}
+              <div style={{display:"flex",gap:"1rem",marginTop:".5rem",flexWrap:"wrap"}}>
+                {[["#f03e5f","High"],["#f5a623","Medium"],["#0fdb8a","Quick Win"]].map(([c,l])=>(
+                  <div key={l} style={{display:"flex",alignItems:"center",gap:".35rem",fontSize:".72rem",color:"var(--text3)"}}>
+                    <div style={{width:10,height:10,borderRadius:2,background:c,flexShrink:0}}/>
+                    {l}
+                  </div>
+                ))}
+                <div style={{marginLeft:"auto",fontSize:".72rem",color:"var(--text3)"}}>Click a site to view its details →</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Section 2: Per-site Performance ── */}
+        <div className="reports-section">
+          <div className="reports-section-head">
+            <div>
+              <div className="reports-section-title">Site Performance</div>
+              <div className="reports-section-sub">Traffic, rankings and top actions per site</div>
+            </div>
+            {!siteData && (
+              <div style={{fontSize:".75rem",color:"var(--amber)",background:"var(--adim)",padding:".35rem .75rem",borderRadius:6}}>
+                ⚠ Connect Search Console for live data
+              </div>
+            )}
+          </div>
+          <div className="reports-perf-grid">
+            {filteredSiteReports.map(({site, kpis, actions}) => (
+              <div key={site} className="reports-perf-card">
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:".5rem"}}>
+                  <div style={{fontSize:".85rem",fontWeight:700,display:"flex",alignItems:"center",gap:".4rem"}}>
+                    {site===selectedSite && <span style={{color:"var(--green)",fontSize:".65rem"}}>● Live</span>}
+                    {site}
+                  </div>
+                  <button style={{background:"none",border:"1px solid var(--border)",borderRadius:6,padding:".25rem .6rem",fontFamily:"var(--font)",fontSize:".72rem",color:"var(--blue)",cursor:"pointer"}}
+                    onClick={()=>{setSelectedSite(site);setScreen("siteDetail");}}>
+                    View →
+                  </button>
+                </div>
+                <div className="reports-perf-kpis">
+                  {[
+                    {val:kpis.traffic,  lbl:"Clicks/mo"},
+                    {val:kpis.position, lbl:"Avg position"},
+                    {val:kpis.ctr,      lbl:"CTR"},
+                  ].map(({val,lbl})=>(
+                    <div key={lbl} className="reports-perf-kpi">
+                      <div className="reports-perf-kpi-val">{val}</div>
+                      <div className="reports-perf-kpi-lbl">{lbl}</div>
+                    </div>
+                  ))}
+                </div>
+                {/* Top actions for this site filtered */}
+                <div className="reports-actions-list">
+                  {actions.length===0
+                    ? <div style={{fontSize:".75rem",color:"var(--green)"}}>✓ No {priorityFilter==="all"?"":priorityFilter+" "}actions outstanding</div>
+                    : actions.slice(0,3).map((a,i)=>(
+                        <div key={i} className="reports-action-item">
+                          <div className="reports-priority-dot" style={{background:a.color}}/>
+                          {a.text}
+                        </div>
+                      ))
+                  }
+                  {actions.length>3 && (
+                    <div style={{fontSize:".72rem",color:"var(--text3)",paddingLeft:".65rem"}}>
+                      +{actions.length-3} more — <span style={{color:"var(--blue)",cursor:"pointer"}} onClick={()=>{setSelectedSite(site);setScreen("siteDetail");}}>view all</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Demo notice */}
+        {!siteData && (
+          <div style={{background:"var(--bdim)",border:"1px solid rgba(77,123,255,.15)",borderRadius:8,padding:".75rem 1rem",fontSize:".78rem",color:"var(--blue)"}}>
+            📊 Performance data is estimated. Connect Google Search Console to see real traffic, positions and CTR for each site.
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ─────────────────────────────────────────────────────────────
   // ROOT
   // ─────────────────────────────────────────────────────────────
   return (
@@ -2675,6 +2958,7 @@ IMPORTANT — Label internal links clearly so non-technical users know what they
           {screen==="dashboard"  && <DashboardContent/>}
           {screen==="siteDetail" && <SiteDetailContent/>}
           {screen==="content"    && <ContentGenerator/>}
+          {screen==="reports"    && <ReportsTab/>}
           {screen==="admin"      && isAdmin && <AdminPanel/>}
           {screen==="admin"      && !isAdmin && <div className="content" style={{textAlign:"center",paddingTop:"4rem",color:"var(--text3)"}}>Access denied.</div>}
         </div>
