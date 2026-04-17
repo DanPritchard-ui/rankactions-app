@@ -814,82 +814,78 @@ export default function RankActions() {
   // Fix modal
   // ─────────────────────────────────────────────────────────────
   const openModal = async (fix) => {
-    // Gate: free users get 5 AI fixes per month
-    if (!isPro && aiFixCount >= AI_FIX_LIMIT) {
-      setShowUpgrade(true);
-      return;
-    }
+    if (!isPro && aiFixCount >= AI_FIX_LIMIT) { setShowUpgrade(true); return; }
     if (!isPro) trackAiFixUsage();
     setModal(fix); setModalData(null); setModalLoading(true);
     try {
-      // Build rich, page-specific context
-      const topKws     = siteData?.keywords?.slice(0,8).map(k=>`"${k.keyword}" (pos #${k.position}, ${k.impressions} impressions/mo)`).join(", ") || "unknown";
-      const keyword    = fix.title.match(/"([^"]+)"/)?.[1] || fix.current?.replace(/Not fully optimised for |"/g,"") || "";
-      const pageUrl    = fix.page ? `https://${selectedSite}${fix.page}` : `https://${selectedSite}`;
-      const allKws     = siteData?.keywords?.map(k=>k.keyword).join(", ") || "";
+      const category    = fix.fixCategory || null;
+      const pageUrl     = fix.page ? `https://${selectedSite}${fix.page}` : `https://${selectedSite}`;
+      const topKwsShort = siteData?.keywords?.slice(0,5).map(k=>k.keyword).join(", ") || "not connected";
+      const topKwsFull  = siteData?.keywords?.slice(0,8).map(k=>`"${k.keyword}" (pos #${k.position}, ${k.impressions} impressions/mo)`).join(", ") || "unknown";
+      const allKws      = siteData?.keywords?.map(k=>k.keyword).join(", ") || "";
+      const keyword     = fix.title.match(/"([^"]+)"/)?.[1] || fix.current?.replace(/Not fully optimised for |"/g,"") || "";
       const siteContext = siteData
-        ? `Site: ${selectedSite}. All ranking keywords: ${allKws}. Top keywords: ${topKws}. Avg position: ${siteData.totals?.avgPosition}, CTR: ${siteData.totals?.avgCtr}.`
+        ? `Site: ${selectedSite}. All ranking keywords: ${allKws}. Top keywords: ${topKwsFull}. Avg position: ${siteData.totals?.avgPosition}, CTR: ${siteData.totals?.avgCtr}.`
         : `Site: ${selectedSite}.`;
 
-      const category = fix.fixCategory || "meta";
-      const pageUrl  = fix.page ? `https://${selectedSite}${fix.page}` : `https://${selectedSite}`;
-      const topKws   = siteData?.keywords?.slice(0,5).map(k=>k.keyword).join(", ") || "not connected";
-
+      // ── Technical issue prompts (Issues tab) ───────────────────
       const technicalPrompts = {
-        meta: `You are a senior SEO copywriter writing a meta description for a specific page.
+        meta: `You are a senior SEO copywriter writing copy for a specific page.
 Site: ${selectedSite}
 Page: ${pageUrl}
-Top ranking keywords for this site: ${topKws}
-Return ONLY valid JSON — no markdown, no explanation, no preamble:
+Top ranking keywords for this site: ${topKwsShort}
+Return ONLY valid JSON — no markdown, no preamble:
 {
   "option1": "ready-to-use title tag — 50-60 chars, keyword-rich, compelling",
   "option2": "alternative title tag — different angle, still 50-60 chars",
   "metaDesc": "ready-to-publish meta description — 145-155 chars, includes primary keyword, ends with a soft CTA",
   "tip": "one specific improvement to implement on this page, max 12 words"
 }`,
-        broken_links: `You are an SEO specialist fixing broken internal links on a website.
+        broken_links: `You are an SEO specialist fixing a broken internal link.
 Site: ${selectedSite}
 Page containing the broken link: ${pageUrl}
-Broken link detail: ${fix.current}
-Top ranking keywords: ${topKws}
-Suggest what the broken link should be replaced with based on common site structure.
+Broken link issue: ${fix.current}
+Top ranking keywords on this site: ${topKwsShort}
 Return ONLY valid JSON — no markdown, no explanation:
 {
-  "brokenLink": "the exact broken URL path from the issue detail",
-  "suggestedReplacement": "the most likely correct URL to replace it with",
-  "alternativeReplacement": "a second option if the first doesn't exist",
-  "anchorText": "better anchor text to use for this link",
-  "tip": "one sentence explaining why this fix matters for SEO, max 12 words"
+  "brokenLink": "exact broken URL path extracted from the issue",
+  "suggestedReplacement": "most likely correct URL to replace it with on ${selectedSite}",
+  "alternativeReplacement": "second alternative URL if the first does not exist",
+  "anchorText": "improved anchor text to use for this link",
+  "tip": "one sentence on why fixing this matters for SEO, max 12 words"
 }`,
-        pagespeed: `You are a web performance specialist fixing slow page speed issues.
+        pagespeed: `You are a web performance specialist fixing slow page speed.
 Site: ${selectedSite}
 Page: ${pageUrl}
-Issue detail: ${fix.current}
+Issue: ${fix.current}
 Return ONLY valid JSON — no markdown, no explanation:
 {
-  "quickestFix": "the single fastest thing to implement today to improve load time",
-  "step1": "first specific action to take with clear instruction",
-  "step2": "second specific action to take with clear instruction",
-  "step3": "third specific action to take with clear instruction",
+  "quickestFix": "single fastest improvement to make today — be specific",
+  "step1": "first action to take — specific and actionable",
+  "step2": "second action to take — specific and actionable",
+  "step3": "third action to take — specific and actionable",
   "expectedImprovement": "realistic load time improvement if all steps are done",
-  "tip": "one free tool to verify the improvement after fixing, max 12 words"
+  "tip": "one free tool to verify page speed after fixing, max 12 words"
 }`,
-        schema: `You are a technical SEO specialist adding schema markup to a web page.
+        schema: `You are a technical SEO specialist adding schema markup.
 Site: ${selectedSite}
 Page: ${pageUrl}
-Schema type needed: ${fix.current}
+Schema needed: ${fix.current}
 Return ONLY valid JSON — no markdown, no explanation:
 {
-  "schemaType": "the exact schema @type to use",
-  "schemaCode": "complete ready-to-paste JSON-LD script tag with realistic placeholder values filled in for ${selectedSite}",
-  "whereToPaste": "exactly where in the HTML to add this code",
-  "tip": "one additional property to add to this schema for better results, max 12 words"
+  "schemaType": "exact schema @type to implement",
+  "schemaCode": "complete ready-to-paste <script type=\\"application/ld+json\\"> block with values filled in for ${selectedSite}",
+  "whereToPaste": "exactly where in the page HTML to add this script tag",
+  "tip": "one key property to add to improve this schema further, max 12 words"
 }`,
       };
 
+      // Use fixCategory to determine prompt — more reliable than fix.type
+      const isTechnicalFix = !!category && !!technicalPrompts[category];
+
       const txt = await callClaude(
-        fix.type === "Technical"
-          ? technicalPrompts[category] || technicalPrompts.meta
+        isTechnicalFix
+          ? technicalPrompts[category]
           : `You are a senior SEO copywriter improving a SPECIFIC page on a real website.
 ${siteContext}
 Page being optimised: ${pageUrl}
@@ -910,17 +906,18 @@ Return ONLY valid JSON — no markdown:
   "metaDesc": "specific meta description containing ${keyword} — exactly 145-155 chars",
   "tip": "one specific next step for this exact page and keyword, max 12 words"
 }`,
-        fix.type === "Technical"
-          ? `Technical SEO specialist. Return valid JSON only. No markdown. Every field must contain ONLY ready-to-use copy or code — never include problem descriptions or explanations in your values.`
-          : `Senior SEO copywriter. Return valid JSON only. No markdown. Be SPECIFIC to the keyword and page — never generic.`
+        isTechnicalFix
+          ? "Technical SEO specialist. Return valid JSON only. No markdown. Return ONLY ready-to-use values — never include problem descriptions or explanations in JSON field values."
+          : "Senior SEO copywriter. Return valid JSON only. No markdown. Be SPECIFIC to the keyword and page — never generic."
       );
       setModalData(JSON.parse(txt.replace(/```json|```/g,"").trim()));
-    } catch {
+    } catch(e) {
+      console.error("openModal error:", e);
       setModalData({
-        option1: `${keyword} | Professional Services | ${selectedSite}`,
-        option2: `Expert ${keyword} Support — Get Help Today`,
-        metaDesc: `Professional ${keyword} services. Expert guidance and support for businesses. Contact us today.`,
-        tip: `Add "${keyword}" to your H1 and first paragraph`
+        option1: `${selectedSite} | Professional Services`,
+        option2: `Expert Services — Get in Touch Today`,
+        metaDesc: `Professional services from ${selectedSite}. Expert guidance for businesses. Contact us today to find out more.`,
+        tip: "Connect Google Search Console for keyword-specific suggestions"
       });
     }
     setModalLoading(false);
@@ -1615,8 +1612,8 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
   // FIX MODAL
   // ─────────────────────────────────────────────────────────────
   const FixModal = () => {
-    const category = modal.fixCategory || "meta";
-    const isTechnical = modal.type === "Technical";
+    const category    = modal.fixCategory || null;
+    const isTechnical = !!category;
 
     const OptCard = ({label, value, id}) => (
       <div className="option-card">
@@ -1708,7 +1705,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
                   )}
                 </>}
 
-                {/* ── Meta / SEO copy (default) ── */}
+                {/* ── Meta / SEO copy (default — no fixCategory or meta category) ── */}
                 {(!isTechnical || category==="meta") && <>
                   {[
                     {key:"option1", label:"Option 1", text:modalData.option1},
