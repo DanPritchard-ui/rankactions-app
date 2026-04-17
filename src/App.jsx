@@ -490,45 +490,49 @@ const DEMO_SEO = [
 const ISSUES_DATA = [
   {
     t:"error", icon:"⚠", label:"Missing meta descriptions",
+    fixCategory:"meta",
     summary:"4 pages have no meta description — Google writes its own, often poorly.",
     fix:"Write a unique 145-155 character meta description for each page to improve click-through rate.",
     pages:[
-      { url:"/services/",       detail:"No meta description set",                      priority:"high"   },
-      { url:"/about/",          detail:"No meta description set",                      priority:"high"   },
-      { url:"/contact/",        detail:"No meta description set",                      priority:"medium" },
-      { url:"/case-studies/",   detail:"No meta description set",                      priority:"medium" },
+      { url:"/services/",     detail:"No meta description set",                     priority:"high"   },
+      { url:"/about/",        detail:"No meta description set",                     priority:"high"   },
+      { url:"/contact/",      detail:"No meta description set",                     priority:"medium" },
+      { url:"/case-studies/", detail:"No meta description set",                     priority:"medium" },
     ]
   },
   {
     t:"warning", icon:"⏱", label:"Slow page speed",
+    fixCategory:"pagespeed",
     summary:"2 pages load slowly on mobile — Google uses mobile speed as a ranking factor.",
     fix:"Compress images, enable lazy loading and remove unused JavaScript to improve load time.",
     pages:[
-      { url:"/services/",       detail:"Load time: 4.8s on mobile · Images not compressed",  priority:"high"   },
-      { url:"/",                detail:"Load time: 3.9s on mobile · Render-blocking JS",      priority:"medium" },
+      { url:"/services/", detail:"Load time: 4.8s on mobile · Images not compressed", priority:"high"   },
+      { url:"/",          detail:"Load time: 3.9s on mobile · Render-blocking JS",     priority:"medium" },
     ]
   },
   {
     t:"warning", icon:"🔗", label:"Broken internal links",
+    fixCategory:"broken_links",
     summary:"3 internal links point to pages that no longer exist — this wastes link authority.",
     fix:"Update each broken link to point to the correct current page, or remove it entirely.",
     pages:[
-      { url:"/blog/",           detail:'Link to "/old-services/" returns 404',          priority:"high"   },
-      { url:"/about/",          detail:'Link to "/team/" returns 404',                  priority:"medium" },
-      { url:"/contact/",        detail:'Link to "/pricing-old/" returns 404',           priority:"medium" },
+      { url:"/blog/",    detail:'Link to "/old-services/" returns 404',   priority:"high"   },
+      { url:"/about/",   detail:'Link to "/team/" returns 404',           priority:"medium" },
+      { url:"/contact/", detail:'Link to "/pricing-old/" returns 404',    priority:"medium" },
     ]
   },
   {
     t:"info", icon:"📋", label:"Missing schema markup",
+    fixCategory:"schema",
     summary:"6 pages have no structured data — schema helps Google display rich results.",
     fix:"Add LocalBusiness, Article or FAQ schema to help Google understand your pages better.",
     pages:[
-      { url:"/",                detail:"Missing: LocalBusiness schema",                 priority:"high"   },
-      { url:"/services/",       detail:"Missing: Service schema",                       priority:"high"   },
-      { url:"/about/",          detail:"Missing: Organization schema",                  priority:"medium" },
-      { url:"/blog/",           detail:"Missing: Blog / Article schema",                priority:"medium" },
-      { url:"/contact/",        detail:"Missing: ContactPage schema",                   priority:"low"    },
-      { url:"/faq/",            detail:"Missing: FAQPage schema",                       priority:"low"    },
+      { url:"/",          detail:"Missing: LocalBusiness schema",   priority:"high"   },
+      { url:"/services/", detail:"Missing: Service schema",         priority:"high"   },
+      { url:"/about/",    detail:"Missing: Organization schema",    priority:"medium" },
+      { url:"/blog/",     detail:"Missing: Blog / Article schema",  priority:"medium" },
+      { url:"/contact/",  detail:"Missing: ContactPage schema",     priority:"low"    },
+      { url:"/faq/",      detail:"Missing: FAQPage schema",         priority:"low"    },
     ]
   },
 ];
@@ -827,52 +831,88 @@ export default function RankActions() {
         ? `Site: ${selectedSite}. All ranking keywords: ${allKws}. Top keywords: ${topKws}. Avg position: ${siteData.totals?.avgPosition}, CTR: ${siteData.totals?.avgCtr}.`
         : `Site: ${selectedSite}.`;
 
-      const txt = await callClaude(
-        fix.type === "Technical"
-        // ── Technical issue fix (from Issues tab) ──────────────────
-        ? `You are a senior SEO copywriter writing ready-to-publish copy for a specific page.
+      const category = fix.fixCategory || "meta";
+      const pageUrl  = fix.page ? `https://${selectedSite}${fix.page}` : `https://${selectedSite}`;
+      const topKws   = siteData?.keywords?.slice(0,5).map(k=>k.keyword).join(", ") || "not connected";
 
+      const technicalPrompts = {
+        meta: `You are a senior SEO copywriter writing a meta description for a specific page.
 Site: ${selectedSite}
-Page: ${fix.page ? `https://${selectedSite}${fix.page}` : `https://${selectedSite}`}
-Issue to fix: ${fix.field}
-Page context: ${fix.current}
-Keywords ranking for this site: ${siteData?.keywords?.slice(0,5).map(k=>k.keyword).join(", ") || "not connected"}
-
-CRITICAL — return ONLY finished, publishable copy. No explanations. No "here is a..." preamble. No mention of the issue in the suggestions. Just the actual copy someone can paste directly into their CMS.
-
-Return ONLY valid JSON — no markdown:
+Page: ${pageUrl}
+Top ranking keywords for this site: ${topKws}
+Return ONLY valid JSON — no markdown, no explanation, no preamble:
 {
   "option1": "ready-to-use title tag — 50-60 chars, keyword-rich, compelling",
   "option2": "alternative title tag — different angle, still 50-60 chars",
-  "metaDesc": "ready-to-publish meta description — exactly 145-155 chars, includes primary keyword, ends with a soft CTA",
-  "tip": "one specific next step to implement immediately, max 12 words"
-}`
-        // ── SEO keyword fix (from SEO Opportunities) ───────────────
-        : `You are a senior SEO copywriter improving a SPECIFIC page on a real website.
+  "metaDesc": "ready-to-publish meta description — 145-155 chars, includes primary keyword, ends with a soft CTA",
+  "tip": "one specific improvement to implement on this page, max 12 words"
+}`,
+        broken_links: `You are an SEO specialist fixing broken internal links on a website.
+Site: ${selectedSite}
+Page containing the broken link: ${pageUrl}
+Broken link detail: ${fix.current}
+Top ranking keywords: ${topKws}
+Suggest what the broken link should be replaced with based on common site structure.
+Return ONLY valid JSON — no markdown, no explanation:
+{
+  "brokenLink": "the exact broken URL path from the issue detail",
+  "suggestedReplacement": "the most likely correct URL to replace it with",
+  "alternativeReplacement": "a second option if the first doesn't exist",
+  "anchorText": "better anchor text to use for this link",
+  "tip": "one sentence explaining why this fix matters for SEO, max 12 words"
+}`,
+        pagespeed: `You are a web performance specialist fixing slow page speed issues.
+Site: ${selectedSite}
+Page: ${pageUrl}
+Issue detail: ${fix.current}
+Return ONLY valid JSON — no markdown, no explanation:
+{
+  "quickestFix": "the single fastest thing to implement today to improve load time",
+  "step1": "first specific action to take with clear instruction",
+  "step2": "second specific action to take with clear instruction",
+  "step3": "third specific action to take with clear instruction",
+  "expectedImprovement": "realistic load time improvement if all steps are done",
+  "tip": "one free tool to verify the improvement after fixing, max 12 words"
+}`,
+        schema: `You are a technical SEO specialist adding schema markup to a web page.
+Site: ${selectedSite}
+Page: ${pageUrl}
+Schema type needed: ${fix.current}
+Return ONLY valid JSON — no markdown, no explanation:
+{
+  "schemaType": "the exact schema @type to use",
+  "schemaCode": "complete ready-to-paste JSON-LD script tag with realistic placeholder values filled in for ${selectedSite}",
+  "whereToPaste": "exactly where in the HTML to add this code",
+  "tip": "one additional property to add to this schema for better results, max 12 words"
+}`,
+      };
 
+      const txt = await callClaude(
+        fix.type === "Technical"
+          ? technicalPrompts[category] || technicalPrompts.meta
+          : `You are a senior SEO copywriter improving a SPECIFIC page on a real website.
 ${siteContext}
 Page being optimised: ${pageUrl}
 The SPECIFIC keyword this page needs to rank for: "${keyword}"
 Current ranking position: ${fix.m1}
 Goal: ${fix.m2}
 Fix type: ${fix.type} — ${fix.field}
-
 CRITICAL RULES:
 - Every suggestion MUST include the exact phrase "${keyword}"
-- Write as if you know this specific website and page
-- No generic business language — make it specific to "${keyword}"
+- No generic language — make it specific to "${keyword}"
 - Title tags: 50-60 characters maximum
 - Meta descriptions: 145-155 characters maximum
 - Return ONLY ready-to-use copy — no explanations, no preamble
-
-Return ONLY valid JSON — no markdown, no explanation:
+Return ONLY valid JSON — no markdown:
 {
   "option1": "specific title/heading containing ${keyword}",
   "option2": "alternative specific title/heading containing ${keyword}",
-  "metaDesc": "specific meta description for this page containing ${keyword} — exactly 145-155 chars",
+  "metaDesc": "specific meta description containing ${keyword} — exactly 145-155 chars",
   "tip": "one specific next step for this exact page and keyword, max 12 words"
 }`,
-        "Senior SEO copywriter. Return valid JSON only. No markdown. Every field must contain ONLY ready-to-use copy — never include the problem description or any explanation in your suggestions."
+        fix.type === "Technical"
+          ? `Technical SEO specialist. Return valid JSON only. No markdown. Every field must contain ONLY ready-to-use copy or code — never include problem descriptions or explanations in your values.`
+          : `Senior SEO copywriter. Return valid JSON only. No markdown. Be SPECIFIC to the keyword and page — never generic.`
       );
       setModalData(JSON.parse(txt.replace(/```json|```/g,"").trim()));
     } catch {
@@ -1551,6 +1591,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
                             recommended: issue.fix,
                             metaDesc: null,
                             page: pg.url,
+                            fixCategory: issue.fixCategory,
                           })}>✨ Fix</button>
                         </div>
                       ))}
@@ -1573,31 +1614,111 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
   // ─────────────────────────────────────────────────────────────
   // FIX MODAL
   // ─────────────────────────────────────────────────────────────
-  const FixModal = () => (
+  const FixModal = () => {
+    const category = modal.fixCategory || "meta";
+    const isTechnical = modal.type === "Technical";
+
+    const OptCard = ({label, value, id}) => (
+      <div className="option-card">
+        <div className="option-num">{label}</div>
+        <div className="option-text">{value}</div>
+        <div className="option-actions">
+          <button className={`opt-btn ${copiedId===id?"copied":""}`} onClick={()=>copyText(value,id)}>
+            {copiedId===id?"✓ Copied":"📋 Copy"}
+          </button>
+        </div>
+      </div>
+    );
+
+    const StepCard = ({step, text}) => (
+      <div className="option-card" style={{display:"flex",gap:".75rem",alignItems:"flex-start"}}>
+        <div style={{background:"var(--blue)",color:"#fff",borderRadius:"50%",width:22,height:22,display:"flex",alignItems:"center",justifyContent:"center",fontSize:".72rem",fontWeight:700,flexShrink:0}}>{step}</div>
+        <div style={{flex:1}}>
+          <div className="option-text">{text}</div>
+        </div>
+      </div>
+    );
+
+    return (
     <div className="overlay" onClick={e=>e.target===e.currentTarget&&setModal(null)}>
       <div className="modal">
         <div className="modal-head">
-          <div><div className="modal-h">{modal.title}</div><div className="modal-sub">{modal.field} — AI-generated alternatives</div></div>
+          <div>
+            <div className="modal-h">{modal.title}</div>
+            <div className="modal-sub">
+              {isTechnical
+                ? category==="broken_links" ? "Link fix suggestions"
+                : category==="pagespeed"    ? "Performance improvements"
+                : category==="schema"       ? "Schema markup code"
+                : "SEO copy suggestions"
+              : `${modal.field} — AI-generated alternatives`}
+            </div>
+          </div>
           <button className="modal-close" onClick={()=>setModal(null)}>✕</button>
         </div>
         <div className="modal-content">
-          <div className="modal-section-label">Current</div>
+          <div className="modal-section-label">Issue</div>
           <div className="current-box"><div className="current-label">{modal.field}</div><div className="current-val">{modal.current}</div></div>
           <div className="modal-section-label">AI Suggestions</div>
           {modalLoading
-            ? <div className="loading-center"><div className="spinner"/><span>Generating alternatives…</span></div>
+            ? <div className="loading-center"><div className="spinner"/><span>Generating suggestions…</span></div>
             : modalData && <>
-                {[{key:"option1",label:"Option 1",text:modalData.option1},{key:"option2",label:"Option 2",text:modalData.option2},...(modalData.metaDesc?[{key:"meta",label:"Meta Description",text:modalData.metaDesc}]:[])].map(({key,label,text})=>(
-                  <div key={key} className="option-card">
-                    <div className="option-num">{label}</div>
-                    <div className="option-text">{text}</div>
-                    <div className="option-actions">
-                      <button className={`opt-btn ${copiedId===key?"copied":""}`} onClick={()=>copyText(text,key)}>
-                        {copiedId===key?"✓ Copied":"📋 Copy"}
+                {/* ── Broken links ── */}
+                {isTechnical && category==="broken_links" && <>
+                  <OptCard label="Replace broken link with" value={modalData.suggestedReplacement} id="link1"/>
+                  <OptCard label="Alternative replacement" value={modalData.alternativeReplacement} id="link2"/>
+                  <OptCard label="Better anchor text to use" value={modalData.anchorText} id="anchor"/>
+                </>}
+
+                {/* ── Page speed ── */}
+                {isTechnical && category==="pagespeed" && <>
+                  <div className="option-card" style={{background:"var(--gdim)",border:"1px solid rgba(15,219,138,.2)"}}>
+                    <div className="option-num" style={{color:"var(--green)"}}>Quickest fix</div>
+                    <div className="option-text">{modalData.quickestFix}</div>
+                  </div>
+                  <StepCard step={1} text={modalData.step1}/>
+                  <StepCard step={2} text={modalData.step2}/>
+                  <StepCard step={3} text={modalData.step3}/>
+                  {modalData.expectedImprovement && (
+                    <div className="option-card">
+                      <div className="option-num">Expected improvement</div>
+                      <div className="option-text">{modalData.expectedImprovement}</div>
+                    </div>
+                  )}
+                </>}
+
+                {/* ── Schema ── */}
+                {isTechnical && category==="schema" && <>
+                  <div className="option-card">
+                    <div className="option-num">Schema type: {modalData.schemaType}</div>
+                    <div style={{background:"#0d1117",borderRadius:7,padding:".85rem",marginTop:".5rem",overflowX:"auto"}}>
+                      <pre style={{fontFamily:"var(--mono)",fontSize:".72rem",color:"#a8d8d0",lineHeight:1.65,whiteSpace:"pre-wrap",wordBreak:"break-word",margin:0}}>{modalData.schemaCode}</pre>
+                    </div>
+                    <div className="option-actions" style={{marginTop:".65rem"}}>
+                      <button className={`opt-btn ${copiedId==="schema"?"copied":""}`} onClick={()=>copyText(modalData.schemaCode,"schema")}>
+                        {copiedId==="schema"?"✓ Copied":"📋 Copy code"}
                       </button>
                     </div>
                   </div>
-                ))}
+                  {modalData.whereToPaste && (
+                    <div className="option-card">
+                      <div className="option-num">Where to paste this</div>
+                      <div className="option-text">{modalData.whereToPaste}</div>
+                    </div>
+                  )}
+                </>}
+
+                {/* ── Meta / SEO copy (default) ── */}
+                {(!isTechnical || category==="meta") && <>
+                  {[
+                    {key:"option1", label:"Option 1", text:modalData.option1},
+                    {key:"option2", label:"Option 2", text:modalData.option2},
+                    ...(modalData.metaDesc?[{key:"meta",label:"Meta Description",text:modalData.metaDesc}]:[])
+                  ].map(({key,label,text})=>(
+                    <OptCard key={key} label={label} value={text} id={key}/>
+                  ))}
+                </>}
+
                 {modalData.tip && <div className="tip-box">💡 {modalData.tip}</div>}
               </>
           }
@@ -1611,7 +1732,8 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
         </div>
       </div>
     </div>
-  );
+    );
+  };
 
   // ─────────────────────────────────────────────────────────────
   // CRO FIX MODAL
