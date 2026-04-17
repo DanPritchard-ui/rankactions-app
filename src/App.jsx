@@ -693,7 +693,8 @@ export default function RankActions() {
     const clerkId = user.id;
     const userId  = localStorage.getItem("rankactions_userId") || "";
 
-    fetch(`${WORKER_URL}/api/user/profile?clerkId=${encodeURIComponent(clerkId)}${userId?`&userId=${encodeURIComponent(userId)}`:""}`)
+    const profileUrl = `${WORKER_URL}/api/user/profile?clerkId=${encodeURIComponent(clerkId)}` + (userId ? `&userId=${encodeURIComponent(userId)}` : "");
+    fetch(profileUrl)
       .then(r => r.json())
       .then(data => {
         if (data.found) {
@@ -1722,7 +1723,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
         squarespace:["Log in and hover over the page in the Pages panel","Click the gear icon (⚙) next to the page name","Click the SEO tab","Paste the new description into 'SEO Description'","Update the 'SEO Title' for the title tag","Click Save"],
         wix:["Open the editor and click the Pages icon in the left panel","Hover over the page → three dots (...) → SEO Settings","Paste the new description into 'Meta Description'","Update 'Page Title' for the title tag","Click Save and publish"],
         shopify:["Go to Online Store → Pages → click the page to edit","Scroll down to 'Search engine listing preview' → click 'Edit website SEO'","Paste the new description into 'Meta description'","Update 'Page title' for the title tag","Click Save"],
-        other:["Find the page in your CMS and open the SEO or Page Settings section","Paste the new description into the Meta Description field","Update the page title / SEO title field","Save and publish","If editing HTML directly: find <meta name="description" content="..."> in the <head> and update the content value"],
+        other:["Find the page in your CMS and open the SEO or Page Settings section","Paste the new description into the Meta Description field","Update the page title / SEO title field","Save and publish","If editing HTML directly: find the meta description tag in the page head and update the content value"],
       },
       broken_links:{
         wordpress:["Install the free 'Broken Link Checker' plugin (Plugins → Add New) — it will list all broken links","To fix manually: edit the page shown above (Pages → Edit)","Find the linked text → click it → press the link icon","Replace the broken URL with the suggested replacement above","Click Update to save"],
