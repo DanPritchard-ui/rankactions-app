@@ -7,7 +7,7 @@ import {
 // ─────────────────────────────────────────────────────────────
 // ⚙️  CONFIG — paste your Worker URL here after deploying it
 // ─────────────────────────────────────────────────────────────
-const WORKER_URL = "https://growthos-api.growthos.workers.dev";
+const WORKER_URL = import.meta.env.VITE_WORKER_URL || "https://growthos-api.growthos.workers.dev";
 
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -955,30 +955,67 @@ export default function RankActions() {
         priority: "medium",
       })) || [];
 
-    const metaPages = lowCtrPages.length > 0 ? lowCtrPages : [
-      { url:`/services/`,     detail:"No meta description set",     priority:"high"   },
-      { url:`/about/`,        detail:"No meta description set",     priority:"high"   },
-      { url:`/contact/`,      detail:"No meta description set",     priority:"medium" },
-      { url:`/blog/`,         detail:"No meta description set",     priority:"medium" },
-    ];
+    // Use real pages from GSC for schema and broken links if available
+    const realPages = data?.pages?.slice(0, 6)?.map(p => ({
+      url:      p.page.replace(/^https?:\/\/[^/]+/, "") || "/",
+      clicks:   p.clicks,
+      impressions: p.impressions,
+    })) || [];
 
-    const speedPages = slowPages.length > 0 ? slowPages : [
-      { url:`/`,          detail:"Load time unverified — connect PageSpeed API", priority:"medium" },
-      { url:`/services/`, detail:"Load time unverified — connect PageSpeed API", priority:"medium" },
-    ];
+    const metaPages = lowCtrPages.length > 0 ? lowCtrPages : (
+      realPages.length > 0
+        ? realPages.slice(0, 4).map(p => ({ url: p.url, detail: "No meta description set", priority: p.clicks > 50 ? "high" : "medium" }))
+        : [
+            { url:`/services/`,     detail:"No meta description set",     priority:"high"   },
+            { url:`/about/`,        detail:"No meta description set",     priority:"high"   },
+            { url:`/contact/`,      detail:"No meta description set",     priority:"medium" },
+            { url:`/blog/`,         detail:"No meta description set",     priority:"medium" },
+          ]
+    );
 
-    // Broken links and schema are always demo until a crawler is connected
-    const brokenPages = [
-      { url:`/blog/`,    detail:`Link to "/${site}/old-page/" may return 404 — verify manually`, priority:"medium" },
-      { url:`/about/`,   detail:`Link to "/team/" may return 404 — verify manually`,              priority:"low"    },
-    ];
+    const speedPages = slowPages.length > 0 ? slowPages : (
+      realPages.length > 0
+        ? realPages.slice(0, 2).map(p => ({ url: p.url, detail: "Load time unverified — connect PageSpeed API for real data", priority: "medium" }))
+        : [
+            { url:`/`,          detail:"Load time unverified — connect PageSpeed API", priority:"medium" },
+            { url:`/services/`, detail:"Load time unverified — connect PageSpeed API", priority:"medium" },
+          ]
+    );
 
-    const schemaPages = [
-      { url:`/`,          detail:`Missing: LocalBusiness schema`,  priority:"high"   },
-      { url:`/services/`, detail:`Missing: Service schema`,        priority:"high"   },
-      { url:`/about/`,    detail:`Missing: Organization schema`,   priority:"medium" },
-      { url:`/contact/`,  detail:`Missing: ContactPage schema`,    priority:"low"    },
-    ];
+    const brokenPages = realPages.length > 0
+      ? realPages.slice(0, 2).map(p => ({
+          url:      p.url,
+          detail:   `Check internal links on this page — verify manually or connect a crawler`,
+          priority: "medium",
+        }))
+      : [
+          { url:`/blog/`,    detail:`Check internal links — verify manually`, priority:"medium" },
+          { url:`/about/`,   detail:`Check internal links — verify manually`, priority:"low"    },
+        ];
+
+    const schemaPages = realPages.length > 0
+      ? realPages.slice(0, 4).map((p, i) => {
+          const path = p.url.toLowerCase();
+          const schemaType = path === "/" || path === ""           ? "LocalBusiness schema"
+                           : path.includes("service")             ? "Service schema"
+                           : path.includes("about")               ? "Organization schema"
+                           : path.includes("contact")             ? "ContactPage schema"
+                           : path.includes("blog") || path.includes("post") ? "Article schema"
+                           : path.includes("faq")                 ? "FAQPage schema"
+                           : path.includes("product")             ? "Product schema"
+                           : "WebPage schema";
+          return {
+            url:      p.url,
+            detail:   `Missing: ${schemaType}`,
+            priority: i < 2 ? "high" : "medium",
+          };
+        })
+      : [
+          { url:`/`,          detail:`Missing: LocalBusiness schema`,  priority:"high"   },
+          { url:`/services/`, detail:`Missing: Service schema`,        priority:"high"   },
+          { url:`/about/`,    detail:`Missing: Organization schema`,   priority:"medium" },
+          { url:`/contact/`,  detail:`Missing: ContactPage schema`,    priority:"low"    },
+        ];
 
     return [
       {
