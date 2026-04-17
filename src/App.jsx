@@ -1685,25 +1685,92 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
                 </>}
 
                 {/* ── Schema ── */}
-                {isTechnical && category==="schema" && <>
-                  <div className="option-card">
-                    <div className="option-num">Schema type: {modalData.schemaType}</div>
-                    <div style={{background:"#0d1117",borderRadius:7,padding:".85rem",marginTop:".5rem",overflowX:"auto"}}>
-                      <pre style={{fontFamily:"var(--mono)",fontSize:".72rem",color:"#a8d8d0",lineHeight:1.65,whiteSpace:"pre-wrap",wordBreak:"break-word",margin:0}}>{modalData.schemaCode}</pre>
-                    </div>
-                    <div className="option-actions" style={{marginTop:".65rem"}}>
-                      <button className={`opt-btn ${copiedId==="schema"?"copied":""}`} onClick={()=>copyText(modalData.schemaCode,"schema")}>
-                        {copiedId==="schema"?"✓ Copied":"📋 Copy code"}
-                      </button>
-                    </div>
-                  </div>
-                  {modalData.whereToPaste && (
+                {isTechnical && category==="schema" && (() => {
+                  const [platform, setPlatform] = React.useState("wordpress");
+                  const steps = {
+                    wordpress:[
+                      "Log in to your WordPress dashboard",
+                      "Go to Plugins → Add New and search for 'Insert Headers and Footers'",
+                      "Install and activate the plugin by WPBeginner",
+                      "Go to Settings → Insert Headers and Footers",
+                      "Copy the code below and paste it into the 'Scripts in Header' box",
+                      "Click Save — done. Google will pick it up within a few days",
+                    ],
+                    squarespace:[
+                      "Log in to your Squarespace account",
+                      "Go to Settings → Advanced → Code Injection",
+                      "Copy the code below and paste it into the 'Header' box",
+                      "Click Save — the schema is now live on every page",
+                      "Note: for page-specific schema, edit the page → gear icon → Advanced → Page Header Code Injection",
+                    ],
+                    wix:[
+                      "Log in to your Wix account and open your site editor",
+                      "Click the Settings icon (⚙) in the left panel",
+                      "Go to SEO → Structured Data Markup",
+                      "Click + Add Markup and paste the code below",
+                      "Click Apply — Wix will add it to the page automatically",
+                    ],
+                    shopify:[
+                      "Log in to your Shopify admin panel",
+                      "Go to Online Store → Themes",
+                      "Next to your current theme, click Actions → Edit Code",
+                      "In the left panel, find and click 'theme.liquid'",
+                      "Find the closing </head> tag (use Ctrl+F to search)",
+                      "Paste the code below just above </head>",
+                      "Click Save — the schema is now live",
+                    ],
+                    other:[
+                      "Open your website's HTML file or page template in your editor",
+                      "Find the </head> closing tag — it's usually near the top of the file",
+                      "Paste the code below on the line directly above </head>",
+                      "Save and upload the file — the schema is now live",
+                      "Not sure how? Copy the code and send it to your web developer with this message: 'Please add this schema markup to the <head> section of [page URL]'",
+                    ],
+                  };
+                  const platforms = [
+                    {id:"wordpress",   label:"WordPress"},
+                    {id:"squarespace", label:"Squarespace"},
+                    {id:"wix",         label:"Wix"},
+                    {id:"shopify",     label:"Shopify"},
+                    {id:"other",       label:"Other / Not sure"},
+                  ];
+                  return <>
                     <div className="option-card">
-                      <div className="option-num">Where to paste this</div>
-                      <div className="option-text">{modalData.whereToPaste}</div>
+                      <div className="option-num">Schema type: {modalData.schemaType}</div>
+                      <div style={{background:"#0d1117",borderRadius:7,padding:".85rem",marginTop:".5rem",overflowX:"auto"}}>
+                        <pre style={{fontFamily:"var(--mono)",fontSize:".72rem",color:"#a8d8d0",lineHeight:1.65,whiteSpace:"pre-wrap",wordBreak:"break-word",margin:0}}>{modalData.schemaCode}</pre>
+                      </div>
+                      <div className="option-actions" style={{marginTop:".65rem"}}>
+                        <button className={`opt-btn ${copiedId==="schema"?"copied":""}`} onClick={()=>copyText(modalData.schemaCode,"schema")}>
+                          {copiedId==="schema"?"✓ Copied":"📋 Copy code"}
+                        </button>
+                      </div>
                     </div>
-                  )}
-                </>}
+
+                    {/* Platform picker */}
+                    <div className="option-card">
+                      <div className="option-num" style={{marginBottom:".75rem"}}>How to add this to your site</div>
+                      <div style={{display:"flex",flexWrap:"wrap",gap:".4rem",marginBottom:"1rem"}}>
+                        {platforms.map(({id,label})=>(
+                          <button key={id} onClick={()=>setPlatform(id)}
+                            style={{padding:".35rem .8rem",borderRadius:6,border:`1px solid ${platform===id?"var(--blue)":"var(--border)"}`,background:platform===id?"var(--bdim)":"none",color:platform===id?"var(--blue)":"var(--text2)",fontFamily:"var(--font)",fontSize:".78rem",fontWeight:platform===id?700:400,cursor:"pointer"}}>
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      <ol style={{paddingLeft:"1.25rem",display:"flex",flexDirection:"column",gap:".6rem"}}>
+                        {steps[platform].map((step,i)=>(
+                          <li key={i} style={{fontSize:".85rem",color:"var(--text2)",lineHeight:1.6}}>
+                            {step.includes("Copy the code below")
+                              ? <>{step.replace("Copy the code below","")}<span style={{color:"var(--green)",fontWeight:600}}>Copy the code above using the Copy button</span></>
+                              : step
+                            }
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  </>;
+                })()}
 
                 {/* ── Meta / SEO copy (default — no fixCategory or meta category) ── */}
                 {(!isTechnical || category==="meta") && <>
