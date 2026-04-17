@@ -425,6 +425,28 @@ const CSS = `
 .admin-empty-icon{font-size:2rem;margin-bottom:.75rem;opacity:.3;}
 .admin-refresh{background:none;border:1px solid var(--border);border-radius:7px;padding:.45rem .9rem;color:var(--text2);font-family:var(--font);font-size:.8rem;cursor:pointer;}
 .admin-refresh:hover{border-color:var(--blue);color:var(--blue);}
+
+/* ── CRO Modal ── */
+.cro-overlay{position:fixed;inset:0;background:rgba(7,8,15,.88);backdrop-filter:blur(6px);z-index:300;display:flex;align-items:center;justify-content:center;padding:1.5rem;}
+.cro-modal{background:var(--s1);border:1px solid var(--border);border-radius:16px;width:100%;max-width:580px;max-height:85vh;overflow-y:auto;display:flex;flex-direction:column;}
+.cro-modal-head{padding:1.25rem 1.5rem;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;position:sticky;top:0;background:var(--s1);z-index:1;}
+.cro-modal-title{font-size:.95rem;font-weight:700;}
+.cro-modal-sub{font-size:.78rem;color:var(--text2);margin-top:.2rem;}
+.cro-modal-body{padding:1.5rem;display:flex;flex-direction:column;gap:1.1rem;}
+.cro-section-label{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--text3);margin-bottom:.5rem;}
+.cro-card{background:var(--s2);border-radius:10px;padding:.9rem 1rem;}
+.cro-card-label{font-size:.7rem;font-weight:700;color:var(--text3);margin-bottom:.35rem;}
+.cro-card-value{font-size:.875rem;color:var(--text);line-height:1.55;}
+.cro-card-actions{display:flex;gap:.5rem;margin-top:.6rem;}
+.cro-copy-btn{background:none;border:1px solid var(--border);border-radius:6px;padding:.3rem .75rem;font-family:var(--font);font-size:.75rem;font-weight:600;color:var(--text2);cursor:pointer;transition:all .15s;}
+.cro-copy-btn:hover{border-color:var(--green);color:var(--green);}
+.cro-copy-btn.copied{background:var(--gdim);border-color:var(--green);color:var(--green);}
+.cro-tip-box{background:var(--gdim);border:1px solid rgba(15,219,138,.2);border-radius:8px;padding:.75rem 1rem;font-size:.82rem;color:var(--green);line-height:1.55;}
+.cro-grid{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;}
+.cro-list{display:flex;flex-direction:column;gap:.4rem;}
+.cro-list-item{display:flex;align-items:flex-start;gap:.5rem;font-size:.85rem;color:var(--text2);line-height:1.5;}
+.cro-list-item::before{content:"✓";color:var(--green);font-weight:700;flex-shrink:0;}
+.cro-list-item.remove::before{content:"✕";color:var(--red);}
 `;
 
 // ─── Demo fallback data ───────────────────────────────────────
@@ -512,9 +534,36 @@ const ISSUES_DATA = [
 ];
 
 const CONV_DATA = [
-  { page:"/services",rate:"0.4%",traffic:"840/mo",  issue:"CTA buried below the fold",   action:"Move CTA & rewrite copy" },
-  { page:"/pricing", rate:"0.8%",traffic:"290/mo",  issue:"No social proof near the CTA", action:"Add testimonials above CTA" },
-  { page:"/contact", rate:"1.2%",traffic:"1.2k/mo", issue:"Contact form has 7 fields",    action:"Reduce form to 3 fields" },
+  {
+    page:"/services", rate:"0.4%", traffic:"840/mo",
+    industryAvg:"2.1%",
+    issue:"CTA buried below the fold",
+    issueDetail:"Your primary call-to-action button sits 1,200px down the page. Most visitors leave before seeing it. Moving it above the fold typically increases conversions by 50–200%.",
+    action:"Move CTA & rewrite copy",
+    fixType:"cta",
+    currentCta:"Contact us",
+    context:"Services page for a professional services business",
+  },
+  {
+    page:"/pricing", rate:"0.8%", traffic:"290/mo",
+    industryAvg:"2.1%",
+    issue:"No social proof near the CTA",
+    issueDetail:"Visitors reach your pricing page but leave without converting. There are no testimonials, reviews or trust signals near the pricing options — buyers need reassurance before committing.",
+    action:"Add testimonials above CTA",
+    fixType:"social_proof",
+    currentCta:"Get started",
+    context:"Pricing page — visitors are considering buying",
+  },
+  {
+    page:"/contact", rate:"1.2%", traffic:"1.2k/mo",
+    industryAvg:"3.5%",
+    issue:"Contact form has 7 fields",
+    issueDetail:"Your contact form asks for: name, email, phone, company, job title, message and how did you hear about us. Every additional field reduces completion rate by ~10%. A 3-field form typically converts 3x better.",
+    action:"Reduce form to 3 fields",
+    fixType:"form",
+    currentCta:"Submit",
+    context:"Contact page — visitors want to get in touch",
+  },
 ];
 
 // ─── AI helper — routes through Worker to avoid CORS ─────────
@@ -569,6 +618,9 @@ export default function RankActions() {
   const [modalLoading, setModalLoading] = useState(false);
   const [modalApplied, setModalApplied] = useState(new Set());
   const contentPresetRef = useRef(null);
+  const [croModal,   setCroModal]   = useState(null);
+  const [croData,    setCroData]    = useState(null);
+  const [croLoading, setCroLoading] = useState(false);
   const [aiFixCount,   setAiFixCount]   = useState(() => {
     const stored = JSON.parse(localStorage.getItem("rankactions_ai_fix_usage") || '{"count":0,"month":""}');
     const thisMonth = new Date().toISOString().slice(0,7);
@@ -817,6 +869,81 @@ Return ONLY valid JSON — no markdown, no explanation:
   const copyText = (text, id) => {
     navigator.clipboard.writeText(text).catch(()=>{});
     setCopiedId(id); setTimeout(()=>setCopiedId(null), 1600);
+  };
+
+  // ── CRO fix modal ─────────────────────────────────────────────
+  const openCroModal = async (row) => {
+    if (!isPro && aiFixCount >= AI_FIX_LIMIT) { setShowUpgrade(true); return; }
+    if (!isPro) trackAiFixUsage();
+    setCroModal(row); setCroData(null); setCroLoading(true);
+
+    const prompts = {
+      cta: `You are a conversion rate optimisation expert improving a real web page.
+
+Page: https://${selectedSite}${row.page}
+Issue: ${row.issue}
+Context: ${row.context}
+Current CTA button text: "${row.currentCta}"
+Current conversion rate: ${row.rate} (industry average: ${row.industryAvg})
+Site: ${selectedSite}
+
+Generate specific, ready-to-use CRO improvements. Return ONLY valid JSON:
+{
+  "headline": "rewritten above-the-fold headline that makes the value clear",
+  "ctaOption1": "CTA button text — short, action-oriented, specific",
+  "ctaOption2": "alternative CTA button text",
+  "subtext": "one line of supporting text to place directly below the CTA",
+  "placement": "exactly where on the page the CTA should appear and why",
+  "tip": "one additional quick win for this page, max 12 words"
+}`,
+
+      social_proof: `You are a conversion rate optimisation expert improving a real web page.
+
+Page: https://${selectedSite}${row.page}
+Issue: ${row.issue}
+Context: ${row.context}
+Current conversion rate: ${row.rate} (industry average: ${row.industryAvg})
+Site: ${selectedSite}
+
+Generate specific, ready-to-use social proof copy. Return ONLY valid JSON:
+{
+  "testimonial1": "realistic testimonial quote that addresses the main buying objection — in quotes, with a name and role",
+  "testimonial2": "second testimonial quote focused on results or outcome",
+  "statBadge": "a short trust stat e.g. '150+ clients' or '98% satisfaction'",
+  "placement": "exactly where to place social proof on the page and why",
+  "tip": "one additional trust signal to add to this page, max 12 words"
+}`,
+
+      form: `You are a conversion rate optimisation expert improving a real web page.
+
+Page: https://${selectedSite}${row.page}
+Issue: ${row.issue}
+Detail: ${row.issueDetail}
+Context: ${row.context}
+Current conversion rate: ${row.rate} (industry average: ${row.industryAvg})
+Site: ${selectedSite}
+
+Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
+{
+  "keepFields": ["field 1 to keep", "field 2 to keep", "field 3 to keep"],
+  "removeFields": ["field to remove and why", "field to remove and why"],
+  "submitButton": "rewritten submit button text — specific and action-oriented",
+  "formHeadline": "short heading above the form that reduces friction",
+  "reassuranceText": "one line of text below the button to reduce hesitation e.g. privacy note",
+  "tip": "one additional form improvement, max 12 words"
+}`
+    };
+
+    try {
+      const txt = await callClaude(
+        prompts[row.fixType] || prompts.cta,
+        "Senior CRO specialist. Return valid JSON only. No markdown. Be specific to the page and issue — never generic."
+      );
+      setCroData(JSON.parse(txt.replace(/```json|```/g,"").trim()));
+    } catch {
+      setCroData({ error: "Could not generate suggestions — please try again." });
+    }
+    setCroLoading(false);
   };
 
   const disconnect = () => {
@@ -1321,18 +1448,31 @@ Return ONLY valid JSON — no markdown, no explanation:
         {activeTab==="Conversions" && <>
           <div className="section-head" style={{marginBottom:"1.25rem"}}>
             <div className="section-title">Conversion Issues</div>
-            <div className="section-sub">Pages with traffic but low leads</div>
+            <div className="section-sub">Pages with traffic but low conversions — industry average: 2.1%</div>
           </div>
           <div className="conv-list">
             {CONV_DATA.map((row,i)=>(
               <div key={i} className="conv-card">
                 <div className="conv-page-url">{row.page}</div>
                 <div className="conv-stats">
-                  <div className="conv-stat"><div className="cv">{row.traffic}</div><div className="cl">Traffic</div></div>
-                  <div className="conv-stat"><div className="cv" style={{color:parseFloat(row.rate)<1?"var(--red)":"var(--amber)"}}>{row.rate}</div><div className="cl">Conv. Rate</div></div>
+                  <div className="conv-stat">
+                    <div className="cv">{row.traffic}</div>
+                    <div className="cl">Monthly traffic</div>
+                  </div>
+                  <div className="conv-stat">
+                    <div className="cv" style={{color:parseFloat(row.rate)<1?"var(--red)":"var(--amber)"}}>{row.rate}</div>
+                    <div className="cl">Conv. rate</div>
+                  </div>
+                  <div className="conv-stat">
+                    <div className="cv" style={{color:"var(--text2)",fontSize:".875rem"}}>{row.industryAvg}</div>
+                    <div className="cl">Industry avg</div>
+                  </div>
                 </div>
                 <div className="conv-issue-text">⚠ {row.issue}</div>
-                <button className="conv-fix-btn" onClick={()=>openModal(fixes[1])}>✨ Fix: {row.action}</button>
+                <div style={{fontSize:".8rem",color:"var(--text2)",lineHeight:1.6,margin:".5rem 0 .85rem"}}>{row.issueDetail}</div>
+                <button className="conv-fix-btn" onClick={()=>openCroModal(row)}>
+                  ✨ {row.action}
+                </button>
               </div>
             ))}
           </div>
@@ -1452,6 +1592,133 @@ Return ONLY valid JSON — no markdown, no explanation:
       </div>
     </div>
   );
+
+  // ─────────────────────────────────────────────────────────────
+  // CRO FIX MODAL
+  // ─────────────────────────────────────────────────────────────
+  const CroModal = () => {
+    const [copied, setCopied] = useState(null);
+    const copy = (text, key) => {
+      navigator.clipboard.writeText(text).catch(()=>{});
+      setCopied(key); setTimeout(()=>setCopied(null), 1600);
+    };
+    const CopyBtn = ({text, id}) => (
+      <button className={`cro-copy-btn ${copied===id?"copied":""}`} onClick={()=>copy(text,id)}>
+        {copied===id ? "✓ Copied" : "📋 Copy"}
+      </button>
+    );
+    const Row = ({label, value, id}) => (
+      <div className="cro-card">
+        <div className="cro-card-label">{label}</div>
+        <div className="cro-card-value">{value}</div>
+        <div className="cro-card-actions"><CopyBtn text={value} id={id}/></div>
+      </div>
+    );
+
+    return (
+      <div className="cro-overlay" onClick={e=>e.target===e.currentTarget&&setCroModal(null)}>
+        <div className="cro-modal">
+          <div className="cro-modal-head">
+            <div>
+              <div className="cro-modal-title">CRO Fix — {croModal.page}</div>
+              <div className="cro-modal-sub">{croModal.issue} · {croModal.rate} conversion rate (avg: {croModal.industryAvg})</div>
+            </div>
+            <button className="modal-close" onClick={()=>setCroModal(null)}>✕</button>
+          </div>
+          <div className="cro-modal-body">
+            {croLoading ? (
+              <div className="loading-center"><div className="spinner"/><span>Generating CRO suggestions…</span></div>
+            ) : croData?.error ? (
+              <div style={{color:"var(--red)",fontSize:".875rem"}}>{croData.error}</div>
+            ) : croData ? <>
+
+              {/* CTA fixes */}
+              {croModal.fixType==="cta" && <>
+                <div>
+                  <div className="cro-section-label">Rewritten headline</div>
+                  <Row label="Place this at the top of the page" value={croData.headline} id="headline"/>
+                </div>
+                <div>
+                  <div className="cro-section-label">CTA button copy</div>
+                  <div className="cro-grid">
+                    <Row label="Option 1" value={croData.ctaOption1} id="cta1"/>
+                    <Row label="Option 2" value={croData.ctaOption2} id="cta2"/>
+                  </div>
+                </div>
+                <div>
+                  <div className="cro-section-label">Supporting text below CTA</div>
+                  <Row label="Add directly below the button" value={croData.subtext} id="subtext"/>
+                </div>
+                <div>
+                  <div className="cro-section-label">Where to place the CTA</div>
+                  <div className="cro-card"><div className="cro-card-value" style={{color:"var(--text2)"}}>{croData.placement}</div></div>
+                </div>
+              </>}
+
+              {/* Social proof fixes */}
+              {croModal.fixType==="social_proof" && <>
+                <div>
+                  <div className="cro-section-label">Testimonials to add</div>
+                  <div style={{display:"flex",flexDirection:"column",gap:".65rem"}}>
+                    <Row label="Testimonial 1" value={croData.testimonial1} id="testi1"/>
+                    <Row label="Testimonial 2" value={croData.testimonial2} id="testi2"/>
+                  </div>
+                </div>
+                <div>
+                  <div className="cro-section-label">Trust badge</div>
+                  <Row label="Add near the CTA" value={croData.statBadge} id="badge"/>
+                </div>
+                <div>
+                  <div className="cro-section-label">Where to place social proof</div>
+                  <div className="cro-card"><div className="cro-card-value" style={{color:"var(--text2)"}}>{croData.placement}</div></div>
+                </div>
+              </>}
+
+              {/* Form fixes */}
+              {croModal.fixType==="form" && <>
+                <div>
+                  <div className="cro-section-label">Fields to keep (3 max)</div>
+                  <div className="cro-card">
+                    <div className="cro-list">
+                      {(croData.keepFields||[]).map((f,i)=><div key={i} className="cro-list-item">{f}</div>)}
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <div className="cro-section-label">Fields to remove</div>
+                  <div className="cro-card">
+                    <div className="cro-list">
+                      {(croData.removeFields||[]).map((f,i)=><div key={i} className="cro-list-item remove">{f}</div>)}
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <div className="cro-section-label">Form copy</div>
+                  <div style={{display:"flex",flexDirection:"column",gap:".65rem"}}>
+                    <Row label="Form heading" value={croData.formHeadline} id="formhead"/>
+                    <Row label="Submit button" value={croData.submitButton} id="submit"/>
+                    <Row label="Reassurance text below button" value={croData.reassuranceText} id="reassurance"/>
+                  </div>
+                </div>
+              </>}
+
+              {/* Tip */}
+              {croData.tip && (
+                <div className="cro-tip-box">💡 Quick win: {croData.tip}</div>
+              )}
+
+              <div style={{textAlign:"center"}}>
+                <button style={{background:"none",border:"1px solid var(--border)",borderRadius:7,padding:".45rem 1rem",fontFamily:"var(--font)",fontSize:".8rem",color:"var(--text2)",cursor:"pointer"}}
+                  onClick={()=>openCroModal(croModal)}>
+                  ↻ Regenerate
+                </button>
+              </div>
+            </> : null}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // ─────────────────────────────────────────────────────────────
   // UPGRADE MODAL
@@ -2216,6 +2483,7 @@ IMPORTANT — Label internal links clearly so non-technical users know what they
         </div>
       </div>
       {modal        && <FixModal/>}
+      {croModal     && <CroModal/>}
       {showUpgrade  && <UpgradeModal/>}
     </div></>
   );
