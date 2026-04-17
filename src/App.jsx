@@ -828,7 +828,27 @@ export default function RankActions() {
         : `Site: ${selectedSite}.`;
 
       const txt = await callClaude(
-        `You are a senior SEO copywriter improving a SPECIFIC page on a real website.
+        fix.type === "Technical"
+        // ── Technical issue fix (from Issues tab) ──────────────────
+        ? `You are a senior SEO copywriter writing ready-to-publish copy for a specific page.
+
+Site: ${selectedSite}
+Page: ${fix.page ? `https://${selectedSite}${fix.page}` : `https://${selectedSite}`}
+Issue to fix: ${fix.field}
+Page context: ${fix.current}
+Keywords ranking for this site: ${siteData?.keywords?.slice(0,5).map(k=>k.keyword).join(", ") || "not connected"}
+
+CRITICAL — return ONLY finished, publishable copy. No explanations. No "here is a..." preamble. No mention of the issue in the suggestions. Just the actual copy someone can paste directly into their CMS.
+
+Return ONLY valid JSON — no markdown:
+{
+  "option1": "ready-to-use title tag — 50-60 chars, keyword-rich, compelling",
+  "option2": "alternative title tag — different angle, still 50-60 chars",
+  "metaDesc": "ready-to-publish meta description — exactly 145-155 chars, includes primary keyword, ends with a soft CTA",
+  "tip": "one specific next step to implement immediately, max 12 words"
+}`
+        // ── SEO keyword fix (from SEO Opportunities) ───────────────
+        : `You are a senior SEO copywriter improving a SPECIFIC page on a real website.
 
 ${siteContext}
 Page being optimised: ${pageUrl}
@@ -843,7 +863,7 @@ CRITICAL RULES:
 - No generic business language — make it specific to "${keyword}"
 - Title tags: 50-60 characters maximum
 - Meta descriptions: 145-155 characters maximum
-- Sound like a real copywriter wrote it, not an AI template
+- Return ONLY ready-to-use copy — no explanations, no preamble
 
 Return ONLY valid JSON — no markdown, no explanation:
 {
@@ -852,7 +872,7 @@ Return ONLY valid JSON — no markdown, no explanation:
   "metaDesc": "specific meta description for this page containing ${keyword} — exactly 145-155 chars",
   "tip": "one specific next step for this exact page and keyword, max 12 words"
 }`,
-        "Senior SEO copywriter. Return valid JSON only. No markdown. Be SPECIFIC to the keyword and page provided — never generic."
+        "Senior SEO copywriter. Return valid JSON only. No markdown. Every field must contain ONLY ready-to-use copy — never include the problem description or any explanation in your suggestions."
       );
       setModalData(JSON.parse(txt.replace(/```json|```/g,"").trim()));
     } catch {
