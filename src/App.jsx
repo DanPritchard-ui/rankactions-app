@@ -1613,24 +1613,38 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
   );
 
   // ─────────────────────────────────────────────────────────────
-  // Add site helper
+  // Add site helper — fetches available GSC sites and shows them inline
   // ─────────────────────────────────────────────────────────────
-  const addSite = () => {
+  const [availableGscSites, setAvailableGscSites] = useState([]);
+  const [gscSitesLoading,   setGscSitesLoading]   = useState(false);
+
+  const addSite = async () => {
     // Gate: free users can only have 1 site
     if (!isPro && sites.length >= 1) {
       setShowUpgrade(true);
       return;
     }
-    const input = window.prompt("Enter your website URL:", "e.g. mysite.com");
-    if (!input || !input.trim()) return;
-    const clean = input.trim().replace(/^https?:\/\//,"").replace(/\/$/,"");
-    if (!clean) return;
+    // Toggle the GSC site list
+    if (addingSite) { setAddingSite(false); return; }
+    setAddingSite(true);
+    setGscSitesLoading(true);
+    try {
+      const res = await fetch(`${WORKER_URL}/api/gsc-sites?userId=${encodeURIComponent(userId)}`);
+      const data = await res.json();
+      const available = (data.sites || []).filter(s => !sites.includes(s.siteUrl) && !sites.includes(s.displayUrl));
+      setAvailableGscSites(available);
+    } catch { setAvailableGscSites([]); }
+    setGscSitesLoading(false);
+  };
+
+  const selectGscSite = (siteUrl, displayUrl) => {
+    const clean = siteUrl;
     const updated = [...new Set([...sites, clean])];
     setSites(updated);
     localStorage.setItem("rankactions_sites", JSON.stringify(updated));
     setSelectedSite(clean);
     localStorage.setItem("rankactions_selectedSite", clean);
-    setSiteData(null); setAiSummary(null); setSiteOpen(false);
+    setSiteData(null); setAiSummary(null); setSiteOpen(false); setAddingSite(false); setAvailableGscSites([]);
   };
 
   // ─────────────────────────────────────────────────────────────
@@ -1680,7 +1694,26 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
                 {s}
               </div>
             ))}
-            <div className="site-add" onClick={addSite}>➕ Add site</div>
+            <div className="site-add" onClick={addSite}>{addingSite ? "✕ Cancel" : "➕ Add site"}</div>
+            {addingSite && (
+              <div style={{borderTop:"1px solid var(--b2)",paddingTop:".4rem"}}>
+                {gscSitesLoading ? (
+                  <div style={{padding:".6rem .85rem",fontSize:".8rem",color:"var(--text3)",textAlign:"center"}}>Loading your Search Console sites…</div>
+                ) : availableGscSites.length > 0 ? (
+                  availableGscSites.map(s => (
+                    <div key={s.siteUrl} className="site-opt" style={{display:"flex",flexDirection:"column",gap:".1rem",cursor:"pointer"}}
+                      onClick={()=>selectGscSite(s.siteUrl, s.displayUrl)}>
+                      <span>{s.displayUrl}</span>
+                      <span style={{fontSize:".65rem",color:"var(--text3)"}}>{s.siteUrl.startsWith("sc-domain:")?"Domain property":"URL prefix"}</span>
+                    </div>
+                  ))
+                ) : (
+                  <div style={{padding:".6rem .85rem",fontSize:".78rem",color:"var(--text3)"}}>
+                    {userId ? "No additional sites found in your Search Console" : "Connect Google to see available sites"}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
