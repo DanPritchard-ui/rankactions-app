@@ -730,7 +730,9 @@ export default function RankActions() {
   const [siteOpen,     setSiteOpen]     = useState(false);
   const [activeTab,    setActiveTab]    = useState("Overview");
   const [expandedFix,  setExpandedFix]  = useState(null);
-  const [doneFixes,    setDoneFixes]    = useState(new Set());
+  const [doneFixes,    setDoneFixes]    = useState(() => {
+    try { const site = localStorage.getItem("rankactions_selectedSite") || "mywebsite.com"; return new Set(JSON.parse(localStorage.getItem(`ra_done_${site}`) || "[]")); } catch { return new Set(); }
+  });
   const [copiedId,     setCopiedId]     = useState(null);
   const [aiSummary,    setAiSummary]    = useState(null);
   const [summaryLoading,setSummaryLoading] = useState(false);
@@ -752,7 +754,7 @@ export default function RankActions() {
   const [linkTemplateOutput,  setLinkTemplateOutput]  = useState("");
   const [linkTemplateLoading, setLinkTemplateLoading] = useState(false);
   const [linkProspects,  setLinkProspects]  = useState(() => {
-    try { return JSON.parse(localStorage.getItem("rankactions_prospects") || "[]"); } catch { return []; }
+    try { const site = localStorage.getItem("rankactions_selectedSite") || "mywebsite.com"; return JSON.parse(localStorage.getItem(`ra_prospects_${site}`) || "[]"); } catch { return []; }
   });
   const [aiFixCount,   setAiFixCount]   = useState(() => {
     const stored = JSON.parse(localStorage.getItem("rankactions_ai_fix_usage") || '{"count":0,"month":""}');
@@ -911,6 +913,24 @@ export default function RankActions() {
   useEffect(() => {
     if (userId && selectedSite && screen !== "onboarding") fetchSiteData();
   }, [userId, selectedSite]);
+
+  // ── Reload per-site state when site changes ─────────────────
+  useEffect(() => {
+    if (!selectedSite) return;
+    // Reload doneFixes for this site
+    try { setDoneFixes(new Set(JSON.parse(localStorage.getItem(`ra_done_${selectedSite}`) || "[]"))); } catch { setDoneFixes(new Set()); }
+    // Reload link prospects for this site
+    try { setLinkProspects(JSON.parse(localStorage.getItem(`ra_prospects_${selectedSite}`) || "[]")); } catch { setLinkProspects([]); }
+    // Clear cached link opps and AI summary (they're site-specific)
+    setLinkOpps([]);
+    setAiSummary(null);
+  }, [selectedSite]);
+
+  // ── Persist doneFixes whenever they change ──────────────────
+  useEffect(() => {
+    if (!selectedSite) return;
+    localStorage.setItem(`ra_done_${selectedSite}`, JSON.stringify([...doneFixes]));
+  }, [doneFixes, selectedSite]);
 
   // ── Onboarding step 3 progress animation ───────────────────
   useEffect(() => {
@@ -3513,39 +3533,55 @@ IMPORTANT — Label internal links clearly so non-technical users know what they
   // ─────────────────────────────────────────────────────────────
   const generateLinkOpps = async () => {
     setLinkOppsLoading(true);
-    const topKws = siteData?.keywords?.slice(0,5).map(k=>k.keyword).join(", ") || "your main keywords";
+    const topKws = siteData?.keywords?.slice(0,8).map(k=>`${k.keyword} (#${k.position})`).join(", ") || "your main keywords";
+    const topPages = siteData?.pages?.slice(0,5).map(p=>p.page).join(", ") || "";
     try {
       const txt = await callClaude(
-        `You are an expert link building strategist. Generate 6 specific link building opportunities for this website.
+        `You are an expert UK link building strategist. Generate 8 specific, actionable link building opportunities for this website.
 
 Site: ${selectedSite}
-Top keywords: ${topKws}
-Industry context: infer from the domain and keywords above
+Top keywords and positions: ${topKws}
+Top pages: ${topPages}
+Country: UK
 
-For each opportunity be SPECIFIC — name real types of sites, real directories, real approaches.
+CRITICAL RULES:
+- Suggest REAL, specific types of websites and platforms the user can approach — include the actual URL or platform name where possible (e.g. "yell.com", "Checkatrade", "HARO", "SourceBottle")
+- For each opportunity, provide a SPECIFIC contact method — where to find the contact form, email pattern, or submission page
+- Include step-by-step instructions a complete beginner could follow
+- Never promise guaranteed results — use language like "may improve rankings" or "can help build authority"
+- Only suggest ethical, white-hat link building approaches
+- Be specific to the site's industry — infer from the domain and keywords
+
 Return ONLY valid JSON array:
 [
   {
     "title": "specific opportunity title",
-    "type": "Guest Post | Directory | Resource Page | Broken Link | Testimonial | Partnership | Local Citation",
+    "type": "Guest Post | Directory | Resource Page | Broken Link | Testimonial | Partnership | Local Citation | Press | HARO",
     "difficulty": "easy | medium | hard",
-    "description": "2-3 sentences explaining exactly what to do and why it will work for this site",
-    "example": "specific example of a site or place to target",
+    "description": "2-3 sentences explaining exactly what this is and why it matters for SEO",
+    "targets": [
+      {"name": "specific platform or site name", "url": "https://actual-url.com", "contactMethod": "how to find the contact — e.g. look for Contact Us page, use their submission form at /submit, email format is editor@domain.com"}
+    ],
+    "steps": ["Step 1: Go to...", "Step 2: Click...", "Step 3: Fill in...", "Step 4: Submit and wait for..."],
     "value": "High | Medium | Low",
-    "timeToResult": "e.g. 2-4 weeks"
+    "timeToResult": "e.g. 2-4 weeks",
+    "complianceNote": "any important caveats — e.g. never pay for links, ensure nofollow is acceptable, check their editorial guidelines first"
   }
-]`,
-        "Expert link building strategist. Return valid JSON array only. Be specific to the site and industry — never generic."
+]
+
+Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource pages, HARO, testimonials), 2 hard but high value (guest posts, press), 1 creative/unexpected approach.`,
+        "Expert UK link building strategist. Return valid JSON array only. Be extremely specific — name real platforms, real URLs, real submission pages. Never fabricate URLs — only suggest platforms you are certain exist. If unsure of a URL, describe how to find it via Google instead."
       );
-      setLinkOpps(JSON.parse(txt.replace(/```json|```/g,"").trim()));
+      const parsed = JSON.parse(txt.replace(/```json|```/g,"").trim());
+      setLinkOpps(parsed);
     } catch {
       setLinkOpps([
-        { title:"Industry directory listings", type:"Directory", difficulty:"easy", description:`Submit ${selectedSite} to relevant industry directories. These provide consistent domain authority and referral traffic with minimal effort.`, example:"industry-specific directories, local business directories", value:"Medium", timeToResult:"1-2 weeks" },
-        { title:"Guest posts on industry blogs", type:"Guest Post", difficulty:"medium", description:`Write expert articles for blogs in your niche. Pitch a unique angle based on your expertise and include a natural link back to ${selectedSite}.`, example:"Niche blogs with 'write for us' pages", value:"High", timeToResult:"4-8 weeks" },
-        { title:"Resource page link building", type:"Resource Page", difficulty:"medium", description:`Find pages that list helpful resources in your industry and pitch ${selectedSite} as an addition. These are high-quality editorial links.`, example:'Search Google: "your keyword" + "useful resources"', value:"High", timeToResult:"2-4 weeks" },
-        { title:"Broken link replacement", type:"Broken Link", difficulty:"medium", description:`Find broken links on relevant sites and offer your content as a replacement. Use a free tool like Check My Links to spot opportunities.`, example:"Competitor pages, industry resource pages", value:"High", timeToResult:"1-3 weeks" },
-        { title:"Supplier/partner link exchange", type:"Partnership", difficulty:"easy", description:`Ask suppliers, partners and clients to add ${selectedSite} to their website. These are warm relationships and often convert quickly.`, example:"Your existing business contacts", value:"Medium", timeToResult:"1-2 weeks" },
-        { title:"Local citation building", type:"Local Citation", difficulty:"easy", description:`Add ${selectedSite} to local business directories and citation sites. Consistent NAP (Name, Address, Phone) data across citations boosts local SEO.`, example:"Google Business Profile, Yelp, Yell.com, Thomson Local", value:"Medium", timeToResult:"1-2 weeks" },
+        { title:"Google Business Profile", type:"Local Citation", difficulty:"easy", description:`Claim and optimise your Google Business Profile. This is the single most important local citation and directly impacts Google Maps rankings.`, targets:[{name:"Google Business Profile",url:"https://business.google.com",contactMethod:"Sign in with your Google account and follow the verification steps"}], steps:["Go to business.google.com","Click 'Manage now'","Search for your business or add it","Fill in all details — name, address, phone, hours, categories","Verify via postcard, phone or email","Add photos, services and a description with your keywords"], value:"High", timeToResult:"1-2 weeks", complianceNote:"Ensure your business name, address and phone match exactly across all citations" },
+        { title:"Industry directory listings", type:"Directory", difficulty:"easy", description:`Submit ${selectedSite} to relevant industry directories. Consistent directory listings build domain authority and help Google verify your business.`, targets:[{name:"Yell.com",url:"https://www.yell.com/free-listing/",contactMethod:"Use the free listing submission form"},{name:"Thomson Local",url:"https://www.thomsonlocal.com/advertise/",contactMethod:"Free listing via advertise page"},{name:"Bing Places",url:"https://www.bingplaces.com",contactMethod:"Sign in with Microsoft account"}], steps:["Visit each directory and look for 'Add a listing' or 'Claim your business'","Use identical business name, address and phone number (NAP) on every listing","Choose the most specific category available","Add a unique description for each — don't copy-paste the same one","Submit and wait for verification"], value:"Medium", timeToResult:"1-2 weeks", complianceNote:"Never pay for basic directory listings — most offer free tiers. Ensure NAP consistency across all listings" },
+        { title:"Guest posts on industry blogs", type:"Guest Post", difficulty:"hard", description:`Write expert articles for blogs in your niche. Guest posting builds high-quality editorial links and positions you as an authority.`, targets:[{name:"Search Google",url:"https://www.google.com",contactMethod:'Search: "your industry" + "write for us" or "guest post" or "contribute"'}], steps:["Search Google for industry blogs accepting guest posts","Read their guidelines carefully before pitching","Write a personalised email referencing a specific article they published","Pitch 2-3 unique topic ideas relevant to their audience","If accepted, write genuinely useful content — not a sales pitch","Include one natural link to your site within the article"], value:"High", timeToResult:"4-8 weeks", complianceNote:"Never pay for guest posts — Google considers paid links a violation. Focus on genuine, valuable content" },
+        { title:"HARO / journalist requests", type:"Press", difficulty:"medium", description:`Respond to journalist queries on platforms like HARO, Qwoted or SourceBottle. When quoted in an article, you often receive a backlink to your site.`, targets:[{name:"HARO (Help a Reporter Out)",url:"https://www.helpareporter.com",contactMethod:"Sign up as a source — free tier available"},{name:"Qwoted",url:"https://www.qwoted.com",contactMethod:"Create a source profile"},{name:"SourceBottle",url:"https://www.sourcebottle.com",contactMethod:"Sign up for email alerts"}], steps:["Sign up on HARO, Qwoted or SourceBottle as a source","Set up alerts for your industry keywords","When a relevant query arrives, respond within 1-2 hours — speed matters","Keep your response concise (3-4 sentences), specific and quotable","Include your name, title, and website URL","Follow up once if you don't hear back within a week"], value:"High", timeToResult:"2-6 weeks", complianceNote:"Only respond to genuine queries where you have real expertise. Never fabricate credentials" },
+        { title:"Supplier and partner links", type:"Partnership", difficulty:"easy", description:`Ask your existing suppliers, partners and clients to link to ${selectedSite} from their website. These are warm relationships and often convert quickly.`, targets:[{name:"Your existing contacts",url:"",contactMethod:"Email your account manager or main contact at each partner"}], steps:["List all suppliers, partners and clients you work with","Check if they have a 'partners', 'clients' or 'links' page on their website","Send a friendly email asking if they would add your site","Offer to reciprocate — add their link to your site too","Follow up once after a week if no response"], value:"Medium", timeToResult:"1-2 weeks", complianceNote:"Reciprocal linking in moderation is fine — avoid excessive link exchange schemes" },
+        { title:"Broken link building", type:"Broken Link", difficulty:"medium", description:`Find broken links on relevant websites and offer your content as a replacement. This provides genuine value to the site owner while earning you a link.`, targets:[{name:"Check My Links (Chrome extension)",url:"https://chrome.google.com/webstore/detail/check-my-links",contactMethod:"Install the extension and run it on competitor resource pages"}], steps:["Install the 'Check My Links' Chrome extension","Visit resource pages and blog posts in your industry","Run the extension — it highlights broken links in red","Note the broken URL and the page it appears on","Create or identify content on your site that covers the same topic","Email the site owner: explain the broken link and suggest your page as a replacement"], value:"High", timeToResult:"2-4 weeks", complianceNote:"Be genuinely helpful — only suggest your content if it truly replaces what the broken link pointed to" },
       ]);
     }
     setLinkOppsLoading(false);
@@ -3578,19 +3614,19 @@ Return ONLY valid JSON array:
     const prospect = { id: Date.now(), domain, type, status, date: new Date().toLocaleDateString("en-GB"), notes:"" };
     const updated = [prospect, ...linkProspects];
     setLinkProspects(updated);
-    localStorage.setItem("rankactions_prospects", JSON.stringify(updated));
+    localStorage.setItem(`ra_prospects_${selectedSite}`, JSON.stringify(updated));
   };
 
   const moveProspect = (id, newStatus) => {
     const updated = linkProspects.map(p => p.id===id ? {...p, status:newStatus} : p);
     setLinkProspects(updated);
-    localStorage.setItem("rankactions_prospects", JSON.stringify(updated));
+    localStorage.setItem(`ra_prospects_${selectedSite}`, JSON.stringify(updated));
   };
 
   const deleteProspect = (id) => {
     const updated = linkProspects.filter(p => p.id!==id);
     setLinkProspects(updated);
-    localStorage.setItem("rankactions_prospects", JSON.stringify(updated));
+    localStorage.setItem(`ra_prospects_${selectedSite}`, JSON.stringify(updated));
   };
 
   // ─────────────────────────────────────────────────────────────
@@ -3663,24 +3699,58 @@ Return ONLY valid JSON array:
                 <div key={i} className="links-opp-card">
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:".4rem"}}>
                     <span className={`links-opp-type ${diffColor(opp.difficulty)}`}>{opp.difficulty} · {opp.type}</span>
-                    <span style={{fontSize:".72rem",color:valColor(opp.value),fontWeight:700}}>{opp.value} value</span>
+                    <span style={{fontSize:".72rem",color:valColor(opp.value),fontWeight:700}}>{opp.value} value · {opp.timeToResult}</span>
                   </div>
                   <div className="links-opp-title">{opp.title}</div>
                   <div className="links-opp-desc">{opp.description}</div>
-                  {opp.example && (
+
+                  {/* Targets / contacts */}
+                  {opp.targets && opp.targets.length > 0 && (
+                    <div style={{background:"var(--bdim)",borderRadius:8,padding:".6rem .75rem",marginTop:".5rem"}}>
+                      <div style={{fontSize:".7rem",fontWeight:700,textTransform:"uppercase",letterSpacing:".06em",color:"var(--text3)",marginBottom:".4rem"}}>📍 Where to go</div>
+                      {opp.targets.map((t,j) => (
+                        <div key={j} style={{fontSize:".8rem",color:"var(--text2)",marginBottom:".3rem",display:"flex",flexDirection:"column",gap:".15rem"}}>
+                          <div style={{display:"flex",alignItems:"center",gap:".4rem"}}>
+                            <strong style={{color:"var(--text1)"}}>{t.name}</strong>
+                            {t.url && <a href={t.url} target="_blank" rel="noopener noreferrer" style={{fontSize:".72rem",color:"var(--blue)",textDecoration:"none"}}>↗ Visit</a>}
+                          </div>
+                          {t.contactMethod && <div style={{fontSize:".72rem",color:"var(--text3)"}}>📧 {t.contactMethod}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Step-by-step instructions */}
+                  {opp.steps && opp.steps.length > 0 && (
+                    <details style={{marginTop:".5rem",fontSize:".8rem",color:"var(--text2)"}}>
+                      <summary style={{cursor:"pointer",fontWeight:600,color:"var(--text1)",fontSize:".78rem",padding:".3rem 0"}}>📋 Step-by-step instructions</summary>
+                      <ol style={{paddingLeft:"1.2rem",marginTop:".4rem",display:"flex",flexDirection:"column",gap:".3rem"}}>
+                        {opp.steps.map((s,j) => <li key={j} style={{lineHeight:1.5}}>{s.replace(/^Step \d+:?\s*/i,"")}</li>)}
+                      </ol>
+                    </details>
+                  )}
+
+                  {/* Compliance note */}
+                  {opp.complianceNote && (
+                    <div style={{fontSize:".7rem",color:"var(--amber)",background:"rgba(184,92,0,.08)",borderRadius:5,padding:".35rem .6rem",marginTop:".5rem"}}>
+                      ⚠ {opp.complianceNote}
+                    </div>
+                  )}
+
+                  {/* Legacy example field for fallback data */}
+                  {!opp.targets && opp.example && (
                     <div style={{fontSize:".75rem",color:"var(--blue)",background:"var(--bdim)",borderRadius:5,padding:".35rem .6rem"}}>
                       💡 Example: {opp.example}
                     </div>
                   )}
-                  <div className="links-opp-meta">
-                    <span className="links-opp-tag">⏱ {opp.timeToResult}</span>
-                  </div>
-                  <div className="links-opp-actions">
+
+                  <div className="links-opp-actions" style={{marginTop:".6rem"}}>
                     <button className="links-opp-btn primary" onClick={()=>{
-                      setLinkTemplate(opp.type.toLowerCase().replace(/ /g,"_").replace("guest_post","guest_post").replace("resource_page","resource_page").replace("broken_link","broken_link") || "guest_post");
+                      setLinkTemplate(opp.type.toLowerCase().replace(/ /g,"_").replace("local_citation","directory").replace("press","guest_post").replace("haro","guest_post") || "guest_post");
+                      if (opp.targets?.[0]?.name) setLinkTemplateTarget(opp.targets[0].name);
                       document.getElementById("links-outreach-section")?.scrollIntoView({behavior:"smooth"});
                     }}>✍ Write outreach</button>
-                    <button className="links-opp-btn" onClick={()=>saveProspect(opp.example||opp.title, opp.type)}>
+                    <button className="links-opp-btn" onClick={()=>saveProspect(opp.targets?.[0]?.name || opp.title, opp.type)}>
                       + Add to tracker
                     </button>
                   </div>
