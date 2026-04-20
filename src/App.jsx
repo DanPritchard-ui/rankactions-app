@@ -1665,7 +1665,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
         ].map(n=>(
           <div key={n.id} className={`nav-item ${screen===n.id?"active":""}`}
             onClick={()=>{
-              if(["dashboard","siteDetail","content","admin","reports","links"].includes(n.id)) setScreen(n.id);
+              if(["dashboard","siteDetail","content","admin","reports","links","settings"].includes(n.id)) setScreen(n.id);
             }}>
             <span style={{fontSize:"0.9rem"}}>{n.icon}</span>
             {n.label}
@@ -3663,6 +3663,159 @@ Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource
   };
 
   // ─────────────────────────────────────────────────────────────
+  // SETTINGS SCREEN
+  // ─────────────────────────────────────────────────────────────
+  const SettingsScreen = () => {
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+    const removeSite = (siteToRemove) => {
+      if (sites.length <= 1) return;
+      const updated = sites.filter(s => s !== siteToRemove);
+      setSites(updated);
+      localStorage.setItem("rankactions_sites", JSON.stringify(updated));
+      if (selectedSite === siteToRemove) {
+        setSelectedSite(updated[0]);
+        localStorage.setItem("rankactions_selectedSite", updated[0]);
+        setSiteData(null); setAiSummary(null);
+      }
+    };
+
+    const disconnectGoogle = () => {
+      localStorage.removeItem("rankactions_userId");
+      setUserId(null);
+      setIsConnected(false);
+      setSiteData(null);
+    };
+
+    const exportData = () => {
+      const data = {
+        plan, sites, selectedSite,
+        prospects: {},
+        doneFixes: {},
+      };
+      sites.forEach(s => {
+        try { data.prospects[s] = JSON.parse(localStorage.getItem(`ra_prospects_${s}`) || "[]"); } catch {}
+        try { data.doneFixes[s] = JSON.parse(localStorage.getItem(`ra_done_${s}`) || "[]"); } catch {}
+      });
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `rankactions-export-${new Date().toISOString().slice(0,10)}.json`; a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    const sectionStyle = {background:"var(--card)",border:"1px solid var(--b2)",borderRadius:12,padding:"1.5rem",marginBottom:"1rem"};
+    const labelStyle = {fontSize:".72rem",fontWeight:700,textTransform:"uppercase",letterSpacing:".08em",color:"var(--text3)",marginBottom:".75rem"};
+    const rowStyle = {display:"flex",justifyContent:"space-between",alignItems:"center",padding:".6rem 0",borderBottom:"1px solid var(--b2)"};
+    const valStyle = {fontSize:".88rem",color:"var(--text1)"};
+    const subStyle = {fontSize:".78rem",color:"var(--text3)"};
+    const btnStyle = {fontSize:".78rem",padding:".4rem .8rem",borderRadius:6,border:"1px solid var(--b2)",background:"transparent",color:"var(--text2)",cursor:"pointer",fontFamily:"inherit"};
+    const dangerBtn = {...btnStyle, borderColor:"var(--red)", color:"var(--red)"};
+
+    return (
+      <div className="content" style={{maxWidth:700}}>
+        <div className="page-head">
+          <div className="page-title">Settings</div>
+          <div className="page-sub">Manage your account, connected sites and preferences</div>
+        </div>
+
+        {/* Account */}
+        <div style={sectionStyle}>
+          <div style={labelStyle}>Account</div>
+          <div style={rowStyle}>
+            <div><div style={valStyle}>{user?.fullName || user?.primaryEmailAddress?.emailAddress || "—"}</div><div style={subStyle}>Name</div></div>
+          </div>
+          <div style={rowStyle}>
+            <div><div style={valStyle}>{user?.primaryEmailAddress?.emailAddress || "—"}</div><div style={subStyle}>Email</div></div>
+          </div>
+          <div style={{...rowStyle,borderBottom:"none"}}>
+            <div><div style={valStyle}><span className={`plan-pill ${plan==="pro"?"pro":plan==="agency"?"agency":""}`} style={{fontSize:".75rem"}}>{plan==="agency"?"Agency":plan==="pro"?"Pro":"Free"}</span></div><div style={subStyle}>Current plan</div></div>
+            <button style={btnStyle} onClick={()=>{localStorage.removeItem("rankactions_plan_chosen");setShowPlan(true);}}>Change plan</button>
+          </div>
+        </div>
+
+        {/* Connected sites */}
+        <div style={sectionStyle}>
+          <div style={labelStyle}>Connected Sites</div>
+          {sites.map(s => (
+            <div key={s} style={{...rowStyle,borderBottom:"1px solid var(--b2)"}}>
+              <div>
+                <div style={valStyle}>🌐 {typeof s === "string" ? s.replace(/^https?:\/\//,"").replace(/\/$/,"") : s}</div>
+                <div style={subStyle}>{s === selectedSite ? "Currently active" : "Inactive"}</div>
+              </div>
+              <div style={{display:"flex",gap:".5rem"}}>
+                {s !== selectedSite && (
+                  <button style={btnStyle} onClick={()=>{setSelectedSite(s);localStorage.setItem("rankactions_selectedSite",s);setSiteData(null);setAiSummary(null);}}>Switch to</button>
+                )}
+                {sites.length > 1 && (
+                  <button style={{...btnStyle,color:"var(--red)",borderColor:"var(--red)"}} onClick={()=>removeSite(s)}>Remove</button>
+                )}
+              </div>
+            </div>
+          ))}
+          <div style={{paddingTop:".75rem"}}>
+            <button style={{...btnStyle,color:"var(--green)",borderColor:"var(--green)"}} onClick={()=>{setScreen("dashboard");setTimeout(()=>{setSiteOpen(true);setTimeout(()=>addSite(),100);},100);}}>+ Add site</button>
+          </div>
+        </div>
+
+        {/* Google connection */}
+        <div style={sectionStyle}>
+          <div style={labelStyle}>Google Connection</div>
+          <div style={{...rowStyle,borderBottom:"none"}}>
+            <div>
+              <div style={valStyle}>{isConnected ? "✓ Connected" : "✕ Not connected"}</div>
+              <div style={subStyle}>{isConnected ? "Read-only access to Google Search Console" : "Connect to pull live SEO data"}</div>
+            </div>
+            {isConnected ? (
+              <button style={dangerBtn} onClick={disconnectGoogle}>Disconnect</button>
+            ) : (
+              <button style={{...btnStyle,color:"var(--green)",borderColor:"var(--green)"}} onClick={()=>window.location.href=`${WORKER_URL}/auth/google`}>Connect Google</button>
+            )}
+          </div>
+        </div>
+
+        {/* Privacy & cookies */}
+        <div style={sectionStyle}>
+          <div style={labelStyle}>Privacy & Cookies</div>
+          <div style={rowStyle}>
+            <div><div style={valStyle}>Cookie preferences</div><div style={subStyle}>{localStorage.getItem("ra_cookies_accepted") === "all" ? "All cookies accepted" : localStorage.getItem("ra_cookies_accepted") === "essential" ? "Essential only" : "Not set"}</div></div>
+            <button style={btnStyle} onClick={()=>{localStorage.removeItem("ra_cookies_accepted");window.location.reload();}}>Reset</button>
+          </div>
+          <div style={{...rowStyle,borderBottom:"none"}}>
+            <div><div style={valStyle}>Privacy Policy</div><div style={subStyle}>View how we handle your data</div></div>
+            <a href="https://rankactions.com/privacy.html" target="_blank" rel="noopener noreferrer" style={{...btnStyle,textDecoration:"none"}}>View</a>
+          </div>
+        </div>
+
+        {/* Data management */}
+        <div style={sectionStyle}>
+          <div style={labelStyle}>Data Management</div>
+          <div style={rowStyle}>
+            <div><div style={valStyle}>Export your data</div><div style={subStyle}>Download all your RankActions data as JSON</div></div>
+            <button style={btnStyle} onClick={exportData}>Export</button>
+          </div>
+          <div style={{...rowStyle,borderBottom:"none"}}>
+            <div><div style={valStyle}>Delete account</div><div style={subStyle}>Permanently remove your account and all data</div></div>
+            {!showDeleteConfirm ? (
+              <button style={dangerBtn} onClick={()=>setShowDeleteConfirm(true)}>Delete</button>
+            ) : (
+              <div style={{display:"flex",gap:".5rem",alignItems:"center"}}>
+                <span style={{fontSize:".78rem",color:"var(--red)"}}>Are you sure?</span>
+                <button style={dangerBtn} onClick={()=>{window.location.href=`mailto:hello@rankactions.com?subject=Account%20Deletion%20Request&body=Please%20delete%20my%20RankActions%20account.%20Email:%20${encodeURIComponent(user?.primaryEmailAddress?.emailAddress||"")}`;}}>Yes, contact support</button>
+                <button style={btnStyle} onClick={()=>setShowDeleteConfirm(false)}>Cancel</button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div style={{fontSize:".75rem",color:"var(--text3)",textAlign:"center",padding:"1rem 0"}}>
+          RankActions by E2E Integration · <a href="https://rankactions.com/privacy.html" target="_blank" rel="noopener" style={{color:"var(--text3)"}}>Privacy Policy</a> · <a href="mailto:hello@rankactions.com" style={{color:"var(--text3)"}}>hello@rankactions.com</a>
+        </div>
+      </div>
+    );
+  };
+
+  // ─────────────────────────────────────────────────────────────
   // LINK BUILDING SCREEN
   // ─────────────────────────────────────────────────────────────
   const LinkBuildingScreen = () => {
@@ -3961,6 +4114,7 @@ Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource
           {screen==="siteDetail" && <SiteDetailContent/>}
           {screen==="content"    && <ContentGenerator/>}
           {screen==="links"      && <LinkBuildingScreen/>}
+          {screen==="settings"   && <SettingsScreen/>}
           {screen==="reports"    && <ReportsTab/>}
           {screen==="admin"      && isAdmin && <AdminPanel/>}
           {screen==="admin"      && !isAdmin && <div className="content" style={{textAlign:"center",paddingTop:"4rem",color:"var(--text3)"}}>Access denied.</div>}
