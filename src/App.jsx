@@ -1694,15 +1694,15 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
                 {s}
               </div>
             ))}
-            <div className="site-add" onClick={addSite}>{addingSite ? "✕ Cancel" : "➕ Add site"}</div>
+            <div className="site-add" onClick={e=>{e.stopPropagation();addSite();}}>{addingSite ? "✕ Cancel" : "➕ Add site"}</div>
             {addingSite && (
-              <div style={{borderTop:"1px solid var(--b2)",paddingTop:".4rem"}}>
+              <div style={{borderTop:"1px solid var(--b2)",paddingTop:".4rem"}} onClick={e=>e.stopPropagation()}>
                 {gscSitesLoading ? (
                   <div style={{padding:".6rem .85rem",fontSize:".8rem",color:"var(--text3)",textAlign:"center"}}>Loading your Search Console sites…</div>
                 ) : availableGscSites.length > 0 ? (
                   availableGscSites.map(s => (
                     <div key={s.siteUrl} className="site-opt" style={{display:"flex",flexDirection:"column",gap:".1rem",cursor:"pointer"}}
-                      onClick={()=>selectGscSite(s.siteUrl, s.displayUrl)}>
+                      onClick={e=>{e.stopPropagation();selectGscSite(s.siteUrl, s.displayUrl);}}>
                       <span>{s.displayUrl}</span>
                       <span style={{fontSize:".65rem",color:"var(--text3)"}}>{s.siteUrl.startsWith("sc-domain:")?"Domain property":"URL prefix"}</span>
                     </div>
