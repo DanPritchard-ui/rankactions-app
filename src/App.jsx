@@ -988,6 +988,27 @@ export default function RankActions() {
     }
   }, [screen, isSignedIn]);
 
+  // ── Handle Stripe checkout return ─────────────────────────
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("stripe") === "success") {
+      setTimeout(async () => {
+        try {
+          const res = await authFetch(`${WORKER_URL}/api/user/profile?clerkId=${encodeURIComponent(user?.id)}`);
+          const data = await res.json();
+          if (data.found && data.plan) {
+            setPlan(data.plan);
+            localStorage.setItem("rankactions_plan", data.plan);
+          }
+        } catch {}
+      }, 2000);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+    if (params.get("stripe") === "cancelled") {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
+
   // ── Onboarding step 3 progress animation ───────────────────
   useEffect(() => {
     if (screen !== "onboarding" || step !== 3) return;
@@ -2563,28 +2584,6 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
       console.error("Portal error:", err);
     }
   };
-
-  // Handle Stripe return
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("stripe") === "success") {
-      // Refresh profile from server to get updated plan
-      setTimeout(async () => {
-        try {
-          const res = await authFetch(`${WORKER_URL}/api/user/profile?clerkId=${encodeURIComponent(user?.id)}`);
-          const data = await res.json();
-          if (data.found && data.plan) {
-            setPlan(data.plan);
-            localStorage.setItem("rankactions_plan", data.plan);
-          }
-        } catch {}
-      }, 2000); // Wait 2s for webhook to process
-      window.history.replaceState({}, "", window.location.pathname);
-    }
-    if (params.get("stripe") === "cancelled") {
-      window.history.replaceState({}, "", window.location.pathname);
-    }
-  }, []);
 
   const UpgradeModal = () => {
     const [upgradePlan, setUpgradePlan] = useState("pro");
