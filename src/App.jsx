@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   SignIn, SignUp, UserButton,
-  useUser, useClerk, useAuth, SignedIn, SignedOut
+  useUser, useClerk, SignedIn, SignedOut
 } from "@clerk/clerk-react";
 
 // ─────────────────────────────────────────────────────────────
@@ -743,11 +743,10 @@ async function callClaude(userMsg, systemMsg, mode = 'standard') {
 // ─── Main component ───────────────────────────────────────────
 export default function RankActions() {
   const { user, isLoaded, isSignedIn } = useUser();
-  const { signOut }                    = useClerk();
-  const { getToken }                   = useAuth();
+  const { signOut, session }           = useClerk();
 
   // Keep the module-level token getter in sync with the current session
-  useEffect(() => { _getToken = getToken; }, [getToken]);
+  useEffect(() => { _getToken = () => session?.getToken() ?? Promise.resolve(null); }, [session]);
 
   // Auth UI state
   const [authView,  setAuthView]  = useState("signin"); // signin | signup
