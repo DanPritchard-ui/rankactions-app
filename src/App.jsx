@@ -566,7 +566,31 @@ const CSS = `
 .site-picker-confirm:hover:not(:disabled){opacity:.88;}
 .site-picker-search{width:100%;background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:.6rem .85rem;color:var(--text);font-family:var(--font);font-size:.85rem;outline:none;margin-bottom:.5rem;}
 .site-picker-search::placeholder{color:var(--text3);}
-.site-picker-search:focus{border-color:var(--blue);}`;
+.site-picker-search:focus{border-color:var(--blue);}
+
+/* ── Onboarding Tour ── */
+.tour-overlay{position:fixed;inset:0;z-index:10000;pointer-events:none;}
+.tour-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:10000;transition:opacity .3s;}
+.tour-spotlight{position:fixed;z-index:10001;border-radius:10px;box-shadow:0 0 0 9999px rgba(0,0,0,.65);pointer-events:none;transition:all .35s ease;}
+.tour-tooltip{position:fixed;z-index:10002;background:var(--s1);border:1px solid var(--border);border-radius:14px;padding:1.25rem 1.5rem;max-width:340px;box-shadow:0 16px 48px rgba(0,0,0,.5);pointer-events:all;animation:tourFadeIn .3s ease;}
+.tour-tooltip-title{font-size:.95rem;font-weight:700;color:var(--text);margin-bottom:.5rem;display:flex;align-items:center;gap:.5rem;}
+.tour-tooltip-body{font-size:.82rem;color:var(--text2);line-height:1.65;margin-bottom:1rem;}
+.tour-tooltip-footer{display:flex;align-items:center;justify-content:space-between;gap:.75rem;}
+.tour-dots{display:flex;gap:.35rem;}
+.tour-dot{width:7px;height:7px;border-radius:50%;background:var(--border2);transition:all .2s;}
+.tour-dot.active{background:var(--green);width:18px;border-radius:4px;}
+.tour-dot.done{background:var(--green);}
+.tour-skip{background:none;border:none;color:var(--text3);font-size:.78rem;cursor:pointer;font-family:inherit;padding:.3rem .5rem;}
+.tour-skip:hover{color:var(--text2);}
+.tour-next{background:var(--green);color:#000;border:none;border-radius:8px;padding:.5rem 1.1rem;font-size:.82rem;font-weight:600;cursor:pointer;font-family:inherit;transition:opacity .15s;}
+.tour-next:hover{opacity:.88;}
+.tour-arrow{position:absolute;width:12px;height:12px;background:var(--s1);border:1px solid var(--border);transform:rotate(45deg);}
+.tour-arrow.left{left:-7px;top:24px;border-right:none;border-top:none;}
+.tour-arrow.right{right:-7px;top:24px;border-left:none;border-bottom:none;}
+.tour-arrow.top{top:-7px;left:24px;border-bottom:none;border-right:none;}
+.tour-arrow.bottom{bottom:-7px;left:24px;border-top:none;border-left:none;}
+.tour-step-num{background:var(--green);color:#000;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:800;flex-shrink:0;}
+@keyframes tourFadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`;
 const DEMO_KPI = [
   { label:"Organic Traffic", value:"2,847", delta:"↓ 8%",    pos:false, sub:"vs last week",  source:"demo" },
   { label:"Impressions",     value:"74,200",delta:"↓ 5%",    pos:false, sub:"vs last week",  source:"demo" },
@@ -758,6 +782,8 @@ export default function RankActions() {
   });
   const [availableGscSites, setAvailableGscSites] = useState([]);
   const [gscSitesLoading,   setGscSitesLoading]   = useState(false);
+  const [showTour,   setShowTour]   = useState(false);
+  const [tourStep,   setTourStep]   = useState(0);
   const [aiFixCount,   setAiFixCount]   = useState(() => {
     const stored = JSON.parse(localStorage.getItem("rankactions_ai_fix_usage") || '{"count":0,"month":""}');
     const thisMonth = new Date().toISOString().slice(0,7);
@@ -933,6 +959,14 @@ export default function RankActions() {
     if (!selectedSite) return;
     localStorage.setItem(`ra_done_${selectedSite}`, JSON.stringify([...doneFixes]));
   }, [doneFixes, selectedSite]);
+
+  // ── Show onboarding tour on first dashboard visit ──────────
+  useEffect(() => {
+    if (screen === "dashboard" && isSignedIn && !localStorage.getItem("ra_tour_complete")) {
+      const timer = setTimeout(() => setShowTour(true), 800);
+      return () => clearTimeout(timer);
+    }
+  }, [screen, isSignedIn]);
 
   // ── Onboarding step 3 progress animation ───────────────────
   useEffect(() => {
@@ -1664,6 +1698,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
           ...(isAdmin ? [{id:"admin", icon:"🔐", label:"Admin"}] : []),
         ].map(n=>(
           <div key={n.id} className={`nav-item ${screen===n.id?"active":""}`}
+            data-tour={`nav-${n.id}`}
             onClick={()=>{
               if(["dashboard","siteDetail","content","admin","reports","links","settings"].includes(n.id)) setScreen(n.id);
             }}>
@@ -1678,7 +1713,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
 
   const TopBar = () => (
     <div className="topbar">
-      <div className="site-selector">
+      <div className="site-selector" data-tour="site-selector">
         <div className="site-btn" onClick={e=>{e.stopPropagation();setSiteOpen(p=>!p);setAddingSite(false);}}>
           <span>🌐</span><span>{selectedSite}</span><span style={{color:"var(--text3)",fontSize:"0.7rem"}}>▼</span>
         </div>
@@ -1779,7 +1814,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
     return (
       <div className="content">
         <DataBanner/>
-        <div className="kpi-strip">
+        <div className="kpi-strip" data-tour="kpi-strip">
           {kpis.map((k,i)=>(
             <div key={i} className="kpi-card">
               <div className="kpi-label">{k.label}</div>
@@ -1867,7 +1902,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
           )}
         </div>
 
-        <div className="section-head">
+        <div className="section-head" data-tour="priority-actions">
           <div className="section-title">Priority Actions</div>
           <div className="section-sub">{siteData?"Based on your live data":"Demo data"} · {fixes.filter(f=>!doneFixes.has(f.id)).length} remaining</div>
         </div>
@@ -3753,6 +3788,162 @@ Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource
   };
 
   // ─────────────────────────────────────────────────────────────
+  // ONBOARDING TOUR
+  // Step-by-step guide shown on first login
+  // ─────────────────────────────────────────────────────────────
+  const tourSteps = [
+    {
+      target: "site-selector",
+      title: "Your connected site",
+      body: "This shows which website you're currently viewing. If you connect multiple sites to Google Search Console, you can switch between them here or add new ones.",
+      icon: "🌐",
+    },
+    {
+      target: "kpi-strip",
+      title: "Performance at a glance",
+      body: "These are your key metrics pulled live from Google Search Console — organic clicks, impressions, average position, and click-through rate. They update automatically.",
+      icon: "📊",
+    },
+    {
+      target: "priority-actions",
+      title: "Your weekly action list",
+      body: "This is the heart of RankActions. Each week we analyse your data and give you the 3 highest-impact things to fix. Click any action to expand it and see the AI-generated fix suggestion.",
+      icon: "🎯",
+    },
+    {
+      target: "nav-siteDetail",
+      title: "Site Detail",
+      body: "Deep dive into your SEO opportunities, technical issues, and conversion improvements. Each keyword shows its position and a specific action you can take.",
+      icon: "◎",
+    },
+    {
+      target: "nav-content",
+      title: "Content Generator",
+      body: "See a keyword you should be ranking for? Click here and our AI writes a full SEO-optimised blog post in 30 seconds — styled to match your site's colours and fonts.",
+      icon: "✍",
+    },
+    {
+      target: "nav-links",
+      title: "Link Building",
+      body: "AI generates specific link building opportunities for your site with real targets, step-by-step instructions, and outreach email templates. Track your prospects through the pipeline.",
+      icon: "🔗",
+    },
+    {
+      target: "nav-reports",
+      title: "Weekly Reports",
+      body: "Your full performance report — keyword rankings, completed actions, link building progress, and an AI-written summary. You'll also get this emailed every Monday morning.",
+      icon: "📄",
+    },
+    {
+      target: "nav-settings",
+      title: "Settings",
+      body: "Manage your account, connected sites, Google connection, cookie preferences, and data exports. You can also change your plan here.",
+      icon: "⚙",
+    },
+  ];
+
+  const closeTour = () => {
+    setShowTour(false);
+    setTourStep(0);
+    localStorage.setItem("ra_tour_complete", "1");
+  };
+
+  const OnboardingTour = () => {
+    const [pos, setPos] = useState({ top: 0, left: 0, width: 0, height: 0 });
+    const [tooltipPos, setTooltipPos] = useState({ top: 0, left: 0 });
+    const [arrowDir, setArrowDir] = useState("left");
+    const step = tourSteps[tourStep];
+
+    useEffect(() => {
+      const el = document.querySelector(`[data-tour="${step.target}"]`);
+      if (!el) return;
+
+      const rect = el.getBoundingClientRect();
+      const pad = 6;
+      setPos({
+        top: rect.top - pad,
+        left: rect.left - pad,
+        width: rect.width + pad * 2,
+        height: rect.height + pad * 2,
+      });
+
+      // Position tooltip to the right of the element by default
+      const tooltipWidth = 340;
+      const tooltipHeight = 220;
+      let tTop = rect.top;
+      let tLeft = rect.right + 16;
+      let arrow = "left";
+
+      // If tooltip would go off right edge, position to the left
+      if (tLeft + tooltipWidth > window.innerWidth - 20) {
+        tLeft = rect.left - tooltipWidth - 16;
+        arrow = "right";
+      }
+      // If tooltip would go off left edge, position below
+      if (tLeft < 20) {
+        tLeft = rect.left;
+        tTop = rect.bottom + 16;
+        arrow = "top";
+      }
+      // If tooltip would go off bottom, adjust up
+      if (tTop + tooltipHeight > window.innerHeight - 20) {
+        tTop = window.innerHeight - tooltipHeight - 20;
+      }
+      // Keep tooltip on screen
+      if (tTop < 10) tTop = 10;
+
+      setTooltipPos({ top: tTop, left: tLeft });
+      setArrowDir(arrow);
+
+      // Scroll element into view if needed
+      el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, [tourStep]);
+
+    return (
+      <>
+        {/* Spotlight cutout */}
+        <div className="tour-spotlight" style={{
+          top: pos.top,
+          left: pos.left,
+          width: pos.width,
+          height: pos.height,
+        }}/>
+
+        {/* Tooltip */}
+        <div className="tour-tooltip" style={{ top: tooltipPos.top, left: tooltipPos.left }}>
+          <div className={`tour-arrow ${arrowDir}`}/>
+          <div className="tour-tooltip-title">
+            <span className="tour-step-num">{tourStep + 1}</span>
+            <span>{step.icon} {step.title}</span>
+          </div>
+          <div className="tour-tooltip-body">{step.body}</div>
+          <div className="tour-tooltip-footer">
+            <div className="tour-dots">
+              {tourSteps.map((_, i) => (
+                <div key={i} className={`tour-dot ${i === tourStep ? "active" : i < tourStep ? "done" : ""}`}/>
+              ))}
+            </div>
+            <div style={{display:"flex",gap:".5rem"}}>
+              <button className="tour-skip" onClick={closeTour}>
+                {tourStep === tourSteps.length - 1 ? "" : "Skip tour"}
+              </button>
+              <button className="tour-next" onClick={() => {
+                if (tourStep < tourSteps.length - 1) {
+                  setTourStep(tourStep + 1);
+                } else {
+                  closeTour();
+                }
+              }}>
+                {tourStep === tourSteps.length - 1 ? "Get started →" : "Next →"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  };
+
+  // ─────────────────────────────────────────────────────────────
   // SETTINGS SCREEN
   // ─────────────────────────────────────────────────────────────
   const SettingsScreen = () => {
@@ -3861,6 +4052,15 @@ Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource
             ) : (
               <button style={{...btnStyle,color:"var(--green)",borderColor:"var(--green)"}} onClick={()=>window.location.href=`${WORKER_URL}/auth/google`}>Connect Google</button>
             )}
+          </div>
+        </div>
+
+        {/* Help */}
+        <div style={sectionStyle}>
+          <div style={labelStyle}>Help</div>
+          <div style={{...rowStyle,borderBottom:"none"}}>
+            <div><div style={valStyle}>Onboarding tour</div><div style={subStyle}>Replay the guided tour of the app</div></div>
+            <button style={btnStyle} onClick={()=>{localStorage.removeItem("ra_tour_complete");setScreen("dashboard");setTimeout(()=>setShowTour(true),500);}}>Replay tour</button>
           </div>
         </div>
 
@@ -4214,6 +4414,7 @@ Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource
       {croModal         && <CroModal/>}
       {showUpgrade      && <UpgradeModal/>}
       {gscSitePicker    && <GscSitePicker/>}
+      {showTour         && <OnboardingTour/>}
     </div></>
   );
 }
