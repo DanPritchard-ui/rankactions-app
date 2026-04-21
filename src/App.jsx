@@ -3008,31 +3008,26 @@ IMPORTANT — Label internal links clearly so non-technical users know what they
     const [filter,     setFilter]     = useState("all");
     const [selected,   setSelected]   = useState(null);
     const [saving,     setSaving]     = useState(false);
-    const [adminSecret,setAdminSecret]= useState(localStorage.getItem("ra_admin_secret")||"");
-    const [secretInput,setSecretInput]= useState("");
-    const [authed,     setAuthed]     = useState(!!localStorage.getItem("ra_admin_secret"));
 
-    const fetchUsers = async (secret) => {
+    const fetchUsers = async () => {
       setLoading(true); setError(null);
       try {
-        const res  = await authFetch(`${WORKER_URL}/api/admin/users`, {
-          headers: { "x-admin-secret": secret || adminSecret }
-        });
-        if (res.status === 401) { setError("Invalid admin secret"); setAuthed(false); return; }
+        const res  = await authFetch(`${WORKER_URL}/api/admin/users`);
+        if (res.status === 401) { setError("Unauthorised — admin access denied"); return; }
         const data = await res.json();
         setUsers(data.users || []);
       } catch(e) { setError("Failed to load users"); }
       setLoading(false);
     };
 
-    useEffect(()=>{ if(authed && adminSecret) fetchUsers(adminSecret); },[authed]);
+    useEffect(()=>{ fetchUsers(); },[]);
 
     const updateUser = async (userId, changes) => {
       setSaving(true);
       try {
         await authFetch(`${WORKER_URL}/api/admin/user/${userId}`, {
           method:"POST",
-          headers:{ "Content-Type":"application/json", "x-admin-secret": adminSecret },
+          headers:{ "Content-Type":"application/json" },
           body: JSON.stringify(changes)
         });
         setUsers(prev => prev.map(u => u.userId===userId ? {...u,...changes} : u));
@@ -3047,7 +3042,6 @@ IMPORTANT — Label internal links clearly so non-technical users know what they
       try {
         await authFetch(`${WORKER_URL}/api/admin/user/${userId}`, {
           method:"DELETE",
-          headers:{ "x-admin-secret": adminSecret }
         });
         setUsers(prev => prev.filter(u => u.userId!==userId));
         setSelected(null);
@@ -3075,23 +3069,14 @@ IMPORTANT — Label internal links clearly so non-technical users know what they
 
     const fmt = (iso) => iso ? new Date(iso).toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"}) : "—";
 
-    // Auth gate — enter admin secret
-    if (!authed) return (
+    // Admin auth is handled by Clerk JWT — no manual secret needed
+    if (error) return (
       <div className="admin-wrap" style={{maxWidth:420,margin:"4rem auto",textAlign:"center"}}>
         <div style={{fontSize:"1.5rem",marginBottom:".5rem"}}>🔐</div>
-        <div style={{fontSize:"1rem",fontWeight:700,marginBottom:".35rem"}}>Admin access</div>
-        <div style={{fontSize:".85rem",color:"var(--text2)",marginBottom:"1.5rem"}}>Enter your admin secret to continue</div>
-        <input
-          type="password" placeholder="Admin secret"
-          value={secretInput} onChange={e=>setSecretInput(e.target.value)}
-          onKeyDown={e=>{ if(e.key==="Enter"&&secretInput.trim()){ localStorage.setItem("ra_admin_secret",secretInput.trim()); setAdminSecret(secretInput.trim()); setAuthed(true); }}}
-          style={{width:"100%",background:"var(--s2)",border:"1px solid var(--border)",borderRadius:8,padding:".75rem 1rem",color:"var(--text)",fontFamily:"var(--font)",fontSize:".9rem",outline:"none",marginBottom:".75rem"}}
-        />
-        <button style={{width:"100%",padding:".75rem",background:"var(--blue)",color:"#fff",border:"none",borderRadius:8,fontFamily:"var(--font)",fontSize:".9rem",fontWeight:600,cursor:"pointer"}}
-          onClick={()=>{ if(secretInput.trim()){ localStorage.setItem("ra_admin_secret",secretInput.trim()); setAdminSecret(secretInput.trim()); setAuthed(true); }}}>
-          Continue
-        </button>
-        {error && <div style={{marginTop:".75rem",color:"var(--red)",fontSize:".85rem"}}>{error}</div>}
+        <div style={{fontSize:"1rem",fontWeight:700,marginBottom:".35rem"}}>Admin access denied</div>
+        <div style={{fontSize:".85rem",color:"var(--text2)",marginBottom:"1.5rem"}}>{error}</div>
+        <button style={{padding:".5rem 1rem",background:"var(--s2)",border:"1px solid var(--border)",borderRadius:8,color:"var(--text2)",fontFamily:"var(--font)",fontSize:".85rem",cursor:"pointer"}}
+          onClick={fetchUsers}>Retry</button>
       </div>
     );
 
@@ -3103,12 +3088,8 @@ IMPORTANT — Label internal links clearly so non-technical users know what they
             <div style={{fontSize:".8rem",color:"var(--text2)",marginTop:".2rem"}}>Manage RankActions users</div>
           </div>
           <div style={{display:"flex",gap:".75rem",alignItems:"center"}}>
-            <button className="admin-refresh" onClick={()=>fetchUsers(adminSecret)} disabled={loading}>
+            <button className="admin-refresh" onClick={fetchUsers} disabled={loading}>
               {loading?"Loading…":"↻ Refresh"}
-            </button>
-            <button className="admin-refresh" style={{color:"var(--red)",borderColor:"var(--red)"}}
-              onClick={()=>{ localStorage.removeItem("ra_admin_secret"); setAuthed(false); setAdminSecret(""); }}>
-              Sign out
             </button>
           </div>
         </div>
