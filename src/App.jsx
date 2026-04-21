@@ -1,13 +1,16 @@
 import { useState, useEffect, useRef } from "react";
 import {
   SignIn, SignUp, UserButton,
-  useUser, useClerk, SignedIn, SignedOut
+  useUser, useClerk, useAuth, SignedIn, SignedOut
 } from "@clerk/clerk-react";
 
 // ─────────────────────────────────────────────────────────────
 // ⚙️  CONFIG — paste your Worker URL here after deploying it
 // ─────────────────────────────────────────────────────────────
 const WORKER_URL = import.meta.env.VITE_WORKER_URL || "https://growthos-api.growthos.workers.dev"; // update after Worker rename
+
+// Module-level auth token — updated by the component, read by API helpers
+let _getToken = async () => null;
 
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -712,12 +715,26 @@ const CONV_DATA = [
 ];
 
 // ─── AI helper — routes through Worker to avoid CORS ─────────
+// Authenticated fetch helper — includes Clerk session token
+async function authFetch(url, options = {}) {
+  const token = await _getToken();
+  const headers = { ...options.headers };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  return fetch(url, { ...options, headers });
+}
+
 async function callClaude(userMsg, systemMsg, mode = 'standard') {
-  const res = await fetch(`${WORKER_URL}/api/ai`, {
+  const res = await authFetch(`${WORKER_URL}/api/ai`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ userMsg, systemMsg, mode }),
   });
+  if (res.status === 403) {
+    const d = await res.json();
+    if (d.upgrade) throw new Error('UPGRADE_REQUIRED:' + d.error);
+    throw new Error(d.error || 'Forbidden');
+  }
+  if (res.status === 429) throw new Error('RATE_LIMITED');
   if (!res.ok) throw new Error(`AI request failed: ${res.status}`);
   const d = await res.json();
   return d.text || "";
@@ -727,6 +744,10 @@ async function callClaude(userMsg, systemMsg, mode = 'standard') {
 export default function RankActions() {
   const { user, isLoaded, isSignedIn } = useUser();
   const { signOut }                    = useClerk();
+  const { getToken }                   = useAuth();
+
+  // Keep the module-level token getter in sync with the current session
+  useEffect(() => { _getToken = getToken; }, [getToken]);
 
   // Auth UI state
   const [authView,  setAuthView]  = useState("signin"); // signin | signup
@@ -876,7 +897,7 @@ export default function RankActions() {
 
       if (uid) {
         // Fresh OAuth return — fetch the user's GSC sites then let them pick
-        fetch(`${WORKER_URL}/api/gsc-sites?userId=${encodeURIComponent(uid)}`)
+        authFetch(`${WORKER_URL}/api/gsc-sites?userId=${encodeURIComponent(uid)}`)
           .then(r => r.json())
           .then(data => {
             const gscSites = data.sites || [];
@@ -924,7 +945,7 @@ export default function RankActions() {
   // ── Sync user data to Worker for admin panel ───────────────
   useEffect(() => {
     if (!userId && !user?.id) return;
-    fetch(`${WORKER_URL}/api/user/sync`, {
+    authFetch(`${WORKER_URL}/api/user/sync`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -995,7 +1016,7 @@ export default function RankActions() {
     setDataLoading(true); setDataError(null);
     try {
       const siteUrl = selectedSite.startsWith("http") ? selectedSite : `https://${selectedSite}`;
-      const res = await fetch(
+      const res = await authFetch(
         `${WORKER_URL}/api/search-console?userId=${encodeURIComponent(userId)}&siteUrl=${encodeURIComponent(siteUrl)}`
       );
       if (!res.ok) throw new Error((await res.json()).error || "Failed to load data");
@@ -1663,7 +1684,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
     setAddingSite(true);
     setGscSitesLoading(true);
     try {
-      const res = await fetch(`${WORKER_URL}/api/gsc-sites?userId=${encodeURIComponent(userId)}`);
+      const res = await authFetch(`${WORKER_URL}/api/gsc-sites?userId=${encodeURIComponent(userId)}`);
       const data = await res.json();
       const available = (data.sites || []).filter(s => !sites.includes(s.siteUrl) && !sites.includes(s.displayUrl));
       setAvailableGscSites(available);
@@ -1779,7 +1800,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
               localStorage.setItem("rankactions_plan", p);
               localStorage.setItem("rankactions_plan_chosen", "1");
               // Sync to Worker so it persists
-              fetch(`${WORKER_URL}/api/user/sync`,{
+              authFetch(`${WORKER_URL}/api/user/sync`,{
                 method:"POST",
                 headers:{"Content-Type":"application/json"},
                 body:JSON.stringify({clerkId:user?.id, userId, plan:p, sites, aiFixCount})
@@ -2579,7 +2600,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
     const scanSite = async () => {
       setScanning(true);
       try {
-        const res  = await fetch(`${WORKER_URL}/api/scan-site?siteUrl=${encodeURIComponent(selectedSite)}`);
+        const res  = await authFetch(`${WORKER_URL}/api/scan-site?siteUrl=${encodeURIComponent(selectedSite)}`);
         const data = await res.json();
         if (data.scanned) setSiteStyle(data);
       } catch(e) { console.warn("Site scan failed — continuing without styles"); }
@@ -2634,7 +2655,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
       let style = siteStyle;
       if (!style) {
         try {
-          const res  = await fetch(`${WORKER_URL}/api/scan-site?siteUrl=${encodeURIComponent(selectedSite)}`);
+          const res  = await authFetch(`${WORKER_URL}/api/scan-site?siteUrl=${encodeURIComponent(selectedSite)}`);
           const data = await res.json();
           if (data.scanned) { style = data; setSiteStyle(data); }
         } catch(e) {}
@@ -2994,7 +3015,7 @@ IMPORTANT — Label internal links clearly so non-technical users know what they
     const fetchUsers = async (secret) => {
       setLoading(true); setError(null);
       try {
-        const res  = await fetch(`${WORKER_URL}/api/admin/users`, {
+        const res  = await authFetch(`${WORKER_URL}/api/admin/users`, {
           headers: { "x-admin-secret": secret || adminSecret }
         });
         if (res.status === 401) { setError("Invalid admin secret"); setAuthed(false); return; }
@@ -3009,7 +3030,7 @@ IMPORTANT — Label internal links clearly so non-technical users know what they
     const updateUser = async (userId, changes) => {
       setSaving(true);
       try {
-        await fetch(`${WORKER_URL}/api/admin/user/${userId}`, {
+        await authFetch(`${WORKER_URL}/api/admin/user/${userId}`, {
           method:"POST",
           headers:{ "Content-Type":"application/json", "x-admin-secret": adminSecret },
           body: JSON.stringify(changes)
@@ -3024,7 +3045,7 @@ IMPORTANT — Label internal links clearly so non-technical users know what they
       if (!window.confirm("Permanently delete this user and all their data? This cannot be undone.")) return;
       setSaving(true);
       try {
-        await fetch(`${WORKER_URL}/api/admin/user/${userId}`, {
+        await authFetch(`${WORKER_URL}/api/admin/user/${userId}`, {
           method:"DELETE",
           headers:{ "x-admin-secret": adminSecret }
         });
