@@ -1063,10 +1063,10 @@ export default function RankActions() {
     return () => clearInterval(tid);
   }, [screen, step]);
 
-  // ── Auto-generate summary when screen/data changes ──────────
+  // ── Auto-generate summary when data is ready ──────────────
   useEffect(() => {
-    if (screen === "dashboard" && !aiSummary && !summaryLoading) generateSummary();
-  }, [screen, siteData]);
+    if (screen === "dashboard" && !aiSummary && !summaryLoading && !dataLoading) generateSummary();
+  }, [screen, siteData, dataLoading]);
 
   // ─────────────────────────────────────────────────────────────
   // Fetch real Search Console data from the Worker
