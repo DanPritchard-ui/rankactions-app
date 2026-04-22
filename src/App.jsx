@@ -1890,10 +1890,9 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
         <span
           className={`plan-pill ${plan==="pro"?"pro":plan==="agency"?"agency":""}`}
           style={{cursor:"pointer"}}
-          title={isPro ? "Manage subscription" : "Upgrade plan"}
+          title="View plans"
           onClick={()=>{
-            if (isPro) { openBillingPortal(); }
-            else { setShowUpgrade(true); }
+            setShowPlan(true);
           }}>
           {plan==="agency"?"Agency":plan==="pro"?"Pro":"Free"}
         </span>
