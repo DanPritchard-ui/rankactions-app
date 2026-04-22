@@ -1611,7 +1611,12 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
     return (
     <><style>{CSS}</style>
     <div className="gos">
-      <div className="plan-wrap">
+      <div className="plan-wrap" style={{position:"relative"}}>
+        {localStorage.getItem("rankactions_plan_chosen") && (
+          <button onClick={()=>{setShowPlan(false);localStorage.setItem("rankactions_plan_chosen","1");}}
+            style={{position:"absolute",top:"1rem",right:"1rem",background:"none",border:"none",color:"var(--text3)",fontSize:"1.5rem",cursor:"pointer",fontFamily:"inherit",lineHeight:1}}
+            title="Back to dashboard">×</button>
+        )}
         <div className="plan-logo">Rank<em>Actions</em></div>
         <div className="plan-sub">Choose your plan — upgrade or downgrade any time</div>
 
@@ -1885,10 +1890,10 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
         <span
           className={`plan-pill ${plan==="pro"?"pro":plan==="agency"?"agency":""}`}
           style={{cursor:"pointer"}}
-          title="Click to change plan"
+          title={isPro ? "Manage subscription" : "Upgrade plan"}
           onClick={()=>{
-            localStorage.removeItem("rankactions_plan_chosen");
-            setShowPlan(true);
+            if (isPro) { openBillingPortal(); }
+            else { setShowUpgrade(true); }
           }}>
           {plan==="agency"?"Agency":plan==="pro"?"Pro":"Free"}
         </span>
