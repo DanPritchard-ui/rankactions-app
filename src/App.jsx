@@ -793,6 +793,9 @@ export default function RankActions() {
   const [progress,     setProgress]     = useState(0);
   const [tasks,        setTasks]        = useState([false,false,false]);
   const [selectedSite, setSelectedSite] = useState(() => localStorage.getItem("rankactions_selectedSite") || "mywebsite.com");
+  
+  // Clean display name — strips sc-domain: and protocol for UI
+  const displaySite = (s) => (s || "").replace(/^sc-domain:/, "").replace(/^https?:\/\//, "").replace(/\/$/, "");
   const [sites,        setSites]        = useState(() => JSON.parse(localStorage.getItem("rankactions_sites") || '["mywebsite.com"]'));
   const [addingSite,   setAddingSite]   = useState(false);
   const [newSiteInput, setNewSiteInput] = useState("");
@@ -1061,7 +1064,7 @@ export default function RankActions() {
   const fetchSiteData = async () => {
     setDataLoading(true); setDataError(null);
     try {
-      const siteUrl = selectedSite.startsWith("http") ? selectedSite : `https://${selectedSite}`;
+      const siteUrl = selectedSite.startsWith("http") || selectedSite.startsWith("sc-domain:") ? selectedSite : `https://${selectedSite}`;
       const res = await authFetch(
         `${WORKER_URL}/api/search-console?userId=${encodeURIComponent(userId)}&siteUrl=${encodeURIComponent(siteUrl)}`
       );
@@ -1866,7 +1869,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
     <div className="topbar">
       <div className="site-selector" data-tour="site-selector">
         <div className="site-btn" onClick={e=>{e.stopPropagation();setSiteOpen(p=>!p);setAddingSite(false);}}>
-          <span>🌐</span><span>{selectedSite}</span><span style={{color:"var(--text3)",fontSize:"0.7rem"}}>▼</span>
+          <span>🌐</span><span>{displaySite(selectedSite)}</span><span style={{color:"var(--text3)",fontSize:"0.7rem"}}>▼</span>
         </div>
         {siteOpen && (
           <div className="site-dropdown">
@@ -1877,7 +1880,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
                   localStorage.setItem("rankactions_selectedSite", s);
                   setSiteOpen(false);setSiteData(null);setAiSummary(null);
                 }}>
-                {s}
+                {displaySite(s)}
               </div>
             ))}
             <div className="site-add" onClick={e=>{e.stopPropagation();addSite();}}>{addingSite ? "✕ Cancel" : "➕ Add site"}</div>
@@ -1952,7 +1955,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
   const DataBanner = () => {
     if (dataError) return <div className="data-banner error">⚠ {dataError}<button className="data-banner-action" onClick={fetchSiteData}>Retry</button></div>;
     if (!isConnected) return <div className="data-banner">📊 Showing demo data. Connect Google Search Console for your real numbers.<button className="data-banner-action" onClick={()=>window.location.href=`${WORKER_URL}/auth/google`}>Connect Google →</button></div>;
-    if (siteData)     return <div className="data-banner live">✓ Live data · {selectedSite} · Last {siteData.dateRange.days} days<button className="data-banner-action" onClick={fetchSiteData}>Refresh</button></div>;
+    if (siteData)     return <div className="data-banner live">✓ Live data · {displaySite(selectedSite)} · Last {siteData.dateRange.days} days<button className="data-banner-action" onClick={fetchSiteData}>Refresh</button></div>;
     return null;
   };
 
@@ -2119,7 +2122,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
     return (
       <div className="content">
         <button className="back-btn" onClick={()=>setScreen("dashboard")}>← Back to dashboard</button>
-        <div className="site-detail-name">{selectedSite}</div>
+        <div className="site-detail-name">{displaySite(selectedSite)}</div>
         <div className="site-detail-meta">{siteData?`Live data · ${siteData.dateRange.startDate} to ${siteData.dateRange.endDate}`:"Demo data · connect Google for real numbers"}</div>
         <div className="tabs-row">
           {["Overview","SEO Opportunities","Conversions","Issues"].map(t=>{
@@ -3527,7 +3530,7 @@ Write 3-4 short paragraphs: overall performance, biggest opportunities, what to 
           <div>
             <div style={{fontSize:"1.1rem",fontWeight:700,letterSpacing:"-.03em"}}>Weekly Report</div>
             <div style={{fontSize:".82rem",color:"var(--text2)",marginTop:".2rem"}}>
-              {selectedSite} · {siteData ? `Live data · Last ${siteData.dateRange?.days||28} days` : "Demo data"} · {new Date().toLocaleDateString("en-GB")}
+              {displaySite(selectedSite)} · {siteData ? `Live data · Last ${siteData.dateRange?.days||28} days` : "Demo data"} · {new Date().toLocaleDateString("en-GB")}
             </div>
           </div>
           <div style={{display:"flex",gap:".5rem"}}>
@@ -4155,7 +4158,7 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
           <div>
             <div style={{ fontSize: "1.1rem", fontWeight: 700, letterSpacing: "-.03em" }}>Content Strategy</div>
             <div style={{ fontSize: ".82rem", color: "var(--text2)", marginTop: ".2rem" }}>
-              {selectedSite} · {strategy ? `Active strategy: ${strategy.topic}` : "No active strategy"} · {siteData ? "Live data" : "Demo data"}
+              {displaySite(selectedSite)} · {strategy ? `Active strategy: ${strategy.topic}` : "No active strategy"} · {siteData ? "Live data" : "Demo data"}
             </div>
           </div>
           <div style={{ display: "flex", gap: ".35rem" }}>
