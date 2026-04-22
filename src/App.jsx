@@ -1825,6 +1825,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
             <span style={{fontSize:"0.9rem"}}>{n.icon}</span>
             {n.label}
             {n.id==="content" && !isPro && <span style={{fontSize:".6rem",marginLeft:"auto",color:"var(--text3)"}}>Pro</span>}
+            {n.id==="strategy" && !isPro && <span style={{fontSize:".6rem",marginLeft:"auto",color:"var(--text3)"}}>Pro</span>}
           </div>
         ))}
       </div>
@@ -4029,13 +4030,24 @@ Group my keywords into topic clusters. For each cluster, suggest a pillar + supp
 Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the highest combined impression volume where I'm currently underperforming. Target UK audience. Be specific — use my actual keywords.`;
 
         const txt = await callClaude(prompt,
-          "You are an expert SEO content strategist. You specialise in pillar/cluster content strategies for small businesses. Return valid JSON only. No markdown. Be specific and actionable."
+          "You are an expert SEO content strategist. You specialise in pillar/cluster content strategies for small businesses. Return valid JSON only. No markdown backticks. No text before or after the JSON. Be specific and actionable.",
+          "longform"
         );
-        const data = JSON.parse(txt.replace(/```json|```/g, "").trim());
-        setSuggestions(data.strategies || []);
+        // Clean and parse — handle various AI response formats
+        let cleaned = txt.replace(/```json|```/g, "").trim();
+        // Try to extract JSON if wrapped in other text
+        const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+        if (jsonMatch) cleaned = jsonMatch[0];
+        const data = JSON.parse(cleaned);
+        setSuggestions(data.strategies || [data]); // handle single strategy response too
       } catch (err) {
-        console.error("Strategy generation error:", err);
-        setSuggestions([]);
+        console.error("Strategy generation error:", err.message);
+        if (err.message?.startsWith("UPGRADE_REQUIRED")) {
+          setShowUpgrade(true);
+          setSuggestions(null);
+        } else {
+          setSuggestions([]);
+        }
       }
       setGenerating(false);
     };
