@@ -268,7 +268,7 @@ const CSS = `
 .plan-logo{font-size:1.4rem;font-weight:800;letter-spacing:-.04em;margin-bottom:.5rem;}
 .plan-logo em{color:var(--green);font-style:normal;}
 .plan-sub{font-size:.9rem;color:var(--text2);margin-bottom:2.5rem;}
-.plan-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;width:100%;max-width:860px;margin-bottom:1.5rem;}
+.plan-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:.85rem;width:100%;max-width:1050px;margin-bottom:1.5rem;}
 .plan-card{background:var(--s1);border:2px solid var(--border);border-radius:16px;padding:1.5rem;cursor:pointer;transition:all .2s;}
 .plan-card:hover{border-color:var(--blue);}
 .plan-card.selected{border-color:var(--blue);background:var(--bdim);}
@@ -290,6 +290,7 @@ const CSS = `
 /* ── User plan badge in topbar ── */
 .plan-pill{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:.2rem .55rem;border-radius:5px;background:var(--bdim);color:var(--blue);}
 .plan-pill.pro{background:var(--gdim);color:var(--green);}
+.plan-pill.starter{background:rgba(77,123,255,.12);color:var(--blue);}
 .plan-pill.agency{background:var(--bdim);color:#a855f7;border:1px solid rgba(168,85,247,.3);}
 
 /* ── Upgrade prompt ── */
@@ -833,6 +834,13 @@ export default function RankActions() {
   const [gscSitesLoading,   setGscSitesLoading]   = useState(false);
   const [showTour,   setShowTour]   = useState(false);
   const [tourStep,   setTourStep]   = useState(0);
+  // Rank Tracker state
+  const [snapshots, setSnapshots] = useState([]);
+  const [snapshotsLoading, setSnapshotsLoading] = useState(false);
+  // Page Audit state
+  const [auditUrl, setAuditUrl] = useState("");
+  const [auditData, setAuditData] = useState(null);
+  const [auditLoading, setAuditLoading] = useState(false);
   const [aiFixCount,   setAiFixCount]   = useState(() => {
     const stored = JSON.parse(localStorage.getItem("rankactions_ai_fix_usage") || '{"count":0,"month":""}');
     const thisMonth = new Date().toISOString().slice(0,7);
@@ -844,10 +852,12 @@ export default function RankActions() {
   const [gscSitePicker, setGscSitePicker] = useState(null); // list of sites to pick from // for plan selection screen
 
   // ── Plan helpers ────────────────────────────────────────────
-  const isAgency = plan === "agency";
-  const isPro    = plan === "pro" || isAgency; // agency gets all Pro features
-  const AI_FIX_LIMIT = 5; // free tier monthly limit
-  const aiFixesLeft = Math.max(0, AI_FIX_LIMIT - aiFixCount);
+  const isAgency  = plan === "agency";
+  const isPro     = plan === "pro" || isAgency;
+  const isStarter = plan === "starter" || isPro;
+  const isPaid    = isStarter;
+  const AI_FIX_LIMIT = isPro ? Infinity : plan === "starter" ? 20 : 5;
+  const aiFixesLeft = AI_FIX_LIMIT === Infinity ? Infinity : Math.max(0, AI_FIX_LIMIT - aiFixCount);
 
   const trackAiFixUsage = () => {
     const thisMonth = new Date().toISOString().slice(0,7);
@@ -1096,8 +1106,13 @@ export default function RankActions() {
     const colors = ["#f03e5f","#f5a623","#0fdb8a"];
     const labels = ["HIGH IMPACT","OPPORTUNITY","QUICK WIN"];
     const levels = ["high","medium","low"];
-    return siteData.topOpportunities.slice(0,3).map((opp,i) => ({
-      id:`live-${i}`, level:levels[i], color:colors[i], label:labels[i], type:"SEO",
+    // Filter out completed fixes and show the next best opportunities
+    const available = siteData.topOpportunities.filter((opp, i) => !doneFixes.has(`live-${i}`));
+    // If all are done, pull from deeper in the keyword list
+    const opps = available.length > 0 ? available : siteData.topOpportunities.slice(3, 6);
+    return opps.slice(0,3).map((opp,i) => ({
+      id: available.length > 0 ? `live-${siteData.topOpportunities.indexOf(opp)}` : `live-ext-${i}`,
+      level:levels[i], color:colors[i], label:labels[i], type:"SEO",
       title:`Improve ranking for "${opp.keyword}"`,
       desc:`Currently at position #${opp.position}. ${opp.potential}.`,
       m1:`Position: #${opp.position}`, m2:opp.potential,
@@ -1536,10 +1551,12 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
   // STRIPE — checkout and billing portal helpers
   // ─────────────────────────────────────────────────────────────
   const STRIPE_PRICES = {
-    pro_monthly:    'price_1TOf3kPxXBgdsxBIjlqDg93H',
-    pro_annual:     'price_1TOf5DPxXBgdsxBIhil9CD59',
-    agency_monthly: 'price_1TOf44PxXBgdsxBIMfYph4FF',
-    agency_annual:  'price_1TOf4kPxXBgdsxBIEXUjDAlx',
+    starter_monthly: 'price_STARTER_MONTHLY',  // TODO: create in Stripe and update
+    starter_annual:  'price_STARTER_ANNUAL',    // TODO: create in Stripe and update
+    pro_monthly:     'price_1TOf3kPxXBgdsxBIjlqDg93H',
+    pro_annual:      'price_1TOf5DPxXBgdsxBIhil9CD59',
+    agency_monthly:  'price_1TOf44PxXBgdsxBIMfYph4FF',
+    agency_annual:   'price_1TOf4kPxXBgdsxBIEXUjDAlx',
   };
 
   const startCheckout = async (priceId) => {
@@ -1645,47 +1662,64 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
             <ul className="plan-features">
               <li>1 website</li>
               <li>Top 3 weekly actions</li>
-              <li>5 AI fix suggestions/month</li>
+              <li>5 AI fixes/month</li>
               <li>Search Console data</li>
+              <li>3 page audits/month</li>
+            </ul>
+          </div>
+          <div className={`plan-card ${selPlan==="starter"?"selected":""}`} onClick={()=>setSelPlan("starter")}>
+            {plan==="starter" && <div className="plan-badge" style={{background:"var(--blue)",color:"#fff"}}>Current plan</div>}
+            <div className="plan-name">Starter</div>
+            <div className="plan-price">{isAnnual ? "£190" : "£19"}</div>
+            <div className="plan-period">{isAnnual ? "per year — £15.83/mo" : "per month"}</div>
+            {isAnnual && <div style={{fontSize:".78rem",color:"var(--green)",fontWeight:600,marginBottom:".5rem"}}>Save £38 vs monthly</div>}
+            <ul className="plan-features">
+              <li>3 websites</li>
+              <li>Full action list</li>
+              <li>20 AI fixes/month</li>
+              <li>Rank Tracker</li>
+              <li>Unlimited page audits</li>
+              <li>Weekly email digest</li>
             </ul>
           </div>
           <div className={`plan-card featured ${selPlan==="pro"?"selected":""}`} onClick={()=>setSelPlan("pro")}>
             {plan==="pro" ? <div className="plan-badge" style={{background:"var(--blue)",color:"#fff"}}>Current plan</div> : <div className="plan-badge">Most popular</div>}
             <div className="plan-name">Pro</div>
-            <div className="plan-price">{isAnnual ? "£500" : "£50"}</div>
-            <div className="plan-period">{isAnnual ? "per year — £41.67/mo" : "per month"}</div>
-            {isAnnual && <div style={{fontSize:".78rem",color:"var(--green)",fontWeight:600,marginBottom:".5rem"}}>Save £100 vs monthly</div>}
+            <div className="plan-price">{isAnnual ? "£390" : "£39"}</div>
+            <div className="plan-period">{isAnnual ? "per year — £32.50/mo" : "per month"}</div>
+            {isAnnual && <div style={{fontSize:".78rem",color:"var(--green)",fontWeight:600,marginBottom:".5rem"}}>Save £78 vs monthly</div>}
             <ul className="plan-features">
               <li>Unlimited websites</li>
-              <li>Full action list</li>
               <li>Unlimited AI fixes</li>
-              <li>AI content generator</li>
-              <li>Conversion tracking</li>
+              <li>AI Content Generator</li>
+              <li>Strategy Planner</li>
+              <li>Link Building tools</li>
+              <li>Rank Tracker</li>
+              <li>Page Audit</li>
               <li>Weekly email digest</li>
             </ul>
           </div>
           <div className={`plan-card ${selPlan==="agency"?"selected":""}`} onClick={()=>setSelPlan("agency")}>
             {plan==="agency" && <div className="plan-badge" style={{background:"var(--blue)",color:"#fff"}}>Current plan</div>}
             <div className="plan-name">Agency</div>
-            <div className="plan-price">{isAnnual ? "£900" : "£90"}</div>
-            <div className="plan-period">{isAnnual ? "per year — £75/mo" : "per month"}</div>
-            {isAnnual && <div style={{fontSize:".78rem",color:"var(--green)",fontWeight:600,marginBottom:".5rem"}}>Save £180 vs monthly</div>}
+            <div className="plan-price">{isAnnual ? "£790" : "£79"}</div>
+            <div className="plan-period">{isAnnual ? "per year — £65.83/mo" : "per month"}</div>
+            {isAnnual && <div style={{fontSize:".78rem",color:"var(--green)",fontWeight:600,marginBottom:".5rem"}}>Save £158 vs monthly</div>}
             <ul className="plan-features">
               <li>Everything in Pro</li>
               <li>Unlimited client sites</li>
               <li>DataForSEO data (soon)</li>
               <li>Competitor tracking (soon)</li>
               <li>White-label reports (soon)</li>
+              <li>Priority support</li>
             </ul>
           </div>
         </div>
         <button className="plan-continue-btn" onClick={async ()=>{
           if (selPlan === plan) {
-            // Already on this plan — just go back
             localStorage.setItem("rankactions_plan_chosen", "1");
             setShowPlan(false);
-          } else if (selPlan === "free" && isPro) {
-            // Downgrading — send to Stripe portal to cancel
+          } else if (selPlan === "free" && isPaid) {
             openBillingPortal();
           } else if (selPlan === "free") {
             setPlan("free");
@@ -1693,29 +1727,22 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
             localStorage.setItem("rankactions_plan_chosen", "1");
             setShowPlan(false);
           } else {
-            // Any upgrade or plan switch — Stripe Checkout
-            const priceId = selPlan === "pro"
-              ? (isAnnual ? STRIPE_PRICES.pro_annual : STRIPE_PRICES.pro_monthly)
-              : (isAnnual ? STRIPE_PRICES.agency_annual : STRIPE_PRICES.agency_monthly);
+            const pm = { starter: isAnnual?STRIPE_PRICES.starter_annual:STRIPE_PRICES.starter_monthly, pro: isAnnual?STRIPE_PRICES.pro_annual:STRIPE_PRICES.pro_monthly, agency: isAnnual?STRIPE_PRICES.agency_annual:STRIPE_PRICES.agency_monthly };
             localStorage.setItem("rankactions_plan_chosen", "1");
             setShowPlan(false);
-            await startCheckout(priceId);
+            await startCheckout(pm[selPlan]);
           }
         }}>
-          {selPlan === plan
-            ? "← Back to dashboard"
-            : selPlan === "free" && isPro
-            ? "Manage subscription →"
-            : selPlan === "free"
-            ? "Continue with Free →"
-            : isPro
-            ? `Upgrade to ${selPlan==="agency"?"Agency":"Pro"} →`
-            : `Subscribe to ${selPlan==="agency"?"Agency":"Pro"} →`}
+          {selPlan === plan ? "← Back to dashboard"
+            : selPlan === "free" && isPaid ? "Manage subscription →"
+            : selPlan === "free" ? "Continue with Free →"
+            : isPaid ? `Switch to ${selPlan.charAt(0).toUpperCase()+selPlan.slice(1)} →`
+            : `Subscribe to ${selPlan.charAt(0).toUpperCase()+selPlan.slice(1)} →`}
         </button>
-        {isPro && (
+        {isPaid && (
           <div className="plan-skip" onClick={openBillingPortal}>Manage billing & invoices</div>
         )}
-        {!isPro && (
+        {!isPaid && (
           <div className="plan-skip" onClick={()=>{
             localStorage.setItem("rankactions_plan_chosen","1");
             setShowPlan(false);
@@ -1846,6 +1873,8 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
           {id:"strategy",   icon:"🗺", label:"Strategy"},
           {id:"content",    icon:"✍", label:"Content"},
           {id:"links",      icon:"🔗", label:"Link Building"},
+          {id:"tracker",    icon:"📈", label:"Rank Tracker"},
+          {id:"audit",      icon:"🔍", label:"Page Audit"},
           {id:"reports",    icon:"📄", label:"Reports"},
           {id:"settings",   icon:"⚙", label:"Settings"},
           ...(isAdmin ? [{id:"admin", icon:"🔐", label:"Admin"}] : []),
@@ -1853,12 +1882,14 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
           <div key={n.id} className={`nav-item ${screen===n.id?"active":""}`}
             data-tour={`nav-${n.id}`}
             onClick={()=>{
-              if(["dashboard","siteDetail","content","admin","reports","links","settings","strategy"].includes(n.id)) setScreen(n.id);
+              if(["dashboard","siteDetail","content","admin","reports","links","settings","strategy","tracker","audit"].includes(n.id)) setScreen(n.id);
             }}>
             <span style={{fontSize:"0.9rem"}}>{n.icon}</span>
             {n.label}
             {n.id==="content" && !isPro && <span style={{fontSize:".6rem",marginLeft:"auto",color:"var(--text3)"}}>Pro</span>}
             {n.id==="strategy" && !isPro && <span style={{fontSize:".6rem",marginLeft:"auto",color:"var(--text3)"}}>Pro</span>}
+            {n.id==="links" && !isPro && <span style={{fontSize:".6rem",marginLeft:"auto",color:"var(--text3)"}}>Pro</span>}
+            {n.id==="tracker" && !isStarter && <span style={{fontSize:".6rem",marginLeft:"auto",color:"var(--text3)"}}>Starter</span>}
           </div>
         ))}
       </div>
@@ -1911,14 +1942,14 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
          : isConnected && siteData ? <span className="topbar-badge">✓ Live data</span>
          : <span className="topbar-badge demo">⚠ Demo data</span>}
         <span
-          className={`plan-pill ${plan==="pro"?"pro":plan==="agency"?"agency":""}`}
+          className={`plan-pill ${plan==="pro"?"pro":plan==="agency"?"agency":plan==="starter"?"starter":""}`}
           style={{cursor:"pointer"}}
           title="View plans"
           onClick={()=>{
             setSelPlan(plan || "free");
             setShowPlan(true);
           }}>
-          {plan==="agency"?"Agency":plan==="pro"?"Pro":"Free"}
+          {plan==="agency"?"Agency":plan==="pro"?"Pro":plan==="starter"?"Starter":"Free"}
         </span>
         {isConnected
           ? <button className="disconnect-btn" onClick={disconnect}>Disconnect GSC</button>
@@ -2094,7 +2125,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
                     <div className="fix-actions">
                       <button className="fa-btn primary" onClick={()=>openModal(fix)}>
                         ✨ Generate alternatives
-                        {!isPro && <span className={`ai-fix-counter ${aiFixesLeft<=2?"warn":""}`}>({aiFixesLeft} left)</span>}
+                        {!isPro && AI_FIX_LIMIT !== Infinity && <span className={`ai-fix-counter ${aiFixesLeft<=2?"warn":""}`}>({aiFixesLeft} left)</span>}
                       </button>
                       <button className="fa-btn" onClick={()=>copyText(fix.suggestion,fix.id+"-c")}>
                         {copiedId===fix.id+"-c"?"✓ Copied":"📋 Copy fix"}
@@ -2650,30 +2681,36 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
   // ─────────────────────────────────────────────────────────────
 
   const UpgradeModal = () => {
-    const [upgradePlan, setUpgradePlan] = useState("pro");
+    const [upgradePlan, setUpgradePlan] = useState(plan === "free" ? "starter" : "pro");
     const [billing, setBilling] = useState("monthly");
     const [loading, setLoading] = useState(false);
 
     const prices = {
-      pro:    { monthly: "£29",  annual: "£290", save: "£58",  monthlyEff: "£24.17" },
-      agency: { monthly: "£59",  annual: "£590", save: "£118", monthlyEff: "£49.17" },
+      starter:{ monthly: "£19",  annual: "£190", save: "£38",  monthlyEff: "£15.83" },
+      pro:    { monthly: "£39",  annual: "£390", save: "£78",  monthlyEff: "£32.50" },
+      agency: { monthly: "£79",  annual: "£790", save: "£158", monthlyEff: "£65.83" },
     };
     const p = prices[upgradePlan];
 
-    const priceId = upgradePlan === "pro"
-      ? (billing === "annual" ? STRIPE_PRICES.pro_annual : STRIPE_PRICES.pro_monthly)
-      : (billing === "annual" ? STRIPE_PRICES.agency_annual : STRIPE_PRICES.agency_monthly);
+    const priceMap = {
+      starter: billing==="annual" ? STRIPE_PRICES.starter_annual : STRIPE_PRICES.starter_monthly,
+      pro: billing==="annual" ? STRIPE_PRICES.pro_annual : STRIPE_PRICES.pro_monthly,
+      agency: billing==="annual" ? STRIPE_PRICES.agency_annual : STRIPE_PRICES.agency_monthly,
+    };
+    const priceId = priceMap[upgradePlan];
 
     return (
     <div className="upgrade-overlay" onClick={e=>e.target===e.currentTarget&&setShowUpgrade(false)}>
       <div className="upgrade-modal">
         <div className="upgrade-modal-badge">Upgrade</div>
-        <h2>Unlock RankActions {upgradePlan === "pro" ? "Pro" : "Agency"}</h2>
-        <p>{upgradePlan === "pro" ? "Unlimited AI fixes, content generation, conversion tracking and more." : "Everything in Pro plus unlimited client sites and priority support."}</p>
+        <h2>Unlock RankActions {upgradePlan.charAt(0).toUpperCase()+upgradePlan.slice(1)}</h2>
+        <p>{upgradePlan === "starter" ? "More AI fixes, rank tracking, unlimited page audits, and weekly reports."
+          : upgradePlan === "pro" ? "Unlimited AI fixes, content generation, strategy planner, and link building."
+          : "Everything in Pro plus unlimited client sites and priority support."}</p>
 
         {/* Plan toggle */}
         <div style={{display:"flex",background:"var(--s2)",borderRadius:999,padding:3,gap:3,marginBottom:".75rem"}}>
-          {[["pro","Pro"],["agency","Agency"]].map(([id,label])=>(
+          {[["starter","Starter"],["pro","Pro"],["agency","Agency"]].filter(([id])=> id !== plan).map(([id,label])=>(
             <button key={id} onClick={()=>setUpgradePlan(id)}
               style={{flex:1,padding:".45rem",borderRadius:999,border:"none",fontFamily:"var(--font)",fontSize:".82rem",fontWeight:600,cursor:"pointer",background:upgradePlan===id?"var(--blue)":"none",color:upgradePlan===id?"#fff":"var(--text2)",transition:"all .15s"}}>
               {label}
@@ -2693,7 +2730,16 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
         </div>
 
         <ul className="upgrade-modal-features">
-          {upgradePlan === "pro" ? (
+          {upgradePlan === "starter" ? (
+            <>
+              <li>3 websites</li>
+              <li>20 AI fixes per month</li>
+              <li>Rank Tracker</li>
+              <li>Unlimited page audits</li>
+              <li>Weekly email digest</li>
+              <li>Full action list</li>
+            </>
+          ) : upgradePlan === "pro" ? (
             <>
               <li>Unlimited websites</li>
               <li>Unlimited AI fix generator</li>
@@ -2850,6 +2896,13 @@ ${style.cssVars && Object.keys(style.cssVars).length > 0 ? '- CSS variables foun
 
 CRITICAL: Use the header/brand colour for the navbar and hero section background. Use the detected fonts. The generated article must look like it belongs on this website.` : '';
 
+      // Load previously generated content to avoid duplication
+      let contentHistory = [];
+      try { contentHistory = JSON.parse(localStorage.getItem(`ra_content_history_${selectedSite}`) || "[]"); } catch {}
+      const historyContext = contentHistory.length > 0
+        ? `\nPREVIOUSLY GENERATED CONTENT (do NOT duplicate these topics or angles):\n${contentHistory.map(h => `- "${h.keyword}" (${h.date})`).join("\n")}\nWrite something genuinely different from the above — different angle, different subtopics, different structure.\n`
+        : "";
+
       try {
         const prompt = `You are an expert SEO content writer. Generate a complete, production-ready HTML blog post.
 
@@ -2862,10 +2915,9 @@ INPUTS:
 - Target word count: ~${wordCount} words
 - Primary CTA: ${cta.trim() || "Contact us to find out more"}
 - Additional notes: ${notes.trim() || "none"}
-- Website: ${selectedSite}
+- Website: ${displaySite(selectedSite)}
 ${styleContext}
-
-DATA NOTICE: Only keyword, business context and tone are sent to AI. No personal data included.
+${historyContext}
 
 BUILD THIS STRUCTURE:
 1. HEAD: title tag (50-60 chars, keyword first), meta description (145-155 chars, include keyword), canonical URL (https://${selectedSite}/[keyword-slug]/), robots, Open Graph tags, JSON-LD Article schema, datePublished today
@@ -2892,6 +2944,13 @@ IMPORTANT — Label internal links clearly so non-technical users know what they
         const clean = text.replace(/^```html\s*/i,"").replace(/^```\s*/i,"").replace(/```\s*$/i,"").trim();
         setOutput(clean);
         setTab("preview");
+        // Track generated content to avoid future duplication
+        try {
+          const histKey = `ra_content_history_${selectedSite}`;
+          const hist = JSON.parse(localStorage.getItem(histKey) || "[]");
+          hist.push({ keyword: kw.trim(), date: new Date().toISOString().slice(0,10) });
+          localStorage.setItem(histKey, JSON.stringify(hist.slice(-50))); // keep last 50
+        } catch {}
       } catch(e) {
         clearInterval(iv);
         setError("Generation failed — please try again. If the problem persists, check your Worker is deployed.");
@@ -3875,15 +3934,28 @@ Write 3-4 short paragraphs: overall performance, biggest opportunities, what to 
     setLinkOppsLoading(true);
     const topKws = siteData?.keywords?.slice(0,8).map(k=>`${k.keyword} (#${k.position})`).join(", ") || "your main keywords";
     const topPages = siteData?.pages?.slice(0,5).map(p=>p.page).join(", ") || "";
+
+    // Load previous opportunities and prospects to avoid duplication
+    let prevOpps = [];
+    try { prevOpps = JSON.parse(localStorage.getItem(`ra_link_history_${selectedSite}`) || "[]"); } catch {}
+    const prevOppContext = prevOpps.length > 0
+      ? `\nPREVIOUSLY SUGGESTED (do NOT repeat these — suggest completely different platforms, sites, and approaches):\n${prevOpps.map(o => `- "${o.title}" (${o.type}) — ${o.target || "no target"}`).join("\n")}\n`
+      : "";
+
+    // Also include current prospect pipeline
+    const pipelineContext = linkProspects.length > 0
+      ? `\nUSER'S EXISTING PROSPECT PIPELINE (already being pursued — do NOT suggest these again):\n${linkProspects.map(p => `- ${p.domain} (${p.type}, status: ${p.status})`).join("\n")}\n`
+      : "";
+
     try {
       const txt = await callClaude(
         `You are an expert UK link building strategist. Generate 8 specific, actionable link building opportunities for this website.
 
-Site: ${selectedSite}
+Site: ${displaySite(selectedSite)}
 Top keywords and positions: ${topKws}
 Top pages: ${topPages}
 Country: UK
-
+${prevOppContext}${pipelineContext}
 CRITICAL RULES:
 - Suggest REAL, specific types of websites and platforms the user can approach — include the actual URL or platform name where possible (e.g. "yell.com", "Checkatrade", "HARO", "SourceBottle")
 - For each opportunity, provide a SPECIFIC contact method — where to find the contact form, email pattern, or submission page
@@ -3914,6 +3986,13 @@ Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource
       );
       const parsed = JSON.parse(txt.replace(/```json|```/g,"").trim());
       setLinkOpps(parsed);
+      // Save to history for deduplication
+      try {
+        const histKey = `ra_link_history_${selectedSite}`;
+        const hist = JSON.parse(localStorage.getItem(histKey) || "[]");
+        parsed.forEach(o => hist.push({ title: o.title, type: o.type, target: o.targets?.[0]?.name || "", date: new Date().toISOString().slice(0,10) }));
+        localStorage.setItem(histKey, JSON.stringify(hist.slice(-40))); // keep last 40
+      } catch {}
     } catch {
       setLinkOpps([
         { title:"Google Business Profile", type:"Local Citation", difficulty:"easy", description:`Claim and optimise your Google Business Profile. This is the single most important local citation and directly impacts Google Maps rankings.`, targets:[{name:"Google Business Profile",url:"https://business.google.com",contactMethod:"Sign in with your Google account and follow the verification steps"}], steps:["Go to business.google.com","Click 'Manage now'","Search for your business or add it","Fill in all details — name, address, phone, hours, categories","Verify via postcard, phone or email","Add photos, services and a description with your keywords"], value:"High", timeToResult:"1-2 weeks", complianceNote:"Ensure your business name, address and phone match exactly across all citations" },
@@ -3999,15 +4078,30 @@ Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource
         const kwData = siteData?.keywords?.slice(0, 30).map(k => `"${k.keyword}" (pos #${k.position}, ${k.impressions} impressions, ${k.clicks} clicks)`).join("\n") || "No keyword data available";
         const pages = siteData?.pages?.slice(0, 10).map(p => p.page).join("\n") || "No page data";
 
+        // Load previous strategies and content to avoid duplication
+        let prevStrategies = [];
+        try { prevStrategies = JSON.parse(localStorage.getItem(`ra_strategy_history_${selectedSite}`) || "[]"); } catch {}
+        let contentHistory = [];
+        try { contentHistory = JSON.parse(localStorage.getItem(`ra_content_history_${selectedSite}`) || "[]"); } catch {}
+        const currentStrategy = strategy;
+
+        const dupeContext = (prevStrategies.length > 0 || contentHistory.length > 0 || currentStrategy)
+          ? `\nPREVIOUSLY USED — do NOT suggest these topics or keywords again:
+${currentStrategy ? `- Current active strategy: "${currentStrategy.topic}" with clusters: ${currentStrategy.clusters.map(c=>c.keyword).join(", ")}` : ""}
+${prevStrategies.map(s => `- Previous strategy: "${s.topic}" (${s.date})`).join("\n")}
+${contentHistory.map(h => `- Blog already written: "${h.keyword}" (${h.date})`).join("\n")}
+Suggest DIFFERENT topics, keywords, and angles from the above.\n`
+          : "";
+
         const prompt = topic
           ? `I want to build a pillar content strategy around this topic: "${topic}".
 
-My website is ${selectedSite}. Here are my current keywords:
+My website is ${displaySite(selectedSite)}. Here are my current keywords:
 ${kwData}
 
 My current pages:
 ${pages}
-
+${dupeContext}
 Based on this data, suggest a pillar + cluster strategy. Return ONLY valid JSON, no markdown, in this format:
 {
   "strategies": [
@@ -4039,12 +4133,12 @@ Generate exactly 1 strategy with 6-8 cluster posts. Make sure keywords are speci
 
           : `Analyse my website data and suggest 3 pillar content strategies I should build.
 
-My website is ${selectedSite}. Here are my current keywords:
+My website is ${displaySite(selectedSite)}. Here are my current keywords:
 ${kwData}
 
 My current pages:
 ${pages}
-
+${dupeContext}
 Group my keywords into topic clusters. For each cluster, suggest a pillar + supporting blog strategy. Return ONLY valid JSON, no markdown:
 {
   "strategies": [
@@ -4100,6 +4194,15 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
 
     // Accept a suggestion and turn it into an active strategy
     const acceptStrategy = (s) => {
+      // Save current strategy to history before replacing
+      if (strategy) {
+        try {
+          const histKey = `ra_strategy_history_${selectedSite}`;
+          const hist = JSON.parse(localStorage.getItem(histKey) || "[]");
+          hist.push({ topic: strategy.topic, date: strategy.createdAt?.slice(0,10) || new Date().toISOString().slice(0,10), clusters: strategy.clusters.map(c => c.keyword) });
+          localStorage.setItem(histKey, JSON.stringify(hist.slice(-20))); // keep last 20
+        } catch {}
+      }
       const newStrategy = {
         topic: s.topic,
         reasoning: s.reasoning,
@@ -4684,7 +4787,7 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
             <div><div style={valStyle}>{user?.primaryEmailAddress?.emailAddress || "—"}</div><div style={subStyle}>Email</div></div>
           </div>
           <div style={{...rowStyle,borderBottom:"none"}}>
-            <div><div style={valStyle}><span className={`plan-pill ${plan==="pro"?"pro":plan==="agency"?"agency":""}`} style={{fontSize:".75rem"}}>{plan==="agency"?"Agency":plan==="pro"?"Pro":"Free"}</span></div><div style={subStyle}>Current plan</div></div>
+            <div><div style={valStyle}><span className={`plan-pill ${plan==="pro"?"pro":plan==="agency"?"agency":plan==="starter"?"starter":""}`} style={{fontSize:".75rem"}}>{plan==="agency"?"Agency":plan==="pro"?"Pro":plan==="starter"?"Starter":"Free"}</span></div><div style={subStyle}>Current plan</div></div>
             <div style={{display:"flex",gap:".5rem"}}>
               {isPro ? (
                 <button style={btnStyle} onClick={openBillingPortal}>Manage subscription</button>
@@ -4781,6 +4884,267 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
         <div style={{fontSize:".75rem",color:"var(--text3)",textAlign:"center",padding:"1rem 0"}}>
           RankActions by E2E Integration · <a href="https://rankactions.com/privacy.html" target="_blank" rel="noopener" style={{color:"var(--text3)"}}>Privacy Policy</a> · <a href="mailto:hello@rankactions.com" style={{color:"var(--text3)"}}>hello@rankactions.com</a>
         </div>
+      </div>
+    );
+  };
+
+  // ─────────────────────────────────────────────────────────────
+  // RANK TRACKER
+  // ─────────────────────────────────────────────────────────────
+  const RankTracker = () => {
+    const [trackedKws, setTrackedKws] = useState([]);
+    const [selectedKw, setSelectedKw] = useState(null);
+
+    useEffect(() => {
+      const load = async () => {
+        setSnapshotsLoading(true);
+        try {
+          const siteUrl = selectedSite.startsWith("http") || selectedSite.startsWith("sc-domain:") ? selectedSite : `https://${selectedSite}`;
+          // Auto-save a snapshot for today
+          if (userId) {
+            await authFetch(`${WORKER_URL}/api/rank-snapshot/save`, {
+              method: "POST", headers: {"Content-Type":"application/json"},
+              body: JSON.stringify({ userId, siteUrl })
+            }).catch(()=>{});
+          }
+          // Fetch snapshots
+          const res = await authFetch(`${WORKER_URL}/api/rank-snapshots?siteUrl=${encodeURIComponent(siteUrl)}`);
+          const data = await res.json();
+          if (data.snapshots) {
+            setSnapshots(data.snapshots);
+            const kwMap = {};
+            data.snapshots.forEach(snap => {
+              snap.keywords.forEach(k => {
+                if (!kwMap[k.keyword]) kwMap[k.keyword] = { keyword: k.keyword, history: [] };
+                kwMap[k.keyword].history.push({ date: snap.date, position: k.position, clicks: k.clicks, impressions: k.impressions });
+              });
+            });
+            const sorted = Object.values(kwMap).sort((a,b) => b.history.length - a.history.length);
+            setTrackedKws(sorted);
+            if (sorted.length > 0 && !selectedKw) setSelectedKw(sorted[0].keyword);
+          }
+        } catch {}
+        setSnapshotsLoading(false);
+      };
+      load();
+    }, [selectedSite]);
+
+    const getChange = (kw) => {
+      const h = trackedKws.find(t => t.keyword === kw)?.history || [];
+      if (h.length < 2) return null;
+      return parseFloat((h[h.length-2].position - h[h.length-1].position).toFixed(1));
+    };
+
+    const kwData = trackedKws.find(t => t.keyword === selectedKw);
+    const history = kwData?.history || [];
+
+    const renderChart = () => {
+      if (history.length < 2) return <div style={{textAlign:"center",padding:"2rem",color:"var(--text3)",fontSize:".85rem"}}>Need at least 2 snapshots to show a chart. Data is captured weekly — check back next week.</div>;
+      const w=700,h=220,pL=50,pR=20,pT=20,pB=40;
+      const positions = history.map(d=>d.position);
+      const maxP = Math.max(...positions,30), minP = Math.min(...positions,1), range = Math.max(maxP-minP,5);
+      const cW=w-pL-pR, cH=h-pT-pB;
+      const pts = history.map((d,i)=>({ x:pL+(i/(history.length-1))*cW, y:pT+cH-((d.position-minP)/range)*cH }));
+      // Position 1 = top of chart (y inverted already since lower position = higher)
+      // Actually need to invert: lower position number should be higher on chart
+      const invertPts = history.map((d,i)=>({ x:pL+(i/(history.length-1))*cW, y:pT+((d.position-minP)/range)*cH }));
+      // So position 1 is at top (small y), position 30 at bottom (large y) — that's wrong. Let me fix:
+      // We want: position 1 → y near pT (top), position 30 → y near pT+cH (bottom)
+      // y = pT + ((position - minP) / range) * cH — this puts minP at top, maxP at bottom. That's correct!
+      // Because lower position number is better and should be at the top.
+      const line = invertPts.map((p,i)=>`${i===0?"M":"L"}${p.x},${p.y}`).join(" ");
+      const area = `${line} L${invertPts[invertPts.length-1].x},${pT+cH} L${invertPts[0].x},${pT+cH} Z`;
+      return (
+        <svg viewBox={`0 0 ${w} ${h}`} style={{width:"100%",maxWidth:700,background:"var(--s1)",borderRadius:10,border:"1px solid var(--border)"}}>
+          {[0,.25,.5,.75,1].map((pct,i)=>{
+            const y=pT+pct*cH, pos=Math.round(minP+pct*range);
+            return <g key={i}><line x1={pL} y1={y} x2={w-pR} y2={y} stroke="var(--border)" strokeWidth={.5}/>
+              <text x={pL-8} y={y+4} textAnchor="end" fill="var(--text3)" fontSize={10}>#{pos}</text></g>;
+          })}
+          <path d={area} fill="rgba(10,124,78,.08)"/>
+          <path d={line} fill="none" stroke="#0A7C4E" strokeWidth={2.5} strokeLinejoin="round"/>
+          {invertPts.map((p,i)=>(
+            <g key={i}><circle cx={p.x} cy={p.y} r={4} fill="#0A7C4E" stroke="var(--s1)" strokeWidth={2}/>
+              <text x={p.x} y={pT+cH+16} textAnchor="middle" fill="var(--text3)" fontSize={9}>{history[i].date.slice(5)}</text></g>
+          ))}
+        </svg>
+      );
+    };
+
+    return (
+      <div className="content" style={{padding:"1.5rem 2rem",maxWidth:1100}}>
+        <div style={{marginBottom:"1.5rem"}}>
+          <div style={{fontSize:"1.3rem",fontWeight:700}}>Rank Tracker</div>
+          <div style={{fontSize:".82rem",color:"var(--text3)"}}>{displaySite(selectedSite)} · {snapshots.length} snapshots · {trackedKws.length} keywords tracked</div>
+        </div>
+        {snapshotsLoading ? (
+          <div style={{textAlign:"center",padding:"3rem",color:"var(--text3)"}}><div className="spinner-sm" style={{margin:"0 auto .75rem"}}/>Loading rank history...</div>
+        ) : trackedKws.length === 0 ? (
+          <div style={{textAlign:"center",padding:"3rem",background:"var(--s1)",borderRadius:12,border:"1px solid var(--border)"}}>
+            <div style={{fontSize:"2rem",marginBottom:".5rem"}}>📈</div>
+            <div style={{fontWeight:600,marginBottom:".4rem"}}>No rank data yet</div>
+            <div style={{fontSize:".82rem",color:"var(--text3)",maxWidth:400,margin:"0 auto"}}>
+              RankActions captures your keyword positions automatically. Your first snapshot will appear after your next Monday digest, or reload this page to capture one now.
+            </div>
+          </div>
+        ) : (
+          <div style={{display:"grid",gridTemplateColumns:"260px 1fr",gap:"1.5rem",alignItems:"start"}}>
+            <div style={{background:"var(--s1)",borderRadius:12,border:"1px solid var(--border)",overflow:"hidden"}}>
+              <div style={{padding:".65rem 1rem",borderBottom:"1px solid var(--border)",fontWeight:600,fontSize:".78rem",color:"var(--text3)"}}>Keywords ({trackedKws.length})</div>
+              <div style={{maxHeight:480,overflow:"auto"}}>
+                {trackedKws.map(kw=>{
+                  const ch = getChange(kw.keyword);
+                  const latest = kw.history[kw.history.length-1];
+                  return (
+                    <div key={kw.keyword} onClick={()=>setSelectedKw(kw.keyword)}
+                      style={{padding:".5rem .85rem",cursor:"pointer",borderBottom:"1px solid var(--b2)",
+                        background:selectedKw===kw.keyword?"var(--s2)":"transparent",
+                        borderLeft:selectedKw===kw.keyword?"3px solid var(--green)":"3px solid transparent"}}>
+                      <div style={{fontSize:".78rem",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{kw.keyword}</div>
+                      <div style={{display:"flex",gap:".6rem",fontSize:".68rem",color:"var(--text3)"}}>
+                        <span>#{latest.position}</span>
+                        {ch!==null && <span style={{color:ch>0?"var(--green)":ch<0?"#f03e5f":"var(--text3)",fontWeight:600}}>{ch>0?`↑${ch}`:ch<0?`↓${Math.abs(ch)}`:"→"}</span>}
+                        <span>{kw.history.length}wk</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <div>
+              {selectedKw && <>
+                <div style={{marginBottom:"1rem"}}>
+                  <div style={{fontSize:"1.05rem",fontWeight:700,marginBottom:".2rem"}}>{selectedKw}</div>
+                  {history.length>=2 && (()=>{
+                    const diff=parseFloat((history[0].position-history[history.length-1].position).toFixed(1));
+                    return <div style={{fontSize:".8rem",color:diff>0?"var(--green)":diff<0?"#f03e5f":"var(--text3)"}}>
+                      {diff>0?`↑ Improved ${diff} positions`:diff<0?`↓ Dropped ${Math.abs(diff)} positions`:"→ No change"} since {history[0].date}
+                    </div>;
+                  })()}
+                </div>
+                {renderChart()}
+                <div style={{marginTop:"1rem",background:"var(--s1)",borderRadius:10,border:"1px solid var(--border)",overflow:"hidden"}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:".75rem"}}>
+                    <thead><tr style={{borderBottom:"1px solid var(--border)"}}>
+                      <th style={{padding:".45rem .65rem",textAlign:"left",color:"var(--text3)",fontWeight:600}}>Date</th>
+                      <th style={{padding:".45rem .65rem",textAlign:"right",color:"var(--text3)",fontWeight:600}}>Position</th>
+                      <th style={{padding:".45rem .65rem",textAlign:"right",color:"var(--text3)",fontWeight:600}}>Change</th>
+                      <th style={{padding:".45rem .65rem",textAlign:"right",color:"var(--text3)",fontWeight:600}}>Clicks</th>
+                      <th style={{padding:".45rem .65rem",textAlign:"right",color:"var(--text3)",fontWeight:600}}>Impr.</th>
+                    </tr></thead>
+                    <tbody>{[...history].reverse().map((d,i,arr)=>{
+                      const prev=arr[i+1]; const ch=prev?parseFloat((prev.position-d.position).toFixed(1)):null;
+                      return <tr key={d.date} style={{borderBottom:"1px solid var(--b2)"}}>
+                        <td style={{padding:".4rem .65rem"}}>{new Date(d.date).toLocaleDateString("en-GB",{day:"numeric",month:"short"})}</td>
+                        <td style={{padding:".4rem .65rem",textAlign:"right",fontWeight:700,fontFamily:"monospace",color:d.position<=10?"var(--green)":d.position<=20?"#b85c00":"#f03e5f"}}>#{d.position}</td>
+                        <td style={{padding:".4rem .65rem",textAlign:"right",fontWeight:600,color:ch===null?"var(--text3)":ch>0?"var(--green)":ch<0?"#f03e5f":"var(--text3)"}}>{ch===null?"—":ch>0?`↑${ch}`:ch<0?`↓${Math.abs(ch)}`:"→"}</td>
+                        <td style={{padding:".4rem .65rem",textAlign:"right"}}>{d.clicks}</td>
+                        <td style={{padding:".4rem .65rem",textAlign:"right",color:"var(--text3)"}}>{d.impressions}</td>
+                      </tr>;
+                    })}</tbody>
+                  </table>
+                </div>
+              </>}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ─────────────────────────────────────────────────────────────
+  // PAGE AUDIT
+  // ─────────────────────────────────────────────────────────────
+  const PageAudit = () => {
+    const [url, setUrl] = useState(auditUrl || (selectedSite.startsWith("sc-domain:")?`https://${selectedSite.replace("sc-domain:","")}`:selectedSite.startsWith("http")?selectedSite:`https://${selectedSite}`));
+    const runAudit = async () => {
+      if (!url.trim()) return;
+      setAuditLoading(true); setAuditData(null); setAuditUrl(url);
+      try {
+        const res = await authFetch(`${WORKER_URL}/api/page-audit`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({url:url.trim()}) });
+        setAuditData(await res.json());
+      } catch(e) { setAuditData({error:e.message,audited:false}); }
+      setAuditLoading(false);
+    };
+    const scoreColor = (s) => s>=90?"#0A7C4E":s>=75?"#0fdb8a":s>=60?"#f5a623":s>=40?"#e67e22":"#f03e5f";
+    const typeIcon = (t) => t==="critical"?"🔴":t==="warning"?"🟡":t==="info"?"🔵":"🟢";
+    const typeColor = (t) => t==="critical"?"#f03e5f":t==="warning"?"#f5a623":t==="info"?"#4d7bff":"#0fdb8a";
+
+    return (
+      <div className="content" style={{padding:"1.5rem 2rem",maxWidth:900}}>
+        <div style={{marginBottom:"1.5rem"}}>
+          <div style={{fontSize:"1.3rem",fontWeight:700}}>Page SEO Audit</div>
+          <div style={{fontSize:".82rem",color:"var(--text3)"}}>Enter any URL to get an instant SEO health check with specific fixes</div>
+        </div>
+        <div style={{display:"flex",gap:".75rem",marginBottom:"1.5rem"}}>
+          <input value={url} onChange={e=>setUrl(e.target.value)} onKeyDown={e=>e.key==="Enter"&&runAudit()}
+            placeholder="https://example.com/page"
+            style={{flex:1,padding:".65rem 1rem",background:"var(--s1)",border:"1px solid var(--border)",borderRadius:8,color:"var(--text)",fontFamily:"var(--font)",fontSize:".85rem"}}/>
+          <button onClick={runAudit} disabled={auditLoading||!url.trim()}
+            style={{padding:".65rem 1.5rem",background:"var(--green)",color:"#fff",border:"none",borderRadius:8,fontFamily:"var(--font)",fontWeight:600,fontSize:".85rem",cursor:"pointer",opacity:auditLoading?.6:1}}>
+            {auditLoading?"Auditing...":"🔍 Audit page"}
+          </button>
+        </div>
+        {auditLoading && <div style={{textAlign:"center",padding:"3rem",color:"var(--text3)"}}><div className="spinner-sm" style={{margin:"0 auto .75rem"}}/>Scanning page for SEO issues...</div>}
+        {auditData?.error && <div style={{padding:"1rem",background:"rgba(240,62,95,.08)",border:"1px solid rgba(240,62,95,.2)",borderRadius:10,color:"#f03e5f",fontSize:".85rem"}}>Could not audit: {auditData.error}</div>}
+        {auditData?.audited && <>
+          <div style={{display:"grid",gridTemplateColumns:"140px 1fr",gap:"1.5rem",marginBottom:"1.5rem",alignItems:"center"}}>
+            <div style={{textAlign:"center"}}>
+              <svg viewBox="0 0 120 120" style={{width:130,height:130}}>
+                <circle cx={60} cy={60} r={52} fill="none" stroke="var(--border)" strokeWidth={8}/>
+                <circle cx={60} cy={60} r={52} fill="none" stroke={scoreColor(auditData.score)} strokeWidth={8}
+                  strokeDasharray={`${(auditData.score/100)*327} 327`} strokeLinecap="round" transform="rotate(-90 60 60)"/>
+                <text x={60} y={55} textAnchor="middle" fill={scoreColor(auditData.score)} fontSize={32} fontWeight={800} fontFamily="Arial">{auditData.score}</text>
+                <text x={60} y={75} textAnchor="middle" fill="var(--text3)" fontSize={14}>Grade {auditData.grade}</text>
+              </svg>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:".65rem"}}>
+              <div style={{background:"rgba(240,62,95,.06)",borderRadius:10,padding:".85rem",textAlign:"center",border:"1px solid rgba(240,62,95,.15)"}}>
+                <div style={{fontSize:"1.4rem",fontWeight:800,color:"#f03e5f"}}>{auditData.summary.critical}</div>
+                <div style={{fontSize:".72rem",color:"var(--text3)"}}>Critical</div>
+              </div>
+              <div style={{background:"rgba(245,166,35,.06)",borderRadius:10,padding:".85rem",textAlign:"center",border:"1px solid rgba(245,166,35,.15)"}}>
+                <div style={{fontSize:"1.4rem",fontWeight:800,color:"#f5a623"}}>{auditData.summary.warnings}</div>
+                <div style={{fontSize:".72rem",color:"var(--text3)"}}>Warnings</div>
+              </div>
+              <div style={{background:"rgba(15,219,138,.06)",borderRadius:10,padding:".85rem",textAlign:"center",border:"1px solid rgba(15,219,138,.15)"}}>
+                <div style={{fontSize:"1.4rem",fontWeight:800,color:"#0fdb8a"}}>{auditData.summary.passed}</div>
+                <div style={{fontSize:".72rem",color:"var(--text3)"}}>Passed</div>
+              </div>
+            </div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:".6rem",marginBottom:"1.25rem"}}>
+            {[{l:"Load time",v:`${auditData.loadTime}ms`,ok:auditData.loadTime<3000},{l:"Word count",v:`~${auditData.wordCount}`,ok:auditData.wordCount>=300}].map(m=>(
+              <div key={m.l} style={{background:"var(--s1)",borderRadius:8,padding:".5rem .85rem",border:"1px solid var(--border)",display:"flex",justifyContent:"space-between"}}>
+                <span style={{fontSize:".75rem",color:"var(--text3)"}}>{m.l}</span>
+                <span style={{fontSize:".8rem",fontWeight:600,color:m.ok?"var(--green)":"#f5a623"}}>{m.v}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:".5rem"}}>
+            {auditData.issues.filter(i=>i.type!=="pass").map((issue,i)=>(
+              <div key={i} style={{background:"var(--s1)",borderRadius:10,border:"1px solid var(--border)",padding:".85rem 1rem",borderLeft:`3px solid ${typeColor(issue.type)}`}}>
+                <div style={{display:"flex",alignItems:"center",gap:".4rem",marginBottom:".25rem"}}>
+                  <span>{typeIcon(issue.type)}</span>
+                  <span style={{fontSize:".7rem",fontWeight:700,color:typeColor(issue.type),textTransform:"uppercase",letterSpacing:".04em"}}>{issue.type}</span>
+                  <span style={{fontSize:".7rem",color:"var(--text3)"}}>· {issue.category}</span>
+                </div>
+                <div style={{fontSize:".85rem",fontWeight:600,marginBottom:".25rem"}}>{issue.issue}</div>
+                {issue.fix && <div style={{fontSize:".78rem",color:"var(--text2)",lineHeight:1.5}}>{issue.fix}</div>}
+                {issue.current && <div style={{fontSize:".7rem",color:"var(--text3)",marginTop:".25rem",fontFamily:"monospace",wordBreak:"break-all"}}>Current: {issue.current}</div>}
+              </div>
+            ))}
+            <div style={{marginTop:".4rem"}}>
+              <div style={{fontSize:".78rem",fontWeight:600,color:"var(--text3)",marginBottom:".4rem"}}>Passed ({auditData.issues.filter(i=>i.type==="pass").length})</div>
+              {auditData.issues.filter(i=>i.type==="pass").map((issue,i)=>(
+                <div key={i} style={{display:"flex",alignItems:"center",gap:".4rem",padding:".3rem 0",fontSize:".75rem",color:"var(--text3)"}}>🟢 {issue.category}: {issue.issue}</div>
+              ))}
+            </div>
+          </div>
+          <div style={{marginTop:"1rem",fontSize:".7rem",color:"var(--text3)",background:"var(--s1)",borderRadius:8,padding:".55rem .85rem",lineHeight:1.6,border:"1px solid var(--border)"}}>
+            ⚠️ This audit checks on-page SEO factors only. It does not measure Core Web Vitals, mobile rendering, or JavaScript-rendered content. Always back up your site before making changes.
+          </div>
+        </>}
       </div>
     );
   };
@@ -5088,6 +5452,8 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
           {screen==="content"    && <ContentGenerator/>}
           {screen==="strategy"   && <StrategyPlanner/>}
           {screen==="links"      && <LinkBuildingScreen/>}
+          {screen==="tracker"    && <RankTracker/>}
+          {screen==="audit"      && <PageAudit/>}
           {screen==="settings"   && <SettingsScreen/>}
           {screen==="reports"    && <ReportsTab/>}
           {screen==="admin"      && isAdmin && <AdminPanel/>}
