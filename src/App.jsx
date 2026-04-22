@@ -777,7 +777,7 @@ export default function RankActions() {
   const [authView,  setAuthView]  = useState("signin"); // signin | signup
   const [showPlan,  setShowPlan]  = useState(false);
   const [plan,      setPlan]      = useState(() => localStorage.getItem("rankactions_plan") || "free");
-  const [selPlan,   setSelPlan]   = useState("free");
+  const [selPlan,   setSelPlan]   = useState(plan || "free");
 
   // Auth & real data
   const [userId,       setUserId]       = useState(null);
@@ -1635,6 +1635,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
 
         <div className="plan-grid">
           <div className={`plan-card ${selPlan==="free"?"selected":""}`} onClick={()=>setSelPlan("free")}>
+            {plan==="free" && <div className="plan-badge" style={{background:"var(--blue)",color:"#fff"}}>Current plan</div>}
             <div className="plan-name">Free</div>
             <div className="plan-price">£0</div>
             <div className="plan-period">forever</div>
@@ -1646,7 +1647,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
             </ul>
           </div>
           <div className={`plan-card featured ${selPlan==="pro"?"selected":""}`} onClick={()=>setSelPlan("pro")}>
-            <div className="plan-badge">Most popular</div>
+            {plan==="pro" ? <div className="plan-badge" style={{background:"var(--blue)",color:"#fff"}}>Current plan</div> : <div className="plan-badge">Most popular</div>}
             <div className="plan-name">Pro</div>
             <div className="plan-price">{isAnnual ? "£500" : "£50"}</div>
             <div className="plan-period">{isAnnual ? "per year — £41.67/mo" : "per month"}</div>
@@ -1661,6 +1662,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
             </ul>
           </div>
           <div className={`plan-card ${selPlan==="agency"?"selected":""}`} onClick={()=>setSelPlan("agency")}>
+            {plan==="agency" && <div className="plan-badge" style={{background:"var(--blue)",color:"#fff"}}>Current plan</div>}
             <div className="plan-name">Agency</div>
             <div className="plan-price">{isAnnual ? "£900" : "£90"}</div>
             <div className="plan-period">{isAnnual ? "per year — £75/mo" : "per month"}</div>
@@ -1675,13 +1677,25 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
           </div>
         </div>
         <button className="plan-continue-btn" onClick={async ()=>{
-          if (selPlan === "free") {
-            setPlan("free");
-            localStorage.setItem("rankactions_plan", "free");
+          if (selPlan === plan) {
+            // Already on this plan — just go back
             localStorage.setItem("rankactions_plan_chosen", "1");
             setShowPlan(false);
+          } else if (selPlan === "free") {
+            if (isPro) {
+              // Downgrading — send to Stripe portal to cancel
+              openBillingPortal();
+            } else {
+              setPlan("free");
+              localStorage.setItem("rankactions_plan", "free");
+              localStorage.setItem("rankactions_plan_chosen", "1");
+              setShowPlan(false);
+            }
+          } else if (isPro && selPlan !== plan) {
+            // Changing between Pro ↔ Agency — send to Stripe portal
+            openBillingPortal();
           } else {
-            // Redirect to Stripe Checkout for paid plans
+            // Free → paid — Stripe Checkout
             const priceId = selPlan === "pro"
               ? (isAnnual ? STRIPE_PRICES.pro_annual : STRIPE_PRICES.pro_monthly)
               : (isAnnual ? STRIPE_PRICES.agency_annual : STRIPE_PRICES.agency_monthly);
@@ -1690,14 +1704,25 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
             await startCheckout(priceId);
           }
         }}>
-          {selPlan==="free" ? "Continue with Free →" : `Subscribe to ${selPlan==="agency"?"Agency":"Pro"} →`}
+          {selPlan === plan
+            ? "← Back to dashboard"
+            : selPlan === "free" && isPro
+            ? "Manage subscription →"
+            : isPro && selPlan !== plan
+            ? `Switch to ${selPlan==="agency"?"Agency":"Pro"} →`
+            : selPlan === "free"
+            ? "Continue with Free →"
+            : `Subscribe to ${selPlan==="agency"?"Agency":"Pro"} →`}
         </button>
-        <div className="plan-skip" onClick={()=>{
-          setPlan("free");
-          localStorage.setItem("rankactions_plan","free");
-          localStorage.setItem("rankactions_plan_chosen","1");
-          setShowPlan(false);
-        }}>Skip for now — start with Free</div>
+        {isPro && (
+          <div className="plan-skip" onClick={openBillingPortal}>Manage billing & invoices</div>
+        )}
+        {!isPro && (
+          <div className="plan-skip" onClick={()=>{
+            localStorage.setItem("rankactions_plan_chosen","1");
+            setShowPlan(false);
+          }}>Skip for now — start with Free</div>
+        )}
       </div>
     </div></>
   );};
@@ -1892,6 +1917,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
           style={{cursor:"pointer"}}
           title="View plans"
           onClick={()=>{
+            setSelPlan(plan || "free");
             setShowPlan(true);
           }}>
           {plan==="agency"?"Agency":plan==="pro"?"Pro":"Free"}
