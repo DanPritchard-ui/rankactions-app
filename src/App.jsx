@@ -1810,6 +1810,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
         {[
           {id:"dashboard",  icon:"⬡", label:"Dashboard"},
           {id:"siteDetail", icon:"◎", label:"Site Detail"},
+          {id:"strategy",   icon:"🗺", label:"Strategy"},
           {id:"content",    icon:"✍", label:"Content"},
           {id:"links",      icon:"🔗", label:"Link Building"},
           {id:"reports",    icon:"📄", label:"Reports"},
@@ -1819,7 +1820,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
           <div key={n.id} className={`nav-item ${screen===n.id?"active":""}`}
             data-tour={`nav-${n.id}`}
             onClick={()=>{
-              if(["dashboard","siteDetail","content","admin","reports","links","settings"].includes(n.id)) setScreen(n.id);
+              if(["dashboard","siteDetail","content","admin","reports","links","settings","strategy"].includes(n.id)) setScreen(n.id);
             }}>
             <span style={{fontSize:"0.9rem"}}>{n.icon}</span>
             {n.label}
@@ -3924,6 +3925,479 @@ Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource
   };
 
   // ─────────────────────────────────────────────────────────────
+  // STRATEGY PLANNER
+  // Pillar + Cluster content strategy based on GSC data
+  // ─────────────────────────────────────────────────────────────
+  const StrategyPlanner = () => {
+    const [view, setView] = useState("suggestions"); // suggestions | planner | tracker
+    const [generating, setGenerating] = useState(false);
+    const [suggestions, setSuggestions] = useState(null);
+    const [customTopic, setCustomTopic] = useState("");
+
+    // Load saved strategy for this site
+    const [strategy, setStrategy] = useState(() => {
+      try { return JSON.parse(localStorage.getItem(`ra_strategy_${selectedSite}`) || "null"); } catch { return null; }
+    });
+
+    const saveStrategy = (s) => {
+      setStrategy(s);
+      localStorage.setItem(`ra_strategy_${selectedSite}`, JSON.stringify(s));
+    };
+
+    // Generate cluster suggestions from GSC data
+    const generateSuggestions = async (topic) => {
+      setGenerating(true);
+      setSuggestions(null);
+      try {
+        const kwData = siteData?.keywords?.slice(0, 30).map(k => `"${k.keyword}" (pos #${k.position}, ${k.impressions} impressions, ${k.clicks} clicks)`).join("\n") || "No keyword data available";
+        const pages = siteData?.pages?.slice(0, 10).map(p => p.page).join("\n") || "No page data";
+
+        const prompt = topic
+          ? `I want to build a pillar content strategy around this topic: "${topic}".
+
+My website is ${selectedSite}. Here are my current keywords:
+${kwData}
+
+My current pages:
+${pages}
+
+Based on this data, suggest a pillar + cluster strategy. Return ONLY valid JSON, no markdown, in this format:
+{
+  "strategies": [
+    {
+      "topic": "the main topic/service",
+      "reasoning": "2-3 sentences explaining why this topic based on the data",
+      "trafficPotential": "estimated monthly search volume for the cluster",
+      "difficulty": "easy|medium|hard",
+      "pillar": {
+        "keyword": "main target keyword",
+        "title": "suggested pillar page title (H1)",
+        "description": "2-3 sentence description of what the pillar page should cover",
+        "wordCount": "2000-3000"
+      },
+      "clusters": [
+        {
+          "keyword": "specific long-tail keyword",
+          "title": "suggested blog post title",
+          "angle": "1 sentence describing the unique angle/what it covers",
+          "wordCount": "800-1200",
+          "internalLink": "how this links back to the pillar — be specific"
+        }
+      ]
+    }
+  ]
+}
+
+Generate exactly 1 strategy with 6-8 cluster posts. Make sure keywords are specific and realistic for a UK audience.`
+
+          : `Analyse my website data and suggest 3 pillar content strategies I should build.
+
+My website is ${selectedSite}. Here are my current keywords:
+${kwData}
+
+My current pages:
+${pages}
+
+Group my keywords into topic clusters. For each cluster, suggest a pillar + supporting blog strategy. Return ONLY valid JSON, no markdown:
+{
+  "strategies": [
+    {
+      "topic": "the main topic/service area",
+      "reasoning": "2-3 sentences explaining why this topic — reference actual keyword data",
+      "trafficPotential": "estimated combined monthly impressions from the cluster",
+      "difficulty": "easy|medium|hard",
+      "currentPositions": "summary of where keywords in this cluster currently rank",
+      "pillar": {
+        "keyword": "main target keyword for the pillar page",
+        "title": "suggested pillar page title (H1)",
+        "description": "2-3 sentence description of what the pillar page should cover",
+        "wordCount": "2000-3000"
+      },
+      "clusters": [
+        {
+          "keyword": "specific long-tail keyword",
+          "title": "suggested blog post title",
+          "angle": "1 sentence describing the unique angle",
+          "wordCount": "800-1200",
+          "internalLink": "how this links back to the pillar"
+        }
+      ]
+    }
+  ]
+}
+
+Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the highest combined impression volume where I'm currently underperforming. Target UK audience. Be specific — use my actual keywords.`;
+
+        const txt = await callClaude(prompt,
+          "You are an expert SEO content strategist. You specialise in pillar/cluster content strategies for small businesses. Return valid JSON only. No markdown. Be specific and actionable."
+        );
+        const data = JSON.parse(txt.replace(/```json|```/g, "").trim());
+        setSuggestions(data.strategies || []);
+      } catch (err) {
+        console.error("Strategy generation error:", err);
+        setSuggestions([]);
+      }
+      setGenerating(false);
+    };
+
+    // Accept a suggestion and turn it into an active strategy
+    const acceptStrategy = (s) => {
+      const newStrategy = {
+        topic: s.topic,
+        reasoning: s.reasoning,
+        trafficPotential: s.trafficPotential,
+        difficulty: s.difficulty,
+        createdAt: new Date().toISOString(),
+        pillar: { ...s.pillar, status: "not_started", url: "" },
+        clusters: s.clusters.map((c, i) => ({ ...c, id: `cluster-${i}`, status: "not_started", url: "" })),
+      };
+      saveStrategy(newStrategy);
+      setView("planner");
+    };
+
+    // Update a cluster's status
+    const updateCluster = (id, changes) => {
+      if (!strategy) return;
+      const updated = {
+        ...strategy,
+        clusters: strategy.clusters.map(c => c.id === id ? { ...c, ...changes } : c),
+      };
+      saveStrategy(updated);
+    };
+
+    const updatePillar = (changes) => {
+      if (!strategy) return;
+      saveStrategy({ ...strategy, pillar: { ...strategy.pillar, ...changes } });
+    };
+
+    // Jump to content generator with prefilled keyword
+    const writeContent = (keyword, title) => {
+      if (!isPro) { setShowUpgrade(true); return; }
+      contentPresetRef.current = { kw: keyword, biz: selectedSite, notes: `Part of pillar strategy: "${strategy?.topic}". Blog title suggestion: "${title}". Link back to the pillar page using the main keyword as anchor text.` };
+      setScreen("content");
+    };
+
+    const statusColors = { not_started: "var(--text3)", drafted: "var(--amber)", published: "var(--green)" };
+    const statusLabels = { not_started: "Not started", drafted: "Drafted", published: "Published" };
+    const statusIcons  = { not_started: "○", drafted: "◐", published: "●" };
+    const diffColors   = { easy: "var(--green)", medium: "var(--amber)", hard: "#f03e5f" };
+
+    const cardStyle = { background: "var(--card)", border: "1px solid var(--b2)", borderRadius: 12, padding: "1.25rem" };
+    const headStyle = { fontSize: ".72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--text3)", marginBottom: ".75rem" };
+
+    // Progress stats
+    const progress = strategy ? {
+      total: strategy.clusters.length + 1,
+      published: strategy.clusters.filter(c => c.status === "published").length + (strategy.pillar.status === "published" ? 1 : 0),
+      drafted: strategy.clusters.filter(c => c.status === "drafted").length + (strategy.pillar.status === "drafted" ? 1 : 0),
+      notStarted: strategy.clusters.filter(c => c.status === "not_started").length + (strategy.pillar.status === "not_started" ? 1 : 0),
+    } : null;
+
+    return (
+      <div className="content">
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "1rem", marginBottom: "1.5rem" }}>
+          <div>
+            <div style={{ fontSize: "1.1rem", fontWeight: 700, letterSpacing: "-.03em" }}>Content Strategy</div>
+            <div style={{ fontSize: ".82rem", color: "var(--text2)", marginTop: ".2rem" }}>
+              {selectedSite} · {strategy ? `Active strategy: ${strategy.topic}` : "No active strategy"} · {siteData ? "Live data" : "Demo data"}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: ".35rem" }}>
+            {["suggestions", "planner", "tracker"].map(v => (
+              <button key={v} onClick={() => setView(v)}
+                style={{ background: view === v ? "var(--blue)" : "var(--s2)", color: view === v ? "#fff" : "var(--text2)", border: "none", borderRadius: 8, padding: ".4rem .85rem", fontSize: ".78rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", textTransform: "capitalize" }}>
+                {v === "suggestions" ? "🔍 Suggestions" : v === "planner" ? "🗺 Planner" : "📈 Tracker"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ── SUGGESTIONS VIEW ── */}
+        {view === "suggestions" && (
+          <div>
+            {/* Explainer */}
+            <div style={{ ...cardStyle, marginBottom: "1rem", background: "var(--bdim)", borderColor: "rgba(77,123,255,.15)" }}>
+              <div style={{ fontSize: ".9rem", fontWeight: 700, color: "var(--text)", marginBottom: ".5rem" }}>💡 What is a pillar content strategy?</div>
+              <div style={{ fontSize: ".82rem", color: "var(--text2)", lineHeight: 1.7 }}>
+                A pillar strategy is one of the most effective ways to rank for competitive keywords. You create one comprehensive "pillar" page about a broad topic (e.g. "GDPR Compliance Guide"), then write 6-8 supporting blog posts about specific subtopics. Each blog post links back to the pillar page, telling Google that your pillar is the authority on that topic. Over time, the whole cluster rises in rankings together.
+              </div>
+            </div>
+
+            {/* Custom topic input */}
+            <div style={{ ...cardStyle, marginBottom: "1rem" }}>
+              <div style={headStyle}>Generate Strategy</div>
+              <div style={{ fontSize: ".82rem", color: "var(--text2)", marginBottom: ".75rem" }}>
+                {siteData
+                  ? "We'll analyse your keyword data and suggest the best topics to build a strategy around. Or type a specific topic you want to target."
+                  : "Connect Google Search Console for data-driven suggestions, or type a topic below."}
+              </div>
+              <div style={{ display: "flex", gap: ".5rem", marginBottom: ".5rem" }}>
+                <input
+                  type="text" placeholder="e.g. GDPR compliance, web design services, kitchen renovations..."
+                  value={customTopic} onChange={e => setCustomTopic(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter" && !generating) generateSuggestions(customTopic.trim()); }}
+                  style={{ flex: 1, background: "var(--s2)", border: "1px solid var(--border)", borderRadius: 8, padding: ".65rem .85rem", color: "var(--text)", fontFamily: "inherit", fontSize: ".85rem", outline: "none" }}
+                />
+                <button disabled={generating} onClick={() => generateSuggestions(customTopic.trim())}
+                  style={{ background: "var(--green)", color: "#000", border: "none", borderRadius: 8, padding: ".65rem 1.2rem", fontSize: ".82rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+                  {generating ? "⏳ Analysing..." : customTopic.trim() ? "Build strategy →" : "✨ Auto-suggest"}
+                </button>
+              </div>
+              <div style={{ fontSize: ".72rem", color: "var(--text3)" }}>
+                {customTopic.trim() ? "We'll build a strategy specifically around this topic" : "Leave blank and we'll pick the best opportunities from your keyword data"}
+              </div>
+            </div>
+
+            {/* Suggestions list */}
+            {generating && (
+              <div style={{ ...cardStyle, textAlign: "center", padding: "3rem" }}>
+                <div className="spinner" style={{ width: 24, height: 24, margin: "0 auto .75rem" }}/>
+                <div style={{ fontSize: ".85rem", color: "var(--text2)" }}>Analysing your keywords and building strategies...</div>
+                <div style={{ fontSize: ".75rem", color: "var(--text3)", marginTop: ".35rem" }}>This takes about 15 seconds</div>
+              </div>
+            )}
+
+            {suggestions && suggestions.length === 0 && !generating && (
+              <div style={{ ...cardStyle, textAlign: "center", padding: "2rem" }}>
+                <div style={{ fontSize: ".85rem", color: "var(--text3)" }}>Could not generate suggestions — try a specific topic or connect more data.</div>
+              </div>
+            )}
+
+            {suggestions && suggestions.length > 0 && suggestions.map((s, si) => (
+              <div key={si} style={{ ...cardStyle, marginBottom: "1rem" }}>
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1rem", marginBottom: ".75rem" }}>
+                  <div>
+                    <div style={{ fontSize: "1rem", fontWeight: 700, color: "var(--text)" }}>{s.topic}</div>
+                    <div style={{ display: "flex", gap: ".5rem", marginTop: ".35rem", flexWrap: "wrap" }}>
+                      {s.difficulty && <span style={{ fontSize: ".68rem", fontWeight: 700, padding: ".15rem .5rem", borderRadius: 5, background: `${diffColors[s.difficulty]}22`, color: diffColors[s.difficulty] }}>{s.difficulty.toUpperCase()}</span>}
+                      {s.trafficPotential && <span style={{ fontSize: ".68rem", fontWeight: 600, padding: ".15rem .5rem", borderRadius: 5, background: "var(--bdim)", color: "var(--blue)" }}>{s.trafficPotential} est. traffic</span>}
+                      <span style={{ fontSize: ".68rem", padding: ".15rem .5rem", borderRadius: 5, background: "var(--s2)", color: "var(--text3)" }}>1 pillar + {s.clusters?.length || 0} posts</span>
+                    </div>
+                  </div>
+                  <button onClick={() => acceptStrategy(s)}
+                    style={{ background: "var(--green)", color: "#000", border: "none", borderRadius: 8, padding: ".5rem 1rem", fontSize: ".78rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", flexShrink: 0 }}>
+                    Use this strategy →
+                  </button>
+                </div>
+                <div style={{ fontSize: ".82rem", color: "var(--text2)", lineHeight: 1.65, marginBottom: ".75rem" }}>{s.reasoning}</div>
+                {s.currentPositions && <div style={{ fontSize: ".78rem", color: "var(--amber)", marginBottom: ".75rem" }}>📊 {s.currentPositions}</div>}
+
+                {/* Pillar preview */}
+                <div style={{ background: "var(--s2)", borderRadius: 10, padding: "1rem", marginBottom: ".75rem", borderLeft: "3px solid var(--green)" }}>
+                  <div style={{ fontSize: ".68rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--green)", marginBottom: ".35rem" }}>Pillar Page</div>
+                  <div style={{ fontSize: ".88rem", fontWeight: 700, color: "var(--text)" }}>{s.pillar?.title}</div>
+                  <div style={{ fontSize: ".78rem", color: "var(--text2)", marginTop: ".25rem" }}>Target: "{s.pillar?.keyword}" · {s.pillar?.wordCount} words</div>
+                  {s.pillar?.description && <div style={{ fontSize: ".78rem", color: "var(--text3)", marginTop: ".35rem", lineHeight: 1.5 }}>{s.pillar.description}</div>}
+                </div>
+
+                {/* Cluster preview */}
+                <div style={headStyle}>Supporting Blog Posts</div>
+                <div style={{ display: "grid", gap: ".5rem" }}>
+                  {(s.clusters || []).map((c, ci) => (
+                    <div key={ci} style={{ display: "flex", alignItems: "flex-start", gap: ".6rem", padding: ".55rem .65rem", background: "var(--s2)", borderRadius: 8 }}>
+                      <span style={{ color: "var(--text3)", fontSize: ".75rem", fontWeight: 700, fontFamily: "var(--mono)", width: 20, flexShrink: 0, textAlign: "center", marginTop: ".1rem" }}>{ci + 1}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: ".82rem", fontWeight: 600, color: "var(--text)" }}>{c.title}</div>
+                        <div style={{ fontSize: ".72rem", color: "var(--text3)", marginTop: ".15rem" }}>"{c.keyword}" · {c.wordCount} words</div>
+                        {c.angle && <div style={{ fontSize: ".72rem", color: "var(--text2)", marginTop: ".2rem" }}>{c.angle}</div>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ── PLANNER VIEW ── */}
+        {view === "planner" && (
+          <div>
+            {!strategy ? (
+              <div style={{ ...cardStyle, textAlign: "center", padding: "3rem" }}>
+                <div style={{ fontSize: "2rem", marginBottom: ".75rem" }}>🗺</div>
+                <div style={{ fontSize: "1rem", fontWeight: 700, marginBottom: ".5rem" }}>No active strategy yet</div>
+                <div style={{ fontSize: ".85rem", color: "var(--text2)", marginBottom: "1rem" }}>Generate suggestions first, then pick a strategy to work on.</div>
+                <button onClick={() => setView("suggestions")}
+                  style={{ background: "var(--green)", color: "#000", border: "none", borderRadius: 8, padding: ".55rem 1.2rem", fontSize: ".85rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                  Generate suggestions →
+                </button>
+              </div>
+            ) : (
+              <>
+                {/* Progress bar */}
+                <div style={{ ...cardStyle, marginBottom: "1rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: ".75rem" }}>
+                    <div>
+                      <div style={{ fontSize: ".95rem", fontWeight: 700 }}>{strategy.topic}</div>
+                      <div style={{ fontSize: ".75rem", color: "var(--text3)", marginTop: ".15rem" }}>Created {new Date(strategy.createdAt).toLocaleDateString("en-GB")}{strategy.difficulty && ` · ${strategy.difficulty} difficulty`}</div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: "1.4rem", fontWeight: 800, fontFamily: "var(--mono)", color: "var(--green)" }}>{Math.round((progress.published / progress.total) * 100)}%</div>
+                      <div style={{ fontSize: ".7rem", color: "var(--text3)" }}>{progress.published}/{progress.total} published</div>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 2, borderRadius: 6, overflow: "hidden", height: 20 }}>
+                    {progress.published > 0 && <div style={{ flex: progress.published, background: "var(--green)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: ".6rem", fontWeight: 700, color: "#000" }}>{progress.published} published</div>}
+                    {progress.drafted > 0 && <div style={{ flex: progress.drafted, background: "var(--amber)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: ".6rem", fontWeight: 700, color: "#000" }}>{progress.drafted} drafted</div>}
+                    {progress.notStarted > 0 && <div style={{ flex: progress.notStarted, background: "var(--s3)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: ".6rem", fontWeight: 700, color: "var(--text3)" }}>{progress.notStarted} to do</div>}
+                  </div>
+                </div>
+
+                {/* Pillar card */}
+                <div style={{ ...cardStyle, marginBottom: ".75rem", borderLeft: "3px solid var(--green)" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: ".5rem" }}>
+                    <div style={{ fontSize: ".68rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--green)" }}>★ Pillar Page</div>
+                    <select value={strategy.pillar.status} onChange={e => updatePillar({ status: e.target.value })}
+                      style={{ background: "var(--s2)", border: "1px solid var(--border)", borderRadius: 6, padding: ".25rem .5rem", color: statusColors[strategy.pillar.status], fontSize: ".75rem", fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+                      <option value="not_started">Not started</option>
+                      <option value="drafted">Drafted</option>
+                      <option value="published">Published</option>
+                    </select>
+                  </div>
+                  <div style={{ fontSize: ".95rem", fontWeight: 700, color: "var(--text)", marginBottom: ".25rem" }}>{strategy.pillar.title}</div>
+                  <div style={{ fontSize: ".78rem", color: "var(--text2)", marginBottom: ".25rem" }}>Target keyword: "{strategy.pillar.keyword}" · {strategy.pillar.wordCount} words recommended</div>
+                  {strategy.pillar.description && <div style={{ fontSize: ".78rem", color: "var(--text3)", lineHeight: 1.5, marginBottom: ".75rem" }}>{strategy.pillar.description}</div>}
+                  <div style={{ display: "flex", gap: ".5rem" }}>
+                    <button onClick={() => writeContent(strategy.pillar.keyword, strategy.pillar.title)}
+                      style={{ background: "var(--green)", color: "#000", border: "none", borderRadius: 7, padding: ".4rem .85rem", fontSize: ".78rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                      {isPro ? "✍ Write this page" : "🔒 Write (Pro)"}
+                    </button>
+                    {strategy.pillar.status === "published" && (
+                      <input placeholder="Paste published URL..." value={strategy.pillar.url || ""} onChange={e => updatePillar({ url: e.target.value })}
+                        style={{ flex: 1, background: "var(--s2)", border: "1px solid var(--border)", borderRadius: 7, padding: ".4rem .65rem", color: "var(--text)", fontFamily: "inherit", fontSize: ".78rem", outline: "none" }}/>
+                    )}
+                  </div>
+                </div>
+
+                {/* How linking works */}
+                <div style={{ textAlign: "center", padding: ".5rem", fontSize: ".75rem", color: "var(--text3)" }}>
+                  ↕ Each blog post below should link back to your pillar page
+                </div>
+
+                {/* Cluster posts */}
+                {strategy.clusters.map((c, i) => (
+                  <div key={c.id} style={{ ...cardStyle, marginBottom: ".5rem", opacity: c.status === "published" ? .8 : 1 }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: ".75rem" }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: ".5rem", marginBottom: ".3rem" }}>
+                          <span style={{ fontSize: ".7rem", fontWeight: 700, fontFamily: "var(--mono)", color: "var(--text3)" }}>POST {i + 1}</span>
+                          <span style={{ fontSize: ".65rem", color: statusColors[c.status], fontWeight: 600 }}>{statusIcons[c.status]} {statusLabels[c.status]}</span>
+                        </div>
+                        <div style={{ fontSize: ".88rem", fontWeight: 600, color: "var(--text)", marginBottom: ".2rem" }}>{c.title}</div>
+                        <div style={{ fontSize: ".75rem", color: "var(--text3)" }}>"{c.keyword}" · {c.wordCount} words</div>
+                        {c.angle && <div style={{ fontSize: ".75rem", color: "var(--text2)", marginTop: ".2rem" }}>{c.angle}</div>}
+                        {c.internalLink && <div style={{ fontSize: ".72rem", color: "var(--blue)", marginTop: ".25rem" }}>🔗 {c.internalLink}</div>}
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: ".35rem", flexShrink: 0 }}>
+                        <select value={c.status} onChange={e => updateCluster(c.id, { status: e.target.value })}
+                          style={{ background: "var(--s2)", border: "1px solid var(--border)", borderRadius: 6, padding: ".25rem .4rem", color: statusColors[c.status], fontSize: ".72rem", fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+                          <option value="not_started">Not started</option>
+                          <option value="drafted">Drafted</option>
+                          <option value="published">Published</option>
+                        </select>
+                        <button onClick={() => writeContent(c.keyword, c.title)}
+                          style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: ".25rem .5rem", fontSize: ".72rem", color: "var(--text2)", cursor: "pointer", fontFamily: "inherit" }}>
+                          {isPro ? "✍ Write" : "🔒 Pro"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {/* Strategy actions */}
+                <div style={{ display: "flex", gap: ".5rem", marginTop: "1rem", justifyContent: "center" }}>
+                  <button onClick={() => { if (window.confirm("Start a new strategy? Your current progress will be replaced.")) { saveStrategy(null); setView("suggestions"); } }}
+                    style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: ".45rem .9rem", fontSize: ".78rem", color: "var(--text3)", cursor: "pointer", fontFamily: "inherit" }}>
+                    Start new strategy
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ── TRACKER VIEW ── */}
+        {view === "tracker" && (
+          <div>
+            {!strategy ? (
+              <div style={{ ...cardStyle, textAlign: "center", padding: "3rem" }}>
+                <div style={{ fontSize: "2rem", marginBottom: ".75rem" }}>📈</div>
+                <div style={{ fontSize: "1rem", fontWeight: 700, marginBottom: ".5rem" }}>No strategy to track yet</div>
+                <div style={{ fontSize: ".85rem", color: "var(--text2)", marginBottom: "1rem" }}>Create a strategy first, then track your progress here.</div>
+                <button onClick={() => setView("suggestions")}
+                  style={{ background: "var(--green)", color: "#000", border: "none", borderRadius: 8, padding: ".55rem 1.2rem", fontSize: ".85rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                  Generate suggestions →
+                </button>
+              </div>
+            ) : (
+              <>
+                {/* Strategy overview */}
+                <div style={{ ...cardStyle, marginBottom: "1rem" }}>
+                  <div style={headStyle}>📋 Strategy Overview</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: ".75rem" }}>
+                    {[
+                      { label: "Total content", value: progress.total, color: "var(--text)" },
+                      { label: "Published", value: progress.published, color: "var(--green)" },
+                      { label: "In progress", value: progress.drafted, color: "var(--amber)" },
+                      { label: "To write", value: progress.notStarted, color: "var(--text3)" },
+                    ].map(s => (
+                      <div key={s.label} style={{ textAlign: "center", padding: ".75rem", background: "var(--s2)", borderRadius: 8 }}>
+                        <div style={{ fontSize: "1.5rem", fontWeight: 800, fontFamily: "var(--mono)", color: s.color }}>{s.value}</div>
+                        <div style={{ fontSize: ".7rem", color: "var(--text3)", marginTop: ".2rem" }}>{s.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Content checklist */}
+                <div style={{ ...cardStyle, marginBottom: "1rem" }}>
+                  <div style={headStyle}>✅ Content Checklist — {strategy.topic}</div>
+                  <div style={{ fontSize: ".78rem", color: "var(--text2)", marginBottom: ".75rem" }}>Work through this list top to bottom. Publish the pillar page first, then add supporting posts one by one.</div>
+
+                  {/* Pillar */}
+                  <div style={{ display: "flex", alignItems: "center", gap: ".65rem", padding: ".6rem .75rem", background: strategy.pillar.status === "published" ? "rgba(15,219,138,.08)" : "var(--s2)", borderRadius: 8, marginBottom: ".5rem", borderLeft: "3px solid var(--green)" }}>
+                    <span style={{ fontSize: "1rem" }}>{strategy.pillar.status === "published" ? "✅" : strategy.pillar.status === "drafted" ? "📝" : "⬜"}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: ".82rem", fontWeight: 700, color: "var(--text)", textDecoration: strategy.pillar.status === "published" ? "none" : "none" }}>PILLAR: {strategy.pillar.title}</div>
+                      <div style={{ fontSize: ".72rem", color: "var(--text3)" }}>"{strategy.pillar.keyword}" · {strategy.pillar.wordCount} words</div>
+                    </div>
+                    <span style={{ fontSize: ".72rem", fontWeight: 600, color: statusColors[strategy.pillar.status] }}>{statusLabels[strategy.pillar.status]}</span>
+                  </div>
+
+                  {/* Clusters */}
+                  {strategy.clusters.map((c, i) => (
+                    <div key={c.id} style={{ display: "flex", alignItems: "center", gap: ".65rem", padding: ".5rem .75rem", background: c.status === "published" ? "rgba(15,219,138,.05)" : "transparent", borderRadius: 8, borderBottom: i < strategy.clusters.length - 1 ? "1px solid var(--border)" : "none" }}>
+                      <span style={{ fontSize: ".9rem" }}>{c.status === "published" ? "✅" : c.status === "drafted" ? "📝" : "⬜"}</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: ".8rem", fontWeight: 600, color: c.status === "published" ? "var(--text2)" : "var(--text)" }}>{c.title}</div>
+                        <div style={{ fontSize: ".7rem", color: "var(--text3)" }}>"{c.keyword}"</div>
+                      </div>
+                      <span style={{ fontSize: ".72rem", fontWeight: 600, color: statusColors[c.status] }}>{statusLabels[c.status]}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Tips */}
+                <div style={{ ...cardStyle, background: "var(--bdim)", borderColor: "rgba(77,123,255,.15)" }}>
+                  <div style={{ fontSize: ".88rem", fontWeight: 700, color: "var(--text)", marginBottom: ".5rem" }}>💡 Tips for pillar strategy success</div>
+                  <div style={{ fontSize: ".8rem", color: "var(--text2)", lineHeight: 1.75 }}>
+                    <strong>1. Publish the pillar first</strong> — it's your authority page. Make it comprehensive (2,000+ words), covering the topic broadly.
+                    <br/><br/><strong>2. Add cluster posts weekly</strong> — consistency matters more than speed. One quality post per week for 6-8 weeks builds momentum.
+                    <br/><br/><strong>3. Internal linking is critical</strong> — every cluster post should link to the pillar using the target keyword as anchor text. The pillar should link out to each cluster post too.
+                    <br/><br/><strong>4. Update the pillar</strong> — as you publish cluster posts, add links from the pillar page to each new post. This strengthens the whole cluster.
+                    <br/><br/><strong>5. Give it 8-12 weeks</strong> — Google takes time to recognise topical authority. Most pillar strategies show meaningful ranking improvements after 2-3 months.
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ─────────────────────────────────────────────────────────────
   // ONBOARDING TOUR
   // Step-by-step guide shown on first login
   // ─────────────────────────────────────────────────────────────
@@ -3951,6 +4425,12 @@ Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource
       title: "Site Detail",
       body: "Deep dive into your SEO opportunities, technical issues, and conversion improvements. Each keyword shows its position and a specific action you can take.",
       icon: "◎",
+    },
+    {
+      target: "nav-strategy",
+      title: "Content Strategy",
+      body: "Build a pillar content strategy based on your keyword data. The AI suggests which topics to target, creates a content plan with 6-8 blog posts, and connects straight to the Content Generator to write them.",
+      icon: "🗺",
     },
     {
       target: "nav-content",
@@ -4545,6 +5025,7 @@ Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource
           {screen==="dashboard"  && <DashboardContent/>}
           {screen==="siteDetail" && <SiteDetailContent/>}
           {screen==="content"    && <ContentGenerator/>}
+          {screen==="strategy"   && <StrategyPlanner/>}
           {screen==="links"      && <LinkBuildingScreen/>}
           {screen==="settings"   && <SettingsScreen/>}
           {screen==="reports"    && <ReportsTab/>}
