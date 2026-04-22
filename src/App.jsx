@@ -4899,10 +4899,15 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
   const RankTracker = () => {
     const [trackedKws, setTrackedKws] = useState([]);
     const [selectedKw, setSelectedKw] = useState(null);
+    const [localSnapshots, setLocalSnapshots] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const loadedSite = useRef(null);
 
     useEffect(() => {
+      if (loadedSite.current === selectedSite) return;
+      loadedSite.current = selectedSite;
       const load = async () => {
-        setSnapshotsLoading(true);
+        setLoading(true);
         try {
           const siteUrl = selectedSite.startsWith("http") || selectedSite.startsWith("sc-domain:") ? selectedSite : `https://${selectedSite}`;
           // Auto-save a snapshot for today
@@ -4916,7 +4921,7 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
           const res = await authFetch(`${WORKER_URL}/api/rank-snapshots?siteUrl=${encodeURIComponent(siteUrl)}`);
           const data = await res.json();
           if (data.snapshots) {
-            setSnapshots(data.snapshots);
+            setLocalSnapshots(data.snapshots);
             const kwMap = {};
             data.snapshots.forEach(snap => {
               snap.keywords.forEach(k => {
@@ -4926,10 +4931,10 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
             });
             const sorted = Object.values(kwMap).sort((a,b) => b.history.length - a.history.length);
             setTrackedKws(sorted);
-            if (sorted.length > 0 && !selectedKw) setSelectedKw(sorted[0].keyword);
+            if (sorted.length > 0) setSelectedKw(sorted[0].keyword);
           }
         } catch {}
-        setSnapshotsLoading(false);
+        setLoading(false);
       };
       load();
     }, [selectedSite]);
@@ -4980,9 +4985,9 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
       <div className="content" style={{padding:"1.5rem 2rem",maxWidth:1100}}>
         <div style={{marginBottom:"1.5rem"}}>
           <div style={{fontSize:"1.3rem",fontWeight:700}}>Rank Tracker</div>
-          <div style={{fontSize:".82rem",color:"var(--text3)"}}>{displaySite(selectedSite)} · {snapshots.length} snapshots · {trackedKws.length} keywords tracked</div>
+          <div style={{fontSize:".82rem",color:"var(--text3)"}}>{displaySite(selectedSite)} · {localSnapshots.length} snapshots · {trackedKws.length} keywords tracked</div>
         </div>
-        {snapshotsLoading ? (
+        {loading ? (
           <div style={{textAlign:"center",padding:"3rem",color:"var(--text3)"}}><div className="spinner-sm" style={{margin:"0 auto .75rem"}}/>Loading rank history...</div>
         ) : trackedKws.length === 0 ? (
           <div style={{textAlign:"center",padding:"3rem",background:"var(--s1)",borderRadius:12,border:"1px solid var(--border)"}}>
