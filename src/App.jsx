@@ -2081,6 +2081,9 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
                 </div>
                 {isOpen && (
                   <div className="fix-body">
+                    <div style={{background:"rgba(245,166,35,.08)",border:"1px solid rgba(245,166,35,.2)",borderRadius:8,padding:".6rem .85rem",marginBottom:".75rem",fontSize:".75rem",color:"var(--amber)",lineHeight:1.6}}>
+                      ⚠️ <strong>Always back up your website before making changes.</strong> Test changes in a staging environment where possible. RankActions provides suggestions only — you are responsible for reviewing and implementing them.
+                    </div>
                     <div className="fix-suggestion-box">
                       <div className="fix-sugg-label">Suggested Fix</div>
                       <div className="fix-sugg-text">{fix.suggestion}</div>
@@ -2500,6 +2503,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
           }
         </div>
         <div className="modal-footer">
+          <div style={{width:"100%",fontSize:".68rem",color:"var(--text3)",lineHeight:1.5,marginBottom:".5rem",textAlign:"center"}}>⚠️ Back up your website before applying changes. Review all suggestions before implementing.</div>
           <button className="mf-btn" onClick={()=>openModal(modal)} disabled={modalLoading}>{modalLoading?"Generating…":"↻ Regenerate"}</button>
           <button className={`mf-btn ${modalApplied.has(modal.id)?"done":"primary"}`}
             onClick={()=>{setModalApplied(p=>new Set([...p,modal.id]));setDoneFixes(p=>new Set([...p,modal.id]));}}>
@@ -3131,6 +3135,9 @@ IMPORTANT — Label internal links clearly so non-technical users know what they
             )}
             {!loading && output && tab==="preview" && (
               <div className="cg-preview" style={{display:"flex",flexDirection:"column",background:"var(--s2)"}}>
+                <div style={{padding:".5rem 1rem",background:"rgba(245,166,35,.06)",borderBottom:"1px solid rgba(245,166,35,.15)",fontSize:".72rem",color:"var(--amber)",lineHeight:1.5}}>
+                  ⚠️ AI-generated content requires review. Check facts, links, and legal claims before publishing. Always back up existing pages before replacing content. RankActions is not responsible for changes made to your website.
+                </div>
                 <div style={{padding:".65rem 1rem",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"1px solid var(--border)",flexWrap:"wrap",gap:".5rem"}}>
                   <div style={{fontSize:".78rem",color:"var(--text2)"}}>
                     {annotated ? "🏷 Labels visible — toggle off to see clean version" : "Clean preview — toggle labels to see SEO structure"}
@@ -4961,6 +4968,9 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
                 <div style={{fontSize:".75rem",color:"var(--text3)",background:"var(--s2)",borderRadius:7,padding:".65rem .85rem",lineHeight:1.6}}>
                   💡 <strong>Before sending:</strong> personalise the opening line with something specific about their site, find the right contact using LinkedIn or Hunter.io, and follow up once after 5-7 days if no reply.
                 </div>
+                <div style={{fontSize:".72rem",color:"var(--text3)",background:"var(--s2)",borderRadius:7,padding:".55rem .85rem",lineHeight:1.6}}>
+                  ⚠️ You are responsible for all outreach communications sent on behalf of your business. RankActions generates templates only — review and personalise before sending.
+                </div>
               </>
             )}
           </div>
@@ -5079,6 +5089,11 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
           {screen==="reports"    && <ReportsTab/>}
           {screen==="admin"      && isAdmin && <AdminPanel/>}
           {screen==="admin"      && !isAdmin && <div className="content" style={{textAlign:"center",paddingTop:"4rem",color:"var(--text3)"}}>Access denied.</div>}
+          
+          {/* Disclaimer footer */}
+          <div style={{padding:"1rem 2rem",borderTop:"1px solid var(--border)",fontSize:".68rem",color:"var(--text3)",lineHeight:1.6,textAlign:"center"}}>
+            RankActions provides AI-generated suggestions and recommendations only. Always back up your website before making changes. Review all content and fixes before implementing. RankActions and E2E Integration accept no responsibility for changes made to your website, loss of data, or service disruption resulting from actions taken based on our suggestions. See our <a href="https://rankactions.com/terms.html" target="_blank" rel="noopener" style={{color:"var(--text3)",textDecoration:"underline"}}>Terms of Service</a> for full details.
+          </div>
         </div>
       </div>
       {modal            && <FixModal/>}
