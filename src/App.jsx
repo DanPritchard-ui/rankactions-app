@@ -2829,15 +2829,19 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
 
       // Build style context from scan
       const styleContext = style ? `
-SITE DESIGN — match this as closely as possible:
+SITE DESIGN — you MUST match this site's visual identity closely:
 - Brand name: ${style.brandName}
-- Detected colours: ${style.colors?.slice(0,8).join(', ') || 'not detected'}
-- Primary background: ${style.primaryBg || 'white'}
-- Primary text colour: ${style.primaryText || '#333'}
-- Fonts detected: ${style.fonts?.join(', ') || 'system-ui'}
+- Header/navbar background: ${style.headerBg || style.themeColor || style.cssVars?.['primary-color'] || style.colors?.[0] || '#333'}
+- Theme/brand colour: ${style.themeColor || style.headerBg || style.cssVars?.['primary-color'] || style.cssVars?.['brand-color'] || style.colors?.[0] || '#333'}
+- Page background: ${style.primaryBg || style.cssVars?.['background-color'] || style.cssVars?.['bg-color'] || '#ffffff'}
+- Text colour: ${style.primaryText || style.cssVars?.['text-color'] || '#333'}
+- Top detected colours (in order of frequency): ${style.colors?.slice(0,10).join(', ') || 'not detected'}
+${style.cssVars && Object.keys(style.cssVars).length > 0 ? '- CSS variables found: ' + Object.entries(style.cssVars).slice(0,8).map(([k,v]) => `--${k}: ${v}`).join(', ') : ''}
+- Fonts detected: ${style.fonts?.join(', ') || 'system-ui, sans-serif'}
 - Google Fonts URLs: ${style.gFonts?.join(', ') || 'none'}
 - Nav links to replicate: ${style.navLinks?.join(' | ') || 'none'}
-Use these exact colours and fonts in the generated HTML. Import the Google Fonts if available.` : '';
+
+CRITICAL: Use the header/brand colour for the navbar and hero section background. Use the detected fonts. The generated article must look like it belongs on this website.` : '';
 
       try {
         const prompt = `You are an expert SEO content writer. Generate a complete, production-ready HTML blog post.
