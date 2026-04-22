@@ -1681,21 +1681,16 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
             // Already on this plan — just go back
             localStorage.setItem("rankactions_plan_chosen", "1");
             setShowPlan(false);
-          } else if (selPlan === "free") {
-            if (isPro) {
-              // Downgrading — send to Stripe portal to cancel
-              openBillingPortal();
-            } else {
-              setPlan("free");
-              localStorage.setItem("rankactions_plan", "free");
-              localStorage.setItem("rankactions_plan_chosen", "1");
-              setShowPlan(false);
-            }
-          } else if (isPro && selPlan !== plan) {
-            // Changing between Pro ↔ Agency — send to Stripe portal
+          } else if (selPlan === "free" && isPro) {
+            // Downgrading — send to Stripe portal to cancel
             openBillingPortal();
+          } else if (selPlan === "free") {
+            setPlan("free");
+            localStorage.setItem("rankactions_plan", "free");
+            localStorage.setItem("rankactions_plan_chosen", "1");
+            setShowPlan(false);
           } else {
-            // Free → paid — Stripe Checkout
+            // Any upgrade or plan switch — Stripe Checkout
             const priceId = selPlan === "pro"
               ? (isAnnual ? STRIPE_PRICES.pro_annual : STRIPE_PRICES.pro_monthly)
               : (isAnnual ? STRIPE_PRICES.agency_annual : STRIPE_PRICES.agency_monthly);
@@ -1708,10 +1703,10 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
             ? "← Back to dashboard"
             : selPlan === "free" && isPro
             ? "Manage subscription →"
-            : isPro && selPlan !== plan
-            ? `Switch to ${selPlan==="agency"?"Agency":"Pro"} →`
             : selPlan === "free"
             ? "Continue with Free →"
+            : isPro
+            ? `Upgrade to ${selPlan==="agency"?"Agency":"Pro"} →`
             : `Subscribe to ${selPlan==="agency"?"Agency":"Pro"} →`}
         </button>
         {isPro && (
