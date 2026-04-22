@@ -7,7 +7,7 @@ import {
 // ─────────────────────────────────────────────────────────────
 // ⚙️  CONFIG — paste your Worker URL here after deploying it
 // ─────────────────────────────────────────────────────────────
-const WORKER_URL = import.meta.env.VITE_WORKER_URL || "https://growthos-api.growthos.workers.dev"; // update after Worker rename
+const WORKER_URL = import.meta.env.VITE_WORKER_URL || "https://api.rankactions.com";
 
 // Module-level auth token — updated by the component, read by API helpers
 let _getToken = async () => null;
