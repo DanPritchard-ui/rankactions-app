@@ -1069,20 +1069,22 @@ export default function RankActions() {
     const syncName = user?.fullName || user?.firstName || user?.username || "";
     const syncEmail = user?.primaryEmailAddress?.emailAddress || user?.emailAddresses?.[0]?.emailAddress || "";
     const syncSites = sites.filter(s => s && s !== "mywebsite.com");
+    // Don't sync if no real sites connected yet — avoids overwriting with empty
+    const body = {
+      userId,
+      clerkId:    user.id,
+      plan,
+      aiFixCount,
+      name:  syncName,
+      email: syncEmail,
+    };
+    if (syncSites.length > 0) body.sites = syncSites;
     authFetch(`${WORKER_URL}/api/user/sync`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userId,
-        clerkId:    user.id,
-        plan,
-        sites:      syncSites,
-        aiFixCount,
-        name:  syncName,
-        email: syncEmail,
-      })
+      body: JSON.stringify(body)
     }).catch(()=>{});
-  }, [plan, sites, aiFixCount, user?.id]);
+  }, [plan, sites, aiFixCount, user?.id, selectedSite]);
 
   // ── Fetch data when userId or site changes ──────────────────
   useEffect(() => {
