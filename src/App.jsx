@@ -3668,54 +3668,88 @@ Write 3-4 short paragraphs: overall performance, biggest opportunities, what to 
       setSummaryGen(false);
     };
 
-    // Export report as text
+    // Export report as formatted PDF (via print)
     const exportReport = () => {
-      const lines = [
-        `RANKACTIONS WEEKLY REPORT — ${selectedSite}`,
-        `Generated: ${new Date().toLocaleDateString("en-GB")}`,
-        ``,
-        `── PERFORMANCE ──`,
-        siteData ? `Clicks: ${siteData.totals.clicks} | Impressions: ${siteData.totals.impressions} | Avg Position: ${siteData.totals.avgPosition} | CTR: ${siteData.totals.avgCtr}` : `No live data — connect Google Search Console`,
-        ``,
-        `── KEYWORD RANKINGS ──`,
-        `Page 1 (positions 1-10): ${kwPage1.length} keywords`,
-        `Striking distance (11-20): ${kwStriking.length} keywords`,
-        `Page 2+ (21+): ${kwPage2Plus.length} keywords`,
-        ``,
-        ...(siteData?.keywords?.slice(0,15).map(k => `  "${k.keyword}" — #${k.position} — ${k.clicks} clicks — ${k.impressions} impressions`) || ["  No data"]),
-        ``,
-        `── PRIORITY ACTIONS ──`,
-        ...fixes.map(f => `  [${f.label}] ${f.title}`),
-        ``,
-        `── COMPLETED ──`,
-        completedFixes.length > 0 ? completedFixes.map(id => `  ✓ ${id}`).join("\n") : `  No actions completed yet`,
-        ``,
-        `── LINK BUILDING ──`,
-        `Identified: ${linkStats.identified} | Contacted: ${linkStats.contacted} | Replied: ${linkStats.replied} | Secured: ${linkStats.secured}`,
-        ``,
-        ...(() => {
-          let strat = null;
-          try { strat = JSON.parse(localStorage.getItem(`ra_strategy_${selectedSite}`) || "null"); } catch {}
-          if (!strat) return [];
+      const t = siteData?.totals;
+      const kwData = siteData?.keywords?.slice(0,20) || [];
+      const strikingKws = siteData?.keywords?.filter(k => k.position > 10 && k.position <= 20) || [];
+      let stratHtml = "";
+      try {
+        const strat = JSON.parse(localStorage.getItem(`ra_strategy_${selectedSite}`) || "null");
+        if (strat) {
           const pub = strat.clusters.filter(c=>c.status==="published").length + (strat.pillar.status==="published"?1:0);
           const total = strat.clusters.length + 1;
-          return [`── STRATEGY PROGRESS ──`, `Topic: ${strat.topic}`, `Pillar: ${strat.pillar.title}`, `Progress: ${pub}/${total} published (${Math.round((pub/total)*100)}%)`, ``];
-        })(),
-        ...(() => {
-          let hist = [];
-          try { hist = JSON.parse(localStorage.getItem(`ra_content_history_${selectedSite}`) || "[]"); } catch {}
-          if (hist.length === 0) return [];
-          return [`── CONTENT GENERATED ──`, `${hist.length} blog posts generated`, ...hist.slice(-8).reverse().map(h => `  "${h.keyword}" — ${h.date}`), ``];
-        })(),
-        reportSummary ? `── AI SUMMARY ──\n${reportSummary}` : ``,
-        ``,
-        `Report by RankActions · rankactions.com`,
-      ];
-      const blob = new Blob([lines.join("\n")], { type: "text/plain" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a"); a.href = url;
-      a.download = `rankactions-report-${selectedSite.replace(/[^a-z0-9]/gi,"_")}-${new Date().toISOString().slice(0,10)}.txt`;
-      a.click(); URL.revokeObjectURL(url);
+          stratHtml = `<div class="section"><h3>Strategy Progress</h3><p><strong>${strat.topic}</strong></p><p>Pillar: ${strat.pillar.title}</p><p>Progress: ${pub}/${total} published (${Math.round((pub/total)*100)}%)</p></div>`;
+        }
+      } catch {}
+      let contentHtml = "";
+      try {
+        const hist = JSON.parse(localStorage.getItem(`ra_content_history_${selectedSite}`) || "[]");
+        if (hist.length > 0) {
+          contentHtml = `<div class="section"><h3>Content Generated</h3><p>${hist.length} blog posts</p><table><tr><th>Keyword</th><th>Date</th></tr>${hist.slice(-8).reverse().map(h=>`<tr><td>"${h.keyword}"</td><td>${h.date}</td></tr>`).join("")}</table></div>`;
+        }
+      } catch {}
+
+      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>RankActions Report — ${displaySite(selectedSite)}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1a1a2e;padding:2rem;max-width:800px;margin:0 auto;font-size:14px;line-height:1.6}
+.header{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #0fdb8a;padding-bottom:1rem;margin-bottom:2rem}
+.logo{font-size:1.4rem;font-weight:800;letter-spacing:-.03em;color:#1a1a2e}
+.logo em{color:#0fdb8a;font-style:normal}
+.date{color:#666;font-size:.85rem}
+.kpi-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:2rem}
+.kpi{background:#f8f9fa;border-radius:8px;padding:1rem;text-align:center}
+.kpi-val{font-size:1.5rem;font-weight:800;font-family:monospace}
+.kpi-label{font-size:.7rem;color:#666;text-transform:uppercase;letter-spacing:.06em;margin-top:.25rem}
+.kpi-good{color:#0a7c4e} .kpi-warn{color:#c77d15} .kpi-bad{color:#c0392b}
+.section{margin-bottom:1.5rem}
+h2{font-size:1.1rem;font-weight:700;margin-bottom:.75rem;padding-bottom:.35rem;border-bottom:1px solid #eee}
+h3{font-size:.95rem;font-weight:700;margin-bottom:.5rem}
+table{width:100%;border-collapse:collapse;font-size:.82rem;margin-top:.5rem}
+th{text-align:left;padding:.5rem;border-bottom:2px solid #ddd;color:#666;font-size:.7rem;text-transform:uppercase;letter-spacing:.04em}
+td{padding:.4rem .5rem;border-bottom:1px solid #eee}
+.pos{font-weight:700;font-family:monospace}
+.p1{color:#0a7c4e} .p2{color:#c77d15} .p3{color:#c0392b}
+.badge{display:inline-block;font-size:.65rem;font-weight:700;padding:.15rem .4rem;border-radius:4px}
+.badge-high{background:#fde8ec;color:#c0392b} .badge-med{background:#fef3e2;color:#c77d15} .badge-low{background:#e8f8ef;color:#0a7c4e}
+.summary-box{background:#f0faf5;border-left:3px solid #0fdb8a;padding:1rem;border-radius:0 8px 8px 0;margin-bottom:1.5rem;white-space:pre-line}
+.footer{text-align:center;color:#999;font-size:.75rem;padding-top:1rem;border-top:1px solid #eee;margin-top:2rem}
+.print-btn{background:#0fdb8a;color:#000;border:none;padding:.6rem 1.5rem;border-radius:8px;font-weight:700;font-size:.85rem;cursor:pointer;margin-bottom:1.5rem}
+@media print{.print-btn{display:none!important} body{padding:1rem}}
+</style></head><body>
+<button class="print-btn" onclick="window.print()">📥 Save as PDF</button>
+<div class="header">
+  <div class="logo">Rank<em>Actions</em></div>
+  <div class="date">Weekly Report · ${displaySite(selectedSite)} · ${new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}</div>
+</div>
+${t ? `<div class="kpi-strip">
+  <div class="kpi"><div class="kpi-val">${t.clicks.toLocaleString()}</div><div class="kpi-label">Clicks (28d)</div></div>
+  <div class="kpi"><div class="kpi-val">${t.impressions.toLocaleString()}</div><div class="kpi-label">Impressions</div></div>
+  <div class="kpi"><div class="kpi-val ${parseFloat(t.avgPosition)<=10?"kpi-good":"kpi-warn"}">${t.avgPosition}</div><div class="kpi-label">Avg Position</div></div>
+  <div class="kpi"><div class="kpi-val ${parseFloat(t.avgCtr)>=4?"kpi-good":"kpi-warn"}">${t.avgCtr}</div><div class="kpi-label">Click Rate</div></div>
+</div>` : `<p style="color:#999;margin-bottom:1.5rem">No live data — connect Google Search Console</p>`}
+${reportSummary ? `<div class="summary-box"><strong>AI Summary</strong>\n${reportSummary}</div>` : ""}
+<div class="section"><h2>Keyword Rankings</h2>
+<p style="margin-bottom:.5rem;font-size:.85rem;color:#666">Page 1: ${kwPage1.length} · Striking distance: ${kwStriking.length} · Page 2+: ${kwPage2Plus.length}</p>
+${kwData.length > 0 ? `<table><tr><th>Keyword</th><th>Position</th><th>Clicks</th><th>Impressions</th></tr>
+${kwData.map(k=>`<tr><td>${k.keyword}</td><td class="pos ${k.position<=10?"p1":k.position<=20?"p2":"p3"}">#${k.position}</td><td>${k.clicks}</td><td>${k.impressions}</td></tr>`).join("")}
+</table>` : `<p style="color:#999">Connect GSC to see keywords</p>`}
+</div>
+<div class="section"><h2>Priority Actions</h2>
+${fixes.map(f=>`<div style="display:flex;align-items:center;gap:.5rem;padding:.4rem 0;border-bottom:1px solid #eee"><span class="badge ${f.level==="high"?"badge-high":f.level==="medium"?"badge-med":"badge-low"}">${f.label}</span> ${f.title}</div>`).join("")}
+</div>
+${strikingKws.length > 0 ? `<div class="section"><h2>Striking Distance Keywords</h2><p style="font-size:.82rem;color:#666;margin-bottom:.5rem">Positions 11-20 — close to page 1</p><table><tr><th>Keyword</th><th>Position</th><th>Impressions</th></tr>${strikingKws.slice(0,10).map(k=>`<tr><td>${k.keyword}</td><td class="pos p2">#${k.position}</td><td>${k.impressions}</td></tr>`).join("")}</table></div>` : ""}
+<div class="section"><h2>Link Building Pipeline</h2>
+<p>Identified: ${linkStats.identified} · Contacted: ${linkStats.contacted} · Replied: ${linkStats.replied} · Secured: ${linkStats.secured}</p>
+</div>
+${stratHtml}${contentHtml}
+<div class="footer">Report generated by RankActions · rankactions.com · ${new Date().toLocaleDateString("en-GB")}</div>
+</body></html>`;
+
+      const w = window.open("", "_blank");
+      w.document.write(html);
+      w.document.close();
     };
 
     const cardStyle = {background:"var(--card)",border:"1px solid var(--b2)",borderRadius:12,padding:"1.25rem"};
@@ -3735,7 +3769,7 @@ Write 3-4 short paragraphs: overall performance, biggest opportunities, what to 
           </div>
           <div style={{display:"flex",gap:".5rem"}}>
             <button style={{background:"none",border:"1px solid var(--b2)",borderRadius:8,padding:".45rem .9rem",fontSize:".78rem",color:"var(--text2)",cursor:"pointer",fontFamily:"inherit"}} onClick={exportReport}>
-              📥 Export report
+              📥 Export as PDF
             </button>
           </div>
         </div>
@@ -4969,20 +5003,64 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
     };
 
     const exportData = () => {
-      const data = {
-        plan, sites, selectedSite,
-        prospects: {},
-        doneFixes: {},
-      };
+      const prospectData = {};
+      const fixData = {};
+      const contentData = {};
+      const strategyData = {};
       sites.forEach(s => {
-        try { data.prospects[s] = JSON.parse(localStorage.getItem(`ra_prospects_${s}`) || "[]"); } catch {}
-        try { data.doneFixes[s] = JSON.parse(localStorage.getItem(`ra_done_${s}`) || "[]"); } catch {}
+        try { prospectData[s] = JSON.parse(localStorage.getItem(`ra_prospects_${s}`) || "[]"); } catch {}
+        try { fixData[s] = JSON.parse(localStorage.getItem(`ra_done_${s}`) || "[]"); } catch {}
+        try { contentData[s] = JSON.parse(localStorage.getItem(`ra_content_history_${s}`) || "[]"); } catch {}
+        try { strategyData[s] = JSON.parse(localStorage.getItem(`ra_strategy_${s}`) || "null"); } catch {}
       });
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url; a.download = `rankactions-export-${new Date().toISOString().slice(0,10)}.json`; a.click();
-      URL.revokeObjectURL(url);
+      const realSites = sites.filter(s => s && s !== "mywebsite.com");
+
+      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>RankActions — Your Data Export</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1a1a2e;padding:2rem;max-width:800px;margin:0 auto;font-size:14px;line-height:1.6}
+.header{border-bottom:3px solid #0fdb8a;padding-bottom:1rem;margin-bottom:2rem}
+.logo{font-size:1.4rem;font-weight:800;letter-spacing:-.03em}.logo em{color:#0fdb8a;font-style:normal}
+.date{color:#666;font-size:.85rem;margin-top:.25rem}
+h2{font-size:1rem;font-weight:700;margin:1.5rem 0 .5rem;padding-bottom:.3rem;border-bottom:1px solid #eee}
+table{width:100%;border-collapse:collapse;font-size:.82rem;margin-bottom:1rem}
+th{text-align:left;padding:.4rem .5rem;border-bottom:2px solid #ddd;color:#666;font-size:.7rem;text-transform:uppercase}
+td{padding:.35rem .5rem;border-bottom:1px solid #eee}
+.field{display:flex;justify-content:space-between;padding:.4rem 0;border-bottom:1px solid #f0f0f0}
+.field-label{color:#666;font-size:.82rem}.field-value{font-weight:600;font-size:.82rem}
+.footer{text-align:center;color:#999;font-size:.75rem;padding-top:1rem;border-top:1px solid #eee;margin-top:2rem}
+.print-btn{background:#0fdb8a;color:#000;border:none;padding:.6rem 1.5rem;border-radius:8px;font-weight:700;font-size:.85rem;cursor:pointer;margin-bottom:1.5rem}
+@media print{.print-btn{display:none!important}}
+</style></head><body>
+<button class="print-btn" onclick="window.print()">📥 Save as PDF</button>
+<div class="header">
+  <div class="logo">Rank<em>Actions</em> — Data Export</div>
+  <div class="date">${new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}</div>
+</div>
+
+<h2>Account</h2>
+<div class="field"><span class="field-label">Name</span><span class="field-value">${user?.fullName || user?.firstName || "—"}</span></div>
+<div class="field"><span class="field-label">Email</span><span class="field-value">${user?.primaryEmailAddress?.emailAddress || "—"}</span></div>
+<div class="field"><span class="field-label">Plan</span><span class="field-value">${plan}</span></div>
+<div class="field"><span class="field-label">Connected sites</span><span class="field-value">${realSites.length > 0 ? realSites.join(", ") : "None"}</span></div>
+
+${realSites.map(s => {
+  const prospects = prospectData[s] || [];
+  const fixes = fixData[s] || [];
+  const content = contentData[s] || [];
+  const strat = strategyData[s];
+  return `<h2>${s}</h2>
+${fixes.length > 0 ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Completed Fixes (${fixes.length})</h3><table><tr><th>Fix</th></tr>${fixes.map(f=>`<tr><td>${f}</td></tr>`).join("")}</table>` : ""}
+${prospects.length > 0 ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Link Prospects (${prospects.length})</h3><table><tr><th>Site</th><th>Type</th><th>Status</th></tr>${prospects.map(p=>`<tr><td>${p.site||p.name||"—"}</td><td>${p.type||"—"}</td><td>${p.status||"—"}</td></tr>`).join("")}</table>` : ""}
+${content.length > 0 ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Generated Content (${content.length})</h3><table><tr><th>Keyword</th><th>Date</th></tr>${content.map(c=>`<tr><td>${c.keyword}</td><td>${c.date||"—"}</td></tr>`).join("")}</table>` : ""}
+${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</h3><div class="field"><span class="field-label">Topic</span><span class="field-value">${strat.topic}</span></div><div class="field"><span class="field-label">Pillar</span><span class="field-value">${strat.pillar?.title||"—"}</span></div>${strat.clusters?.map((c,i)=>`<div class="field"><span class="field-label">Post ${i+1}</span><span class="field-value">${c.title} (${c.status})</span></div>`).join("")||""}` : ""}`;
+}).join("")}
+
+<div class="footer">Exported from RankActions · rankactions.com · ${new Date().toLocaleDateString("en-GB")}</div>
+</body></html>`;
+      const w = window.open("", "_blank");
+      w.document.write(html);
+      w.document.close();
     };
 
     const sectionStyle = {background:"var(--card)",border:"1px solid var(--b2)",borderRadius:12,padding:"1.5rem",marginBottom:"1rem"};
