@@ -1075,6 +1075,8 @@ export default function RankActions() {
         plan,
         sites,
         aiFixCount,
+        name:  user?.fullName || user?.firstName || "",
+        email: user?.primaryEmailAddress?.emailAddress || "",
       })
     }).catch(()=>{});
   }, [plan, sites, aiFixCount]);
