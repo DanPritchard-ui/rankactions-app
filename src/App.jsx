@@ -918,6 +918,7 @@ export default function RankActions() {
   const [gscSitesLoading,   setGscSitesLoading]   = useState(false);
   const [showTour,   setShowTour]   = useState(false);
   const [tourStep,   setTourStep]   = useState(0);
+  const [isAdminFlag, setIsAdminFlag] = useState(false);
   // Rank Tracker state
   const [snapshots, setSnapshots] = useState([]);
   const [snapshotsLoading, setSnapshotsLoading] = useState(false);
@@ -3331,7 +3332,6 @@ IMPORTANT — Label internal links clearly so non-technical users know what they
   const ADMIN_CLERK_IDS = [
     "user_3CMXybSmGDdSNc2caXRZraMoZdt", // Dan — hardcoded failsafe
   ];
-  const [isAdminFlag, setIsAdminFlag] = useState(false);
   const isAdmin = ADMIN_CLERK_IDS.includes(user?.id) || isAdminFlag;
 
   // ─────────────────────────────────────────────────────────────
