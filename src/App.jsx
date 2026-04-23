@@ -966,6 +966,8 @@ export default function RankActions() {
             setPlan(data.plan);
             localStorage.setItem("rankactions_plan", data.plan);
           }
+          // Check admin flag
+          if (data.isAdmin) setIsAdminFlag(true);
           // Restore sites if server has more
           if (data.sites?.length > 0 && data.sites.length >= sites.length) {
             setSites(data.sites);
@@ -3324,8 +3326,11 @@ IMPORTANT — Label internal links clearly so non-technical users know what they
   };
 
   // ── Admin — replace with your Clerk user ID once you have it ──
-  const ADMIN_CLERK_ID = "user_3CMXybSmGDdSNc2caXRZraMoZdt";
-  const isAdmin = user?.id === ADMIN_CLERK_ID;
+  const ADMIN_CLERK_IDS = [
+    "user_3CMXybSmGDdSNc2caXRZraMoZdt", // Dan — hardcoded failsafe
+  ];
+  const [isAdminFlag, setIsAdminFlag] = useState(false);
+  const isAdmin = ADMIN_CLERK_IDS.includes(user?.id) || isAdminFlag;
 
   // ─────────────────────────────────────────────────────────────
   // ADMIN PANEL
@@ -3352,28 +3357,28 @@ IMPORTANT — Label internal links clearly so non-technical users know what they
 
     useEffect(()=>{ fetchUsers(); },[]);
 
-    const updateUser = async (userId, changes) => {
+    const updateUser = async (id, changes) => {
       setSaving(true);
       try {
-        await authFetch(`${WORKER_URL}/api/admin/user/${userId}`, {
+        await authFetch(`${WORKER_URL}/api/admin/user/${id}`, {
           method:"POST",
           headers:{ "Content-Type":"application/json" },
           body: JSON.stringify(changes)
         });
-        setUsers(prev => prev.map(u => u.userId===userId ? {...u,...changes} : u));
-        setSelected(prev => prev?.userId===userId ? {...prev,...changes} : prev);
+        setUsers(prev => prev.map(u => u._id===id ? {...u,...changes} : u));
+        setSelected(prev => prev?._id===id ? {...prev,...changes} : prev);
       } catch(e) { alert("Update failed"); }
       setSaving(false);
     };
 
-    const deleteUser = async (userId) => {
+    const deleteUser = async (id) => {
       if (!window.confirm("Permanently delete this user and all their data? This cannot be undone.")) return;
       setSaving(true);
       try {
-        await authFetch(`${WORKER_URL}/api/admin/user/${userId}`, {
+        await authFetch(`${WORKER_URL}/api/admin/user/${id}`, {
           method:"DELETE",
         });
-        setUsers(prev => prev.filter(u => u.userId!==userId));
+        setUsers(prev => prev.filter(u => u._id!==id));
         setSelected(null);
       } catch(e) { alert("Delete failed"); }
       setSaving(false);
@@ -3472,7 +3477,7 @@ IMPORTANT — Label internal links clearly so non-technical users know what they
               </thead>
               <tbody>
                 {filtered.map(u=>(
-                  <tr key={u.userId} className={u.disabled?"disabled-row":""} onClick={()=>setSelected(u)}>
+                  <tr key={u._id} className={u.disabled?"disabled-row":""} onClick={()=>setSelected(u)}>
                     <td>
                       <div style={{fontWeight:600}}>{u.name || "—"}</div>
                       <div style={{fontSize:".75rem",color:"var(--text2)"}}>{u.email}</div>
@@ -3506,7 +3511,7 @@ IMPORTANT — Label internal links clearly so non-technical users know what they
                 <div className="drawer-section-label">Account</div>
                 <div style={{display:"flex",flexDirection:"column",gap:".5rem"}}>
                   {[
-                    ["User ID",     selected.userId,     true],
+                    ["User ID",     selected._id,     true],
                     ["Clerk ID",    selected.clerkId||"—",true],
                     ["Email",       selected.email,      false],
                     ["Signed up",   fmt(selected.signedUpAt), false],
@@ -3546,35 +3551,49 @@ IMPORTANT — Label internal links clearly so non-technical users know what they
               </div>
               <div className="drawer-actions">
                 <div className="drawer-section-label">Actions</div>
+                {/* Admin role toggle */}
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:".5rem .75rem",background:"var(--s2)",borderRadius:8,marginBottom:".5rem"}}>
+                  <div>
+                    <div style={{fontSize:".82rem",fontWeight:600}}>Admin access</div>
+                    <div style={{fontSize:".7rem",color:"var(--text3)"}}>Can view admin panel and manage users</div>
+                  </div>
+                  <div onClick={()=>{
+                    if (ADMIN_CLERK_IDS.includes(selected.clerkId || selected._id)) { alert("This admin is hardcoded and cannot be removed via the UI."); return; }
+                    updateUser(selected._id, { isAdmin: !selected.isAdmin });
+                  }}
+                    style={{width:40,height:22,background:selected.isAdmin?"var(--green)":"var(--s3)",borderRadius:999,position:"relative",cursor:"pointer",flexShrink:0,transition:"background .2s"}}>
+                    <div style={{position:"absolute",top:3,left:3,width:16,height:16,background:"#fff",borderRadius:"50%",transition:"transform .2s",transform:selected.isAdmin?"translateX(18px)":"translateX(0)"}}/>
+                  </div>
+                </div>
                 {selected.plan!=="agency" && (
-                  <button className="drawer-btn upgrade" style={{background:"#a855f7"}} disabled={saving} onClick={()=>updateUser(selected.userId,{plan:"agency"})}>
+                  <button className="drawer-btn upgrade" style={{background:"#a855f7"}} disabled={saving} onClick={()=>updateUser(selected._id,{plan:"agency"})}>
                     ↑ Upgrade to Agency
                   </button>
                 )}
                 {selected.plan!=="pro" && (
-                  <button className="drawer-btn upgrade" disabled={saving} onClick={()=>updateUser(selected.userId,{plan:"pro"})}>
+                  <button className="drawer-btn upgrade" disabled={saving} onClick={()=>updateUser(selected._id,{plan:"pro"})}>
                     {selected.plan==="agency" ? "↓ Downgrade to Pro" : "↑ Upgrade to Pro"}
                   </button>
                 )}
                 {selected.plan!=="starter" && (
-                  <button className="drawer-btn upgrade" style={{background:"var(--blue)"}} disabled={saving} onClick={()=>updateUser(selected.userId,{plan:"starter"})}>
+                  <button className="drawer-btn upgrade" style={{background:"var(--blue)"}} disabled={saving} onClick={()=>updateUser(selected._id,{plan:"starter"})}>
                     {selected.plan==="pro"||selected.plan==="agency" ? "↓ Downgrade to Starter" : "↑ Upgrade to Starter"}
                   </button>
                 )}
                 {selected.plan!=="free" && (
-                  <button className="drawer-btn downgrade" disabled={saving} onClick={()=>updateUser(selected.userId,{plan:"free"})}>
+                  <button className="drawer-btn downgrade" disabled={saving} onClick={()=>updateUser(selected._id,{plan:"free"})}>
                     ↓ Downgrade to Free
                   </button>
                 )}
                 {selected.disabled
-                  ? <button className="drawer-btn enable" disabled={saving} onClick={()=>updateUser(selected.userId,{disabled:false})}>
+                  ? <button className="drawer-btn enable" disabled={saving} onClick={()=>updateUser(selected._id,{disabled:false})}>
                       ✓ Re-enable account
                     </button>
-                  : <button className="drawer-btn disable" disabled={saving} onClick={()=>updateUser(selected.userId,{disabled:true})}>
+                  : <button className="drawer-btn disable" disabled={saving} onClick={()=>updateUser(selected._id,{disabled:true})}>
                       ⊘ Disable account
                     </button>
                 }
-                <button className="drawer-btn delete" disabled={saving} onClick={()=>deleteUser(selected.userId)}>
+                <button className="drawer-btn delete" disabled={saving} onClick={()=>deleteUser(selected._id)}>
                   🗑 Delete user permanently
                 </button>
               </div>
