@@ -1065,18 +1065,20 @@ export default function RankActions() {
 
   // ── Sync user data to Worker for admin panel ───────────────
   useEffect(() => {
-    if (!userId && !user?.id) return;
+    if (!user?.id) return;
+    const syncName = user?.fullName || user?.firstName || user?.username || "";
+    const syncEmail = user?.primaryEmailAddress?.emailAddress || user?.emailAddresses?.[0]?.emailAddress || "";
     authFetch(`${WORKER_URL}/api/user/sync`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         userId,
-        clerkId:    user?.id,
+        clerkId:    user.id,
         plan,
         sites,
         aiFixCount,
-        name:  user?.fullName || user?.firstName || "",
-        email: user?.primaryEmailAddress?.emailAddress || "",
+        name:  syncName,
+        email: syncEmail,
       })
     }).catch(()=>{});
   }, [plan, sites, aiFixCount, user?.id]);
