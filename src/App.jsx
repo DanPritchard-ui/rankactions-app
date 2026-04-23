@@ -1766,6 +1766,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
               <li>5 AI fixes/month</li>
               <li>Search Console data</li>
               <li>3 page audits/month</li>
+              <li>Weekly email digest</li>
             </ul>
           </div>
           <div className={`plan-card ${selPlan==="starter"?"selected":""}`} onClick={()=>setSelPlan("starter")}>
