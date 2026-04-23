@@ -1111,11 +1111,11 @@ export default function RankActions() {
 
   // ── Show onboarding tour on first dashboard visit ──────────
   useEffect(() => {
-    if (screen === "dashboard" && isSignedIn && selectedSite && !localStorage.getItem("ra_tour_complete")) {
+    if (screen === "dashboard" && isSignedIn && selectedSite && selectedSite !== "mywebsite.com" && !gscSitePicker && !localStorage.getItem("ra_tour_complete")) {
       const timer = setTimeout(() => setShowTour(true), 1200);
       return () => clearTimeout(timer);
     }
-  }, [screen, isSignedIn, selectedSite]);
+  }, [screen, isSignedIn, selectedSite, gscSitePicker]);
 
   // ── Handle Stripe checkout return ─────────────────────────
   useEffect(() => {
