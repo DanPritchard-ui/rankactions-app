@@ -1068,6 +1068,7 @@ export default function RankActions() {
     if (!user?.id) return;
     const syncName = user?.fullName || user?.firstName || user?.username || "";
     const syncEmail = user?.primaryEmailAddress?.emailAddress || user?.emailAddresses?.[0]?.emailAddress || "";
+    const syncSites = sites.filter(s => s && s !== "mywebsite.com");
     authFetch(`${WORKER_URL}/api/user/sync`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1075,7 +1076,7 @@ export default function RankActions() {
         userId,
         clerkId:    user.id,
         plan,
-        sites,
+        sites:      syncSites,
         aiFixCount,
         name:  syncName,
         email: syncEmail,
