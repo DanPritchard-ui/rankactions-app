@@ -5377,7 +5377,8 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
       const seoPromise = authFetch(`${WORKER_URL}/api/page-audit`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({url:target}) })
         .then(r=>r.json()).catch(e=>({error:e.message,audited:false}));
 
-      const psiUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(target)}&category=PERFORMANCE&strategy=MOBILE&key=AIzaSyCa66WeehLCDTdZagltfbfeRmv8jaApJYM`;
+      const psiKey = import.meta.env.VITE_PSI_KEY || "";
+      const psiUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(target)}&category=PERFORMANCE&strategy=MOBILE${psiKey ? `&key=${psiKey}` : ""}`;
       console.log("[RankActions] PSI request:", psiUrl);
       const psiPromise = fetch(psiUrl)
         .then(r => {
