@@ -5381,7 +5381,7 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
       <div className="content" style={{padding:"1.5rem 2rem",maxWidth:900}}>
         <div style={{marginBottom:"1.5rem"}}>
           <div style={{fontSize:"1.3rem",fontWeight:700}}>Page SEO Audit</div>
-          <div style={{fontSize:".82rem",color:"var(--text3)"}}>Enter any URL to get an instant SEO health check with specific fixes</div>
+          <div style={{fontSize:".82rem",color:"var(--text3)"}}>Enter any URL for an instant SEO + performance health check with Core Web Vitals</div>
         </div>
         <div style={{display:"flex",gap:".75rem",marginBottom:"1.5rem"}}>
           <input value={url} onChange={e=>setUrl(e.target.value)} onKeyDown={e=>e.key==="Enter"&&runAudit()}
@@ -5392,7 +5392,7 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
             {auditLoading?"Auditing...":"🔍 Audit page"}
           </button>
         </div>
-        {auditLoading && <div style={{textAlign:"center",padding:"3rem",color:"var(--text3)"}}><div className="spinner-sm" style={{margin:"0 auto .75rem"}}/>Scanning page for SEO issues...</div>}
+        {auditLoading && <div style={{textAlign:"center",padding:"3rem",color:"var(--text3)"}}><div className="spinner-sm" style={{margin:"0 auto .75rem"}}/>Scanning SEO and performance — this may take 10-15 seconds...</div>}
         {auditData?.error && <div style={{padding:"1rem",background:"rgba(240,62,95,.08)",border:"1px solid rgba(240,62,95,.2)",borderRadius:10,color:"#f03e5f",fontSize:".85rem"}}>Could not audit: {auditData.error}</div>}
         {auditData?.audited && <>
           <div style={{display:"grid",gridTemplateColumns:"140px 1fr",gap:"1.5rem",marginBottom:"1.5rem",alignItems:"center"}}>
@@ -5448,8 +5448,80 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
               ))}
             </div>
           </div>
+
+          {/* ── Performance (PageSpeed Insights) ── */}
+          {auditData.performance && (
+            <div style={{marginTop:"1.5rem"}}>
+              <div style={{display:"grid",gridTemplateColumns:"140px 1fr",gap:"1.5rem",alignItems:"center",marginBottom:"1rem"}}>
+                <div style={{textAlign:"center"}}>
+                  <svg viewBox="0 0 120 120" style={{width:110,height:110}}>
+                    <circle cx="60" cy="60" r="54" fill="none" stroke="var(--s2)" strokeWidth="8"/>
+                    <circle cx="60" cy="60" r="54" fill="none" stroke={scoreColor(auditData.performance.score)} strokeWidth="8"
+                      strokeDasharray={`${(auditData.performance.score/100)*339.3} 339.3`}
+                      strokeLinecap="round" transform="rotate(-90 60 60)"/>
+                    <text x="60" y="55" textAnchor="middle" fill={scoreColor(auditData.performance.score)} fontSize="28" fontWeight="800" fontFamily="var(--mono)">{auditData.performance.score}</text>
+                    <text x="60" y="75" textAnchor="middle" fill="var(--text3)" fontSize="10" fontWeight="700">PERFORMANCE</text>
+                  </svg>
+                </div>
+                <div>
+                  <div style={{fontSize:".95rem",fontWeight:700,marginBottom:".5rem"}}><Tip term="pageSpeed">Core Web Vitals</Tip></div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:".5rem"}}>
+                    {[
+                      {label:"LCP",tip:"Largest Contentful Paint — how long until the main content loads. Under 2.5s is good.",val:auditData.performance.cwv.lcp,fmt:v=>`${(v/1000).toFixed(1)}s`,good:2500,ok:4000},
+                      {label:"CLS",tip:"Cumulative Layout Shift — how much the page moves while loading. Under 0.1 is good.",val:auditData.performance.cwv.cls,fmt:v=>v?.toFixed(3),good:0.1,ok:0.25},
+                      {label:"FCP",tip:"First Contentful Paint — how long until something appears on screen. Under 1.8s is good.",val:auditData.performance.cwv.fcp,fmt:v=>`${(v/1000).toFixed(1)}s`,good:1800,ok:3000},
+                    ].map((m,i)=>(
+                      <div key={i} style={{background:"var(--s1)",borderRadius:8,padding:".6rem .75rem",border:"1px solid var(--border)"}}>
+                        <div style={{fontSize:".65rem",color:"var(--text3)",fontWeight:600,marginBottom:".2rem"}} title={m.tip}>{m.label}</div>
+                        <div style={{fontSize:"1.1rem",fontWeight:700,fontFamily:"var(--mono)",color:m.val==null?"var(--text3)":m.val<=m.good?"var(--green)":m.val<=m.ok?"var(--amber)":"var(--red)"}}>{m.val!=null?m.fmt(m.val):"—"}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Opportunities */}
+              {auditData.performance.opportunities?.length > 0 && (
+                <div style={{marginBottom:".75rem"}}>
+                  <div style={{fontSize:".78rem",fontWeight:700,color:"var(--text3)",marginBottom:".5rem",textTransform:"uppercase",letterSpacing:".06em"}}>Opportunities</div>
+                  {auditData.performance.opportunities.map((opp,i)=>(
+                    <div key={i} style={{background:"var(--s1)",borderRadius:8,padding:".65rem .85rem",border:"1px solid var(--border)",borderLeft:`3px solid ${opp.score<=0.5?"var(--red)":"var(--amber)"}`,marginBottom:".4rem"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                        <div style={{fontSize:".82rem",fontWeight:600}}>{opp.title}</div>
+                        <div style={{display:"flex",gap:".4rem",flexShrink:0}}>
+                          {opp.savings && <span style={{fontSize:".68rem",fontWeight:700,padding:".15rem .4rem",borderRadius:4,background:"var(--gdim)",color:"var(--green)"}}>Save {opp.savings}</span>}
+                          {opp.savingsBytes && <span style={{fontSize:".68rem",fontWeight:700,padding:".15rem .4rem",borderRadius:4,background:"var(--bdim)",color:"var(--blue)"}}>{opp.savingsBytes}</span>}
+                        </div>
+                      </div>
+                      <div style={{fontSize:".72rem",color:"var(--text3)",marginTop:".2rem"}}>{opp.description}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Diagnostics */}
+              {auditData.performance.diagnostics?.length > 0 && (
+                <div>
+                  <div style={{fontSize:".78rem",fontWeight:700,color:"var(--text3)",marginBottom:".5rem",textTransform:"uppercase",letterSpacing:".06em"}}>Diagnostics</div>
+                  {auditData.performance.diagnostics.map((d,i)=>(
+                    <div key={i} style={{display:"flex",alignItems:"center",gap:".5rem",padding:".35rem 0",borderBottom:"1px solid var(--border)",fontSize:".78rem"}}>
+                      <span style={{color:d.score<=0.5?"var(--red)":"var(--amber)"}}>{d.score<=0.5?"🔴":"🟡"}</span>
+                      <span style={{color:"var(--text)"}}>{d.title}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {!auditData.performance && (
+            <div style={{marginTop:"1rem",padding:".75rem 1rem",background:"var(--s1)",borderRadius:8,border:"1px solid var(--border)",fontSize:".78rem",color:"var(--text3)"}}>
+              ⏳ PageSpeed Insights data was unavailable for this page. Try auditing again — performance data loads separately and may take a few seconds.
+            </div>
+          )}
+
           <div style={{marginTop:"1rem",fontSize:".7rem",color:"var(--text3)",background:"var(--s1)",borderRadius:8,padding:".55rem .85rem",lineHeight:1.6,border:"1px solid var(--border)"}}>
-            ⚠️ This audit checks on-page SEO factors only. It does not measure Core Web Vitals, mobile rendering, or JavaScript-rendered content. Always back up your site before making changes.
+            ⚠️ SEO checks are based on HTML analysis. Performance data is from Google PageSpeed Insights (mobile). Always back up your site before making changes.
           </div>
         </>}
       </div>
