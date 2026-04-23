@@ -25,6 +25,16 @@ const CSS = `
   --blue:#4d7bff;--bdim:rgba(77,123,255,.12);
   --font:'Outfit',sans-serif;--mono:'JetBrains Mono',monospace;
 }
+/* ── Tooltips ── */
+.tip-trigger{display:inline-flex;align-items:center;gap:.25rem;cursor:help;position:relative;}
+.tip-icon{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:var(--s3);color:var(--text3);font-size:.58rem;font-weight:700;font-style:normal;flex-shrink:0;line-height:1;}
+.tip-bubble{position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);background:var(--s3);border:1px solid var(--border2);border-radius:8px;padding:.55rem .75rem;font-size:.73rem;font-weight:400;color:var(--text);line-height:1.5;width:260px;z-index:999;pointer-events:none;opacity:0;transition:opacity .15s;box-shadow:0 4px 16px rgba(0,0,0,.3);}
+.tip-bubble::after{content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);border:6px solid transparent;border-top-color:var(--s3);}
+.tip-trigger:hover .tip-bubble,.tip-trigger:focus .tip-bubble{opacity:1;pointer-events:auto;}
+.benchmark{font-size:.68rem;font-weight:600;margin-left:.3rem;padding:.1rem .35rem;border-radius:4px;}
+.benchmark.good{background:var(--gdim);color:var(--green);}
+.benchmark.ok{background:var(--adim);color:var(--amber);}
+.benchmark.bad{background:var(--rdim);color:var(--red);}
 .gos{min-height:100vh;background:var(--bg);color:var(--text);font-family:var(--font);}
 .ob{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem;background:radial-gradient(ellipse 900px 400px at 50% 0%,#0c1530 0%,var(--bg) 65%);}
 .ob-logo{font-size:1.4rem;font-weight:800;letter-spacing:-.04em;margin-bottom:2.5rem;}
@@ -604,6 +614,78 @@ const CSS = `
 .tour-arrow.bottom{bottom:-7px;left:24px;border-top:none;border-left:none;}
 .tour-step-num{background:var(--green);color:#000;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:800;flex-shrink:0;}
 @keyframes tourFadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`;
+
+// ── SEO Glossary — plain English tooltips for non-technical users ──
+const SEO_TIPS = {
+  ctr: "Click-through rate — the percentage of people who see your site in Google and actually click on it. Most sites average 2-5%. Higher is better.",
+  impressions: "The number of times your site appeared in Google search results. High impressions with low clicks means your titles and descriptions need improving.",
+  clicks: "How many times someone clicked on your site from Google search results in the selected period.",
+  position: "Your average ranking position in Google. Position 1-3 means you're near the top. Position 10 = bottom of page 1. Position 11+ = page 2 or beyond.",
+  avgPosition: "The average of all your keyword positions in Google. Lower numbers are better — position 1 is the top spot.",
+  keyword: "A word or phrase that people type into Google. Your goal is to rank as high as possible for keywords relevant to your business.",
+  h1: "The main heading on a page — like the title of a newspaper article. Every page should have exactly one H1 that includes your target keyword.",
+  h2: "Subheadings that break your content into sections. They help readers scan the page and help Google understand your content structure.",
+  metaDesc: "A short summary (about 155 characters) that appears below your page title in Google results. A good meta description encourages people to click.",
+  titleTag: "The clickable blue headline that appears in Google search results. Should be 50-60 characters and include your main keyword near the front.",
+  canonical: "A tag that tells Google which version of a page is the 'official' one. Prevents duplicate content issues if you have similar pages.",
+  schema: "Structured data (JSON-LD) that helps Google understand what your page is about. Can trigger rich results like star ratings, FAQs, and event details.",
+  openGraph: "Tags that control how your page looks when shared on social media (Facebook, LinkedIn, Twitter). Includes the title, description, and image shown.",
+  internalLinks: "Links from one page on your site to another page on your site. They help visitors navigate and help Google discover and rank all your pages.",
+  backlinks: "Links from other websites pointing to yours. Google treats these as votes of confidence — more quality backlinks generally means higher rankings.",
+  pillarPage: "A comprehensive, long-form page (2,000-3,000 words) that covers a broad topic in depth. It acts as the central hub that cluster posts link back to.",
+  clusterPost: "A shorter blog post (800-1,200 words) that covers a specific subtopic in detail and links back to the pillar page. Together they build topical authority.",
+  topicalAuthority: "When Google sees your site as an expert on a topic because you have multiple, interlinked pages covering it thoroughly. Leads to higher rankings for the whole cluster.",
+  haro: "Help A Reporter Out — a free platform where journalists post requests for expert quotes. If you respond and get quoted, you usually get a backlink to your site.",
+  guestPost: "An article you write for someone else's website. In return, you typically get a link back to your site within the article or author bio.",
+  resourcePage: "A page on another website that lists helpful links and tools for their audience. Getting your site listed here earns you a relevant backlink.",
+  brokenLink: "A link on someone else's site that leads to a page that no longer exists (404 error). You can contact them and suggest your content as a replacement — earning a backlink.",
+  domainProperty: "A way to verify your site in Google Search Console that covers all versions (www, non-www, http, https) at once, verified via DNS.",
+  cta: "Call to Action — a button or link that tells visitors what to do next, like 'Get a free quote', 'Book a call', or 'Download the guide'. The clearest CTAs convert best.",
+  cro: "Conversion Rate Optimisation — the process of improving your website so more visitors take the action you want (buy, enquire, sign up). Small changes can have a big impact.",
+  strikingDistance: "Keywords where you rank between positions 11-20 (page 2 of Google). With some optimisation, these are the easiest to push onto page 1 where they'll get significantly more clicks.",
+  viewport: "A meta tag that tells mobile browsers how to display your page. Without it, your site may look tiny on phones. Essential for mobile-friendly pages.",
+  ssl: "HTTPS (SSL certificate) encrypts the connection between your site and visitors. Google uses it as a ranking factor and browsers show 'Not Secure' warnings without it.",
+  wordCount: "The number of words on a page. Pages with fewer than 300 words often struggle to rank because Google sees them as 'thin content'. Aim for 800+ for blog posts.",
+  pageSpeed: "How fast your page loads. Slow pages frustrate visitors and rank lower in Google. Under 3 seconds is good, under 1 second is excellent.",
+  altText: "A text description added to images that tells Google (and screen readers) what the image shows. Include relevant keywords where natural.",
+  noFollow: "A tag on a link that tells Google not to pass ranking power through it. Some backlinks are nofollow — they're still valuable for traffic but don't directly boost rankings.",
+  rankTracker: "Monitors your keyword positions in Google over time. Shows whether your SEO work is moving the needle — positions going up means your changes are working.",
+  weeklyDigest: "An automated email sent every Monday morning with your key metrics compared to last week, your top 3 actions, and keywords close to reaching page 1.",
+};
+
+// ── Tooltip component ──
+const Tip = ({ term, children, label }) => {
+  const text = SEO_TIPS[term];
+  if (!text) return children || label || null;
+  return (
+    <span className="tip-trigger" tabIndex={0}>
+      {children || label}
+      <span className="tip-icon">i</span>
+      <span className="tip-bubble">{text}</span>
+    </span>
+  );
+};
+
+// ── Benchmark helper ──
+const Benchmark = ({ value, thresholds }) => {
+  // thresholds: { good: [min, max], ok: [min, max] } — anything outside is bad
+  if (!thresholds || value == null) return null;
+  const v = parseFloat(value);
+  if (isNaN(v)) return null;
+  const { good, ok, goodLabel, okLabel, badLabel, invert } = thresholds;
+  let level, label;
+  if (invert) {
+    // Lower is better (e.g. position)
+    level = v <= good ? "good" : v <= ok ? "ok" : "bad";
+    label = v <= good ? (goodLabel||"excellent") : v <= ok ? (okLabel||"average") : (badLabel||"needs work");
+  } else {
+    // Higher is better (e.g. CTR)
+    level = v >= good ? "good" : v >= ok ? "ok" : "bad";
+    label = v >= good ? (goodLabel||"above average") : v >= ok ? (okLabel||"average") : (badLabel||"below average");
+  }
+  return <span className={`benchmark ${level}`}>{label}</span>;
+};
+
 const DEMO_KPI = [
   { label:"Organic Traffic", value:"2,847", delta:"↓ 8%",    pos:false, sub:"vs last week",  source:"demo" },
   { label:"Impressions",     value:"74,200",delta:"↓ 5%",    pos:false, sub:"vs last week",  source:"demo" },
@@ -1093,11 +1175,15 @@ export default function RankActions() {
   const getKpiData = () => {
     if (!siteData) return DEMO_KPI;
     const t = siteData.totals;
+    const ctrNum = parseFloat(t.avgCtr);
+    const posNum = parseFloat(t.avgPosition);
     return [
-      { label:"Organic Traffic", value:t.clicks.toLocaleString(),     delta:"last 28 days", pos:true, sub:"clicks",            source:"live" },
-      { label:"Impressions",     value:t.impressions.toLocaleString(), delta:"last 28 days", pos:true, sub:"search appearances", source:"live" },
-      { label:"Avg. Position",   value:String(t.avgPosition),          delta:"from GSC",     pos:null, sub:"lower = better",     source:"live" },
-      { label:"Click Rate",      value:t.avgCtr,                       delta:"from GSC",     pos:true, sub:"avg CTR",            source:"live" },
+      { label:"Organic Clicks", value:t.clicks.toLocaleString(), delta:"last 28 days", pos:true, sub:"clicks", source:"live", tip:"clicks" },
+      { label:"Impressions",    value:t.impressions.toLocaleString(), delta:"last 28 days", pos:true, sub:"search appearances", source:"live", tip:"impressions" },
+      { label:"Avg. Position",  value:String(t.avgPosition), delta:"from GSC", pos:null, sub:"lower = better", source:"live", tip:"avgPosition",
+        bench: <Benchmark value={posNum} thresholds={{good:10,ok:20,invert:true,goodLabel:"page 1",okLabel:"page 2",badLabel:"page 3+"}}/> },
+      { label:"Click Rate",     value:t.avgCtr, delta:"from GSC", pos:true, sub:"avg CTR", source:"live", tip:"ctr",
+        bench: <Benchmark value={ctrNum} thresholds={{good:4,ok:2,goodLabel:"above avg",okLabel:"average",badLabel:"below avg"}}/> },
     ];
   };
 
@@ -2007,8 +2093,8 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
         <div className="kpi-strip" data-tour="kpi-strip">
           {kpis.map((k,i)=>(
             <div key={i} className="kpi-card">
-              <div className="kpi-label">{k.label}</div>
-              <div className={`kpi-value ${dataLoading?"shimmer":""}`}>{k.value}</div>
+              <div className="kpi-label">{k.tip ? <Tip term={k.tip}>{k.label}</Tip> : k.label}</div>
+              <div className={`kpi-value ${dataLoading?"shimmer":""}`}>{k.value}{k.bench || null}</div>
               <div className={`kpi-change ${k.pos===true?"pos":k.pos===false?"neg":"neu"}`}>{k.delta}</div>
               <div className={`kpi-source ${k.source==="live"?"live":""}`}>{k.source==="live"?"● Live":"● Demo"} · {k.sub}</div>
             </div>
@@ -2178,8 +2264,8 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
           <div className="kpi-strip" style={{marginBottom:"1.5rem"}}>
             {getKpiData().map((k,i)=>(
               <div key={i} className="kpi-card">
-                <div className="kpi-label">{k.label}</div>
-                <div className="kpi-value">{k.value}</div>
+                <div className="kpi-label">{k.tip ? <Tip term={k.tip}>{k.label}</Tip> : k.label}</div>
+                <div className="kpi-value">{k.value}{k.bench || null}</div>
                 <div className={`kpi-change ${k.pos===true?"pos":k.pos===false?"neg":"neu"}`}>{k.delta}</div>
               </div>
             ))}
@@ -2196,12 +2282,12 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
 
         {activeTab==="SEO Opportunities" && <>
           <div className="section-head" style={{marginBottom:"1.25rem"}}>
-            <div className="section-title">Keyword Opportunities</div>
+            <div className="section-title"><Tip term="keyword">Keyword Opportunities</Tip></div>
             <div className="section-sub">{siteData?`${seoRows.length} keywords from Search Console`:"Demo keywords"}</div>
           </div>
           <div className="table-wrap">
             <table className="data-table">
-              <thead><tr><th>Keyword</th><th>Position</th><th>Impressions/mo</th><th>What to do</th><th>Action</th></tr></thead>
+              <thead><tr><th><Tip term="keyword">Keyword</Tip></th><th><Tip term="position">Position</Tip></th><th><Tip term="impressions">Impressions/mo</Tip></th><th>What to do</th><th>Action</th></tr></thead>
               <tbody>
                 {seoRows.map((row,i)=>{
                   const isWriteAction = row.action==="write_blog"||row.action==="write_page";
@@ -2267,8 +2353,8 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
 
         {activeTab==="Conversions" && <>
           <div className="section-head" style={{marginBottom:"1.25rem"}}>
-            <div className="section-title">Conversion Issues</div>
-            <div className="section-sub">Pages with traffic but low conversions — industry average: 2.1%</div>
+            <div className="section-title"><Tip term="cro">Conversion Issues</Tip></div>
+            <div className="section-sub">Pages with traffic but low conversions — <Tip term="cta" label="industry average: 2.1%"/></div>
           </div>
           <div className="conv-list">
             {getConvData(selectedSite, siteData).map((row,i)=>(
@@ -3607,14 +3693,16 @@ Write 3-4 short paragraphs: overall performance, biggest opportunities, what to 
         {/* KPI Strip */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:".75rem",marginBottom:"1rem"}}>
           {[
-            {val: siteData?.totals?.clicks?.toLocaleString() || "—", lbl:"Clicks (28d)", color:"var(--text)"},
-            {val: siteData?.totals?.impressions?.toLocaleString() || "—", lbl:"Impressions", color:"var(--text)"},
-            {val: siteData?.totals?.avgPosition || "—", lbl:"Avg Position", color: siteData && parseFloat(siteData.totals.avgPosition) < 15 ? "var(--green)" : "var(--amber)"},
-            {val: siteData?.totals?.avgCtr || "—", lbl:"Click-Through Rate", color: siteData && parseFloat(siteData.totals.avgCtr) > 3 ? "var(--green)" : "var(--amber)"},
+            {val: siteData?.totals?.clicks?.toLocaleString() || "—", lbl:"Clicks (28d)", color:"var(--text)", tip:"clicks"},
+            {val: siteData?.totals?.impressions?.toLocaleString() || "—", lbl:"Impressions", color:"var(--text)", tip:"impressions"},
+            {val: siteData?.totals?.avgPosition || "—", lbl:"Avg Position", color: siteData && parseFloat(siteData.totals.avgPosition) < 15 ? "var(--green)" : "var(--amber)", tip:"avgPosition",
+              bench: siteData ? <Benchmark value={parseFloat(siteData.totals.avgPosition)} thresholds={{good:10,ok:20,invert:true,goodLabel:"page 1",okLabel:"page 2",badLabel:"page 3+"}}/> : null},
+            {val: siteData?.totals?.avgCtr || "—", lbl:"Click-Through Rate", color: siteData && parseFloat(siteData.totals.avgCtr) > 3 ? "var(--green)" : "var(--amber)", tip:"ctr",
+              bench: siteData ? <Benchmark value={parseFloat(siteData.totals.avgCtr)} thresholds={{good:4,ok:2,goodLabel:"above avg",okLabel:"average",badLabel:"below avg"}}/> : null},
           ].map((k,i) => (
             <div key={i} style={cardStyle}>
-              <div style={{...kpiVal, color:k.color}}>{k.val}</div>
-              <div style={kpiLabel}>{k.lbl}</div>
+              <div style={{...kpiVal, color:k.color}}>{k.val}{k.bench || null}</div>
+              <div style={kpiLabel}>{k.tip ? <Tip term={k.tip}>{k.lbl}</Tip> : k.lbl}</div>
             </div>
           ))}
         </div>
@@ -3708,7 +3796,7 @@ Write 3-4 short paragraphs: overall performance, biggest opportunities, what to 
 
           {/* Striking Distance Keywords */}
           <div style={cardStyle}>
-            <div style={headStyle}>🎯 Striking Distance (positions 11-20)</div>
+            <div style={headStyle}><Tip term="strikingDistance">🎯 Striking Distance (positions 11-20)</Tip></div>
             <div style={{fontSize:".78rem",color:"var(--text2)",marginBottom:".75rem"}}>These keywords are close to page 1 — small improvements could unlock significant traffic</div>
             {kwStriking.length > 0 ? kwStriking.slice(0,8).map((k,i) => (
               <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:".4rem 0",borderBottom:"1px solid var(--b2)"}}>
@@ -4413,7 +4501,7 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
                 {/* Pillar card */}
                 <div style={{ ...cardStyle, marginBottom: ".75rem", borderLeft: "3px solid var(--green)" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: ".5rem" }}>
-                    <div style={{ fontSize: ".68rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--green)" }}>★ Pillar Page</div>
+                    <div style={{ fontSize: ".68rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--green)" }}><Tip term="pillarPage">★ Pillar Page</Tip></div>
                     <select value={strategy.pillar.status} onChange={e => updatePillar({ status: e.target.value })}
                       style={{ background: "var(--s2)", border: "1px solid var(--border)", borderRadius: 6, padding: ".25rem .5rem", color: statusColors[strategy.pillar.status], fontSize: ".75rem", fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
                       <option value="not_started">Not started</option>
@@ -4438,7 +4526,7 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
 
                 {/* How linking works */}
                 <div style={{ textAlign: "center", padding: ".5rem", fontSize: ".75rem", color: "var(--text3)" }}>
-                  ↕ Each blog post below should link back to your pillar page
+                  ↕ Each <Tip term="clusterPost">blog post</Tip> below should <Tip term="internalLinks">link back</Tip> to your pillar page to build <Tip term="topicalAuthority">topical authority</Tip>
                 </div>
 
                 {/* Cluster posts */}
@@ -4984,7 +5072,7 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
     return (
       <div className="content" style={{padding:"1.5rem 2rem",maxWidth:1100}}>
         <div style={{marginBottom:"1.5rem"}}>
-          <div style={{fontSize:"1.3rem",fontWeight:700}}>Rank Tracker</div>
+          <div style={{fontSize:"1.3rem",fontWeight:700}}><Tip term="rankTracker">Rank Tracker</Tip></div>
           <div style={{fontSize:".82rem",color:"var(--text3)"}}>{displaySite(selectedSite)} · {localSnapshots.length} snapshots · {trackedKws.length} keywords tracked</div>
         </div>
         {loading ? (
@@ -5079,6 +5167,7 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
     const scoreColor = (s) => s>=90?"#0A7C4E":s>=75?"#0fdb8a":s>=60?"#f5a623":s>=40?"#e67e22":"#f03e5f";
     const typeIcon = (t) => t==="critical"?"🔴":t==="warning"?"🟡":t==="info"?"🔵":"🟢";
     const typeColor = (t) => t==="critical"?"#f03e5f":t==="warning"?"#f5a623":t==="info"?"#4d7bff":"#0fdb8a";
+    const auditTipMap = {"Title Tag":"titleTag","Meta Description":"metaDesc","H1 Heading":"h1","Content Structure":"h2","Canonical Tag":"canonical","Mobile Friendliness":"viewport","Image Alt Text":"altText","Structured Data":"schema","Social Meta Tags":"openGraph","Internal Links":"internalLinks","HTTPS":"ssl","Page Speed":"pageSpeed","Content Length":"wordCount"};
 
     return (
       <div className="content" style={{padding:"1.5rem 2rem",maxWidth:900}}>
@@ -5137,7 +5226,7 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
                 <div style={{display:"flex",alignItems:"center",gap:".4rem",marginBottom:".25rem"}}>
                   <span>{typeIcon(issue.type)}</span>
                   <span style={{fontSize:".7rem",fontWeight:700,color:typeColor(issue.type),textTransform:"uppercase",letterSpacing:".04em"}}>{issue.type}</span>
-                  <span style={{fontSize:".7rem",color:"var(--text3)"}}>· {issue.category}</span>
+                  <span style={{fontSize:".7rem",color:"var(--text3)"}}>· {auditTipMap[issue.category] ? <Tip term={auditTipMap[issue.category]}>{issue.category}</Tip> : issue.category}</span>
                 </div>
                 <div style={{fontSize:".85rem",fontWeight:600,marginBottom:".25rem"}}>{issue.issue}</div>
                 {issue.fix && <div style={{fontSize:".78rem",color:"var(--text2)",lineHeight:1.5}}>{issue.fix}</div>}
@@ -5147,7 +5236,7 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
             <div style={{marginTop:".4rem"}}>
               <div style={{fontSize:".78rem",fontWeight:600,color:"var(--text3)",marginBottom:".4rem"}}>Passed ({auditData.issues.filter(i=>i.type==="pass").length})</div>
               {auditData.issues.filter(i=>i.type==="pass").map((issue,i)=>(
-                <div key={i} style={{display:"flex",alignItems:"center",gap:".4rem",padding:".3rem 0",fontSize:".75rem",color:"var(--text3)"}}>🟢 {issue.category}: {issue.issue}</div>
+                <div key={i} style={{display:"flex",alignItems:"center",gap:".4rem",padding:".3rem 0",fontSize:".75rem",color:"var(--text3)"}}>🟢 {auditTipMap[issue.category] ? <Tip term={auditTipMap[issue.category]}>{issue.category}</Tip> : issue.category}: {issue.issue}</div>
               ))}
             </div>
           </div>
@@ -5177,12 +5266,12 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
     ];
 
     const templateTypes = [
-      { id:"guest_post",   label:"Guest Post"      },
-      { id:"resource_page",label:"Resource Page"   },
-      { id:"broken_link",  label:"Broken Link"     },
-      { id:"testimonial",  label:"Testimonial"     },
-      { id:"partnership",  label:"Partnership"     },
-      { id:"directory",    label:"Directory"       },
+      { id:"guest_post",   label:"Guest Post",    tip:"guestPost" },
+      { id:"resource_page",label:"Resource Page",  tip:"resourcePage" },
+      { id:"broken_link",  label:"Broken Link",    tip:"brokenLink" },
+      { id:"testimonial",  label:"Testimonial"    },
+      { id:"partnership",  label:"Partnership"    },
+      { id:"directory",    label:"Directory"      },
     ];
 
     const diffColor = d => d==="easy"?"easy":d==="medium"?"medium":"hard";
@@ -5203,8 +5292,8 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
         <div className="links-section">
           <div className="links-section-head">
             <div>
-              <div className="links-section-title">Link Opportunities</div>
-              <div className="links-section-sub">AI-generated opportunities specific to {selectedSite}</div>
+              <div className="links-section-title"><Tip term="backlinks">Link Opportunities</Tip></div>
+              <div className="links-section-sub">AI-generated opportunities specific to {displaySite(selectedSite)}</div>
             </div>
             <button className="links-generate-btn" disabled={linkOppsLoading} onClick={generateLinkOpps}>
               {linkOppsLoading ? "⏳ Generating…" : "✨ Generate opportunities"}
@@ -5302,7 +5391,7 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
             {templateTypes.map(t=>(
               <div key={t.id} className={`links-template-tab ${linkTemplate===t.id?"active":""}`}
                 onClick={()=>{setLinkTemplate(t.id);setLinkTemplateOutput("");}}>
-                {t.label}
+                {t.tip ? <Tip term={t.tip}>{t.label}</Tip> : t.label}
               </div>
             ))}
           </div>
