@@ -5376,8 +5376,15 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
       const seoPromise = authFetch(`${WORKER_URL}/api/page-audit`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({url:target}) })
         .then(r=>r.json()).catch(e=>({error:e.message,audited:false}));
 
-      const psiPromise = fetch(`https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(target)}&category=PERFORMANCE&strategy=MOBILE`)
-        .then(r=>r.json()).then(psi => {
+      const psiUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(target)}&category=PERFORMANCE&strategy=MOBILE&key=AIzaSyCa66WeehLCDTdZagltfbfeRmv8jaApJYM`;
+      console.log("[RankActions] PSI request:", psiUrl);
+      const psiPromise = fetch(psiUrl)
+        .then(r => {
+          console.log("[RankActions] PSI response status:", r.status);
+          return r.json();
+        })
+        .then(psi => {
+          console.log("[RankActions] PSI data:", psi?.lighthouseResult ? "OK" : "No lighthouse data", psi?.error || "");
           if (!psi?.lighthouseResult) return null;
           const lhr = psi.lighthouseResult;
           const audits = lhr.audits || {};
@@ -5405,7 +5412,7 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
               .slice(0, 5)
               .map(a => ({ title: a.title, description: a.description, score: a.score })),
           };
-        }).catch(() => null);
+        }).catch(err => { console.error("[RankActions] PSI error:", err); return null; });
 
       // SEO finishes first (2-3s), then PSI catches up (10-20s)
       const seoResult = await seoPromise;
