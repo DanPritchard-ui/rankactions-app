@@ -3328,6 +3328,8 @@ IMPORTANT — Label internal links clearly so non-technical users know what they
   const ADMIN_CLERK_IDS = [
     "user_3CMXybSmGDdSNc2caXRZraMoZdt", // Dan
     "user_3Ckg4xABwhpj6NJBhgnOrjZeoZs", // Team
+    "user_3CkepthSy1EC7ugb5GSc5ZiOx0N", // Team
+    "user_3CkeqYD7Sl5vMeojdoDbmAUeCqV", // Team
   ];
   const isAdmin = ADMIN_CLERK_IDS.includes(user?.id) || isAdminFlag;
 
