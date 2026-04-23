@@ -1882,7 +1882,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
           <div className="ob-h">Connect your data</div>
           <div className="ob-sub">Clicking Connect takes you to Google — we only request read-only access and never store your actual site data.</div>
           <div className="ob-connect-grid">
-            <div className="ob-connect-card active" onClick={()=>window.location.href=`${WORKER_URL}/auth/google`}>
+            <div className="ob-connect-card active" onClick={()=>window.location.href=`${WORKER_URL}/auth/google?clerkId=${user?.id}`}>
               <div className="ob-connect-icon">🔗</div>
               <div className="ob-connect-name">Connect Google</div>
               <div className="ob-connect-sub">Search Console + Analytics</div>
@@ -2049,7 +2049,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
         </span>
         {isConnected
           ? <button className="disconnect-btn" onClick={disconnect}>Disconnect GSC</button>
-          : <button className="connect-btn" onClick={()=>window.location.href=`${WORKER_URL}/auth/google`}>🔗 Connect Google</button>}
+          : <button className="connect-btn" onClick={()=>window.location.href=`${WORKER_URL}/auth/google?clerkId=${user?.id}`}>🔗 Connect Google</button>}
         {/* Admin-only plan switcher for testing */}
         {isAdmin && (
           <select
@@ -2081,7 +2081,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
   // Banner shown at top of each content area
   const DataBanner = () => {
     if (dataError) return <div className="data-banner error">⚠ {dataError}<button className="data-banner-action" onClick={fetchSiteData}>Retry</button></div>;
-    if (!isConnected) return <div className="data-banner">📊 Showing demo data. Connect Google Search Console for your real numbers.<button className="data-banner-action" onClick={()=>window.location.href=`${WORKER_URL}/auth/google`}>Connect Google →</button></div>;
+    if (!isConnected) return <div className="data-banner">📊 Showing demo data. Connect Google Search Console for your real numbers.<button className="data-banner-action" onClick={()=>window.location.href=`${WORKER_URL}/auth/google?clerkId=${user?.id}`}>Connect Google →</button></div>;
     if (siteData)     return <div className="data-banner live">✓ Live data · {displaySite(selectedSite)} · Last {siteData.dateRange.days} days<button className="data-banner-action" onClick={fetchSiteData}>Refresh</button></div>;
     return null;
   };
@@ -5052,7 +5052,7 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
             {isConnected ? (
               <button style={dangerBtn} onClick={disconnectGoogle}>Disconnect</button>
             ) : (
-              <button style={{...btnStyle,color:"var(--green)",borderColor:"var(--green)"}} onClick={()=>window.location.href=`${WORKER_URL}/auth/google`}>Connect Google</button>
+              <button style={{...btnStyle,color:"var(--green)",borderColor:"var(--green)"}} onClick={()=>window.location.href=`${WORKER_URL}/auth/google?clerkId=${user?.id}`}>Connect Google</button>
             )}
           </div>
         </div>
