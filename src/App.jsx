@@ -649,6 +649,8 @@ const SEO_TIPS = {
   noFollow: "A tag on a link that tells Google not to pass ranking power through it. Some backlinks are nofollow — they're still valuable for traffic but don't directly boost rankings.",
   rankTracker: "Monitors your keyword positions in Google over time. Shows whether your SEO work is moving the needle — positions going up means your changes are working.",
   weeklyDigest: "An automated email sent every Monday morning with your key metrics compared to last week, your top 3 actions, and keywords close to reaching page 1.",
+  aiReadiness: "How well your page is structured for AI search engines like Google AI Overviews, ChatGPT, and Perplexity. Higher scores mean AI is more likely to cite your content as a source.",
+  faqSchema: "Structured FAQ markup that lets AI search engines extract your questions and answers directly. One of the strongest signals for appearing in AI-generated answers.",
 };
 
 // ── Tooltip component ──
@@ -5437,7 +5439,7 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
       <div className="content" style={{padding:"1.5rem 2rem",maxWidth:1100}}>
         <div style={{marginBottom:"1.5rem"}}>
           <div style={{fontSize:"1.3rem",fontWeight:700}}>Page SEO Audit</div>
-          <div style={{fontSize:".82rem",color:"var(--text3)"}}>Enter any URL for an instant SEO + performance health check with Core Web Vitals</div>
+          <div style={{fontSize:".82rem",color:"var(--text3)"}}>Enter any URL for an instant SEO + performance + AI readiness health check</div>
         </div>
         <div style={{display:"flex",gap:".75rem",marginBottom:"1.5rem"}}>
           <input value={url} onChange={e=>setUrl(e.target.value)} onKeyDown={e=>e.key==="Enter"&&runAudit()}
@@ -5451,49 +5453,74 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
         {auditLoading && <div style={{textAlign:"center",padding:"3rem",color:"var(--text3)"}}><div className="spinner-sm" style={{margin:"0 auto .75rem"}}/>Scanning SEO and performance — this may take 10-15 seconds...</div>}
         {auditData?.error && <div style={{padding:"1rem",background:"rgba(240,62,95,.08)",border:"1px solid rgba(240,62,95,.2)",borderRadius:10,color:"#f03e5f",fontSize:".85rem"}}>Could not audit: {auditData.error}</div>}
         {auditData?.audited && <>
-          {/* ── Dual score gauges + summary ── */}
-          <div style={{display:"grid",gridTemplateColumns:"auto auto 1fr",gap:"1.25rem",marginBottom:"1.25rem",alignItems:"center"}}>
+          {/* ── Triple score gauges + summary ── */}
+          <div style={{display:"grid",gridTemplateColumns:"auto auto auto 1fr",gap:"1rem",marginBottom:"1.25rem",alignItems:"center"}}>
             {/* SEO Score */}
             <div style={{textAlign:"center"}}>
-              <svg viewBox="0 0 120 120" style={{width:115,height:115}}>
+              <svg viewBox="0 0 120 120" style={{width:105,height:105}}>
                 <circle cx={60} cy={60} r={52} fill="none" stroke="var(--border)" strokeWidth={8}/>
                 <circle cx={60} cy={60} r={52} fill="none" stroke={scoreColor(auditData.score)} strokeWidth={8}
                   strokeDasharray={`${(auditData.score/100)*327} 327`} strokeLinecap="round" transform="rotate(-90 60 60)"/>
-                <text x={60} y={52} textAnchor="middle" fill={scoreColor(auditData.score)} fontSize={28} fontWeight={800} fontFamily="Arial">{auditData.score}</text>
-                <text x={60} y={72} textAnchor="middle" fill="var(--text3)" fontSize={11}>SEO · {auditData.grade}</text>
+                <text x={60} y={52} textAnchor="middle" fill={scoreColor(auditData.score)} fontSize={26} fontWeight={800} fontFamily="Arial">{auditData.score}</text>
+                <text x={60} y={70} textAnchor="middle" fill="var(--text3)" fontSize={10}>SEO · {auditData.grade}</text>
               </svg>
-              <div style={{fontSize:".68rem",color:"var(--text3)",marginTop:".15rem"}}>On-page SEO health</div>
+              <div style={{fontSize:".62rem",color:"var(--text3)",marginTop:".1rem"}}>On-page SEO</div>
             </div>
             {/* Performance Score */}
             <div style={{textAlign:"center"}}>
               {perfData ? (
                 <>
-                <svg viewBox="0 0 120 120" style={{width:115,height:115}}>
+                <svg viewBox="0 0 120 120" style={{width:105,height:105}}>
                   <circle cx="60" cy="60" r="52" fill="none" stroke="var(--border)" strokeWidth="8"/>
                   <circle cx="60" cy="60" r="52" fill="none" stroke={scoreColor(perfData.score)} strokeWidth="8"
                     strokeDasharray={`${(perfData.score/100)*327} 327`}
                     strokeLinecap="round" transform="rotate(-90 60 60)"/>
-                  <text x="60" y="52" textAnchor="middle" fill={scoreColor(perfData.score)} fontSize="28" fontWeight="800" fontFamily="Arial">{perfData.score}</text>
-                  <text x="60" y="72" textAnchor="middle" fill="var(--text3)" fontSize="11">Performance</text>
+                  <text x="60" y="52" textAnchor="middle" fill={scoreColor(perfData.score)} fontSize="26" fontWeight="800" fontFamily="Arial">{perfData.score}</text>
+                  <text x="60" y="70" textAnchor="middle" fill="var(--text3)" fontSize="10">Performance</text>
                 </svg>
-                <div style={{fontSize:".68rem",color:"var(--text3)",marginTop:".15rem"}}>Page loading speed</div>
+                <div style={{fontSize:".62rem",color:"var(--text3)",marginTop:".1rem"}}>Page speed</div>
                 </>
               ) : perfLoading ? (
                 <div>
-                  <div style={{width:115,height:115,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",borderRadius:"50%",border:"8px solid var(--border)"}}>
+                  <div style={{width:105,height:105,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",borderRadius:"50%",border:"8px solid var(--border)"}}>
                     <div className="spinner-sm"/>
-                    <div style={{fontSize:".55rem",color:"var(--text3)",marginTop:".25rem"}}>Loading...</div>
+                    <div style={{fontSize:".5rem",color:"var(--text3)",marginTop:".2rem"}}>Loading...</div>
                   </div>
-                  <div style={{fontSize:".68rem",color:"var(--text3)",marginTop:".15rem"}}>Page loading speed</div>
+                  <div style={{fontSize:".62rem",color:"var(--text3)",marginTop:".1rem"}}>Page speed</div>
                 </div>
               ) : (
                 <div>
-                <svg viewBox="0 0 120 120" style={{width:115,height:115}}>
+                <svg viewBox="0 0 120 120" style={{width:105,height:105}}>
                   <circle cx="60" cy="60" r="52" fill="none" stroke="var(--border)" strokeWidth="8"/>
                   <text x="60" y="55" textAnchor="middle" fill="var(--text3)" fontSize="16">—</text>
-                  <text x="60" y="72" textAnchor="middle" fill="var(--text3)" fontSize="11">Performance</text>
+                  <text x="60" y="70" textAnchor="middle" fill="var(--text3)" fontSize="10">Performance</text>
                 </svg>
-                <div style={{fontSize:".68rem",color:"var(--text3)",marginTop:".15rem"}}>Page loading speed</div>
+                <div style={{fontSize:".62rem",color:"var(--text3)",marginTop:".1rem"}}>Page speed</div>
+                </div>
+              )}
+            </div>
+            {/* AI Readiness Score */}
+            <div style={{textAlign:"center"}}>
+              {auditData.aiReadiness ? (
+                <>
+                <svg viewBox="0 0 120 120" style={{width:105,height:105}}>
+                  <circle cx="60" cy="60" r="52" fill="none" stroke="var(--border)" strokeWidth="8"/>
+                  <circle cx="60" cy="60" r="52" fill="none" stroke={auditData.aiReadiness.score>=80?"#a855f7":auditData.aiReadiness.score>=50?"var(--amber)":"var(--red)"} strokeWidth="8"
+                    strokeDasharray={`${(auditData.aiReadiness.score/100)*327} 327`}
+                    strokeLinecap="round" transform="rotate(-90 60 60)"/>
+                  <text x="60" y="52" textAnchor="middle" fill={auditData.aiReadiness.score>=80?"#a855f7":auditData.aiReadiness.score>=50?"var(--amber)":"var(--red)"} fontSize="26" fontWeight="800" fontFamily="Arial">{auditData.aiReadiness.score}</text>
+                  <text x="60" y="70" textAnchor="middle" fill="var(--text3)" fontSize="10">{auditData.aiReadiness.grade}</text>
+                </svg>
+                <div style={{fontSize:".62rem",color:"var(--text3)",marginTop:".1rem"}}>AI Search Ready</div>
+                </>
+              ) : (
+                <div>
+                <svg viewBox="0 0 120 120" style={{width:105,height:105}}>
+                  <circle cx="60" cy="60" r="52" fill="none" stroke="var(--border)" strokeWidth="8"/>
+                  <text x="60" y="55" textAnchor="middle" fill="var(--text3)" fontSize="16">—</text>
+                  <text x="60" y="70" textAnchor="middle" fill="var(--text3)" fontSize="10">AI Ready</text>
+                </svg>
+                <div style={{fontSize:".62rem",color:"var(--text3)",marginTop:".1rem"}}>AI Search Ready</div>
                 </div>
               )}
             </div>
@@ -5621,6 +5648,57 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
             <div style={{marginTop:"1rem",padding:"1rem",textAlign:"center",background:"var(--s1)",borderRadius:10,border:"1px solid var(--border)"}}>
               <div className="spinner-sm" style={{margin:"0 auto .5rem"}}/>
               <div style={{fontSize:".82rem",color:"var(--text3)"}}>Loading performance opportunities from Google...</div>
+            </div>
+          )}
+
+          {/* ── AI Search Readiness ── */}
+          {auditData.aiReadiness && (
+            <div style={{marginTop:"1.5rem"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:".75rem"}}>
+                <div style={{fontSize:".85rem",fontWeight:700}}>🤖 AI Search Readiness</div>
+                <div style={{fontSize:".75rem",color:auditData.aiReadiness.score>=80?"#a855f7":auditData.aiReadiness.score>=50?"var(--amber)":"var(--red)",fontWeight:600}}>
+                  {auditData.aiReadiness.passed}/{auditData.aiReadiness.total} checks passed · {auditData.aiReadiness.grade}
+                </div>
+              </div>
+              <div style={{fontSize:".78rem",color:"var(--text3)",marginBottom:".75rem",lineHeight:1.6}}>
+                How well this page is structured for AI search engines like Google AI Overviews, ChatGPT, and Perplexity. Pages that score higher here are more likely to be cited in AI-generated answers.
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:".4rem"}}>
+                {auditData.aiReadiness.checks.map((check,i) => (
+                  <div key={i} style={{background:"var(--s1)",borderRadius:8,padding:".7rem .9rem",border:"1px solid var(--border)",
+                    borderLeft:`3px solid ${check.status==="pass"?"#a855f7":check.status==="partial"?"var(--amber)":check.status==="neutral"?"var(--text3)":"var(--red)"}`}}>
+                    <div style={{display:"flex",alignItems:"center",gap:".4rem",marginBottom:".2rem"}}>
+                      <span>{check.status==="pass"?"🟣":check.status==="partial"?"🟡":check.status==="neutral"?"⚪":"🔴"}</span>
+                      <span style={{fontSize:".82rem",fontWeight:600}}>{check.check}</span>
+                    </div>
+                    <div style={{fontSize:".78rem",color:"var(--text2)",lineHeight:1.5}}>{check.detail}</div>
+                    {check.fix && <div style={{fontSize:".75rem",color:"var(--text3)",marginTop:".3rem",lineHeight:1.5,fontStyle:"italic"}}>💡 {check.fix}</div>}
+                    {check.examples && check.examples.length > 0 && (
+                      <div style={{marginTop:".3rem",display:"flex",gap:".3rem",flexWrap:"wrap"}}>
+                        {check.examples.map((ex,j) => (
+                          <span key={j} style={{fontSize:".65rem",background:"rgba(168,85,247,.08)",color:"#a855f7",padding:".15rem .4rem",borderRadius:4}}>"{ex}"</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Collapsible guide */}
+              <details style={{marginTop:".75rem",background:"var(--s1)",borderRadius:8,border:"1px solid var(--border)",overflow:"hidden"}}>
+                <summary style={{padding:".65rem .9rem",cursor:"pointer",fontSize:".78rem",fontWeight:600,color:"#a855f7",listStyle:"none",display:"flex",alignItems:"center",gap:".4rem"}}>
+                  <span style={{fontSize:".65rem"}}>ℹ</span> Why does AI search readiness matter?
+                </summary>
+                <div style={{padding:"0 .9rem .75rem",fontSize:".78rem",color:"var(--text2)",lineHeight:1.7}}>
+                  <p style={{marginTop:".4rem"}}>Google AI Overviews, ChatGPT, and Perplexity are increasingly answering questions directly instead of showing traditional search results. When they do, they cite sources — and the sources they choose tend to have:</p>
+                  <p style={{marginTop:".4rem"}}><strong style={{color:"var(--text)"}}>FAQ and HowTo schema</strong> — structured data that AI can extract directly without interpreting prose.</p>
+                  <p><strong style={{color:"var(--text)"}}>Question-based headings</strong> — H2s phrased as questions that match how people ask AI assistants.</p>
+                  <p><strong style={{color:"var(--text)"}}>Concise direct answers</strong> — the first sentence after a heading should directly answer the question.</p>
+                  <p><strong style={{color:"var(--text)"}}>Author and date signals</strong> — AI engines prioritise recent, authoritative content.</p>
+                  <p><strong style={{color:"var(--text)"}}>Structured content</strong> — lists, tables, and short paragraphs that AI can parse reliably.</p>
+                  <p style={{marginTop:".4rem",color:"var(--text3)"}}>Traditional SEO still matters — you need to rank in the top 3-5 results for AI to consider citing you. AI readiness is the next layer on top of good SEO fundamentals.</p>
+                </div>
+              </details>
             </div>
           )}
 
