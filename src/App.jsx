@@ -6108,7 +6108,7 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
           </div>
         </div>
       </div>
-      {modal            && <FixModal/>}
+      {modal            && FixModal()}
       {croModal         && <CroModal/>}
       {showUpgrade      && <UpgradeModal/>}
       {gscSitePicker    && <GscSitePicker/>}
