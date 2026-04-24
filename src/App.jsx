@@ -1794,7 +1794,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
             <div className="plan-period">{isAnnual ? "per year — £32.50/mo" : "per month"}</div>
             {isAnnual && <div style={{fontSize:".78rem",color:"var(--green)",fontWeight:600,marginBottom:".5rem"}}>Save £78 vs monthly</div>}
             <ul className="plan-features">
-              <li>Unlimited websites</li>
+              <li>5 websites (+£5/site extra)</li>
               <li>Unlimited AI fixes</li>
               <li>AI Content Generator</li>
               <li>Strategy Planner</li>
@@ -1812,7 +1812,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
             {isAnnual && <div style={{fontSize:".78rem",color:"var(--green)",fontWeight:600,marginBottom:".5rem"}}>Save £158 vs monthly</div>}
             <ul className="plan-features">
               <li>Everything in Pro</li>
-              <li>Unlimited client sites</li>
+              <li>10 websites (+£5/site extra)</li>
               <li>DataForSEO data (soon)</li>
               <li>Competitor tracking (soon)</li>
               <li>White-label reports (soon)</li>
@@ -2846,18 +2846,18 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
             </>
           ) : upgradePlan === "pro" ? (
             <>
-              <li>Unlimited websites</li>
-              <li>Unlimited AI fix generator</li>
-              <li>AI content generator — blog posts in 30 seconds</li>
-              <li>Conversions tab — find pages losing leads</li>
-              <li>Issues tab — technical SEO problems</li>
-              <li>Link building tools with outreach templates</li>
+              <li>5 websites (+£5/site extra)</li>
+              <li>Unlimited AI fixes</li>
+              <li>AI content generator</li>
+              <li>Strategy planner</li>
+              <li>Link building tools</li>
+              <li>Rank Tracker + Page Audit</li>
               <li>Weekly email digest</li>
             </>
           ) : (
             <>
               <li>Everything in Pro</li>
-              <li>Unlimited client sites</li>
+              <li>10 websites (+£5/site extra)</li>
               <li>Priority support</li>
               <li>White-label reports (coming soon)</li>
               <li>Competitor tracking (coming soon)</li>
