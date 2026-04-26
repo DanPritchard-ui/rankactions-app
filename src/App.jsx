@@ -2245,7 +2245,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
 
         <div className="section-head" data-tour="priority-actions">
           <div className="section-title">Priority Actions</div>
-          <div className="section-sub">{siteData?"Based on your live data":"Demo data"} · {fixes.filter(f=>!doneFixes.has(f.id)).length} remaining</div>
+          <div className="section-sub">{(siteData?.topOpportunities?.length > 0) ? "Based on your live data" : "Demo data"} · {fixes.filter(f=>!doneFixes.has(f.id)).length} remaining</div>
         </div>
         <div className="fixes-list">
           {fixes.map(fix=>{
