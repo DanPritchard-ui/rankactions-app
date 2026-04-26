@@ -2963,16 +2963,13 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
     const [copied,    setCopied]    = useState(false);
     const [loadMsg,   setLoadMsg]   = useState("Researching your keyword…");
     const [annotated, setAnnotated] = useState(false);
-    const [siteStyle, setSiteStyle] = useState(null);
-    const [scanning,  setScanning]  = useState(false);
 
     const loadMsgs = [
       "Researching your keyword…",
-      "Scanning your site for styles…",
       "Writing SEO-optimised content…",
       "Structuring headings and subheadings…",
       "Adding internal link suggestions…",
-      "Applying your site's design…",
+      "Applying RankActions branding…",
       "Finalising meta tags…",
     ];
 
@@ -2980,17 +2977,6 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
     useEffect(()=>{ contentPresetRef.current = null; },[]);
 
     const suggestedKw = siteData?.topOpportunities?.[0]?.keyword || "";
-
-    // Scan the user's site for colours, fonts and layout
-    const scanSite = async () => {
-      setScanning(true);
-      try {
-        const res  = await authFetch(`${WORKER_URL}/api/scan-site?siteUrl=${encodeURIComponent(selectedSite)}`);
-        const data = await res.json();
-        if (data.scanned) setSiteStyle(data);
-      } catch(e) { console.warn("Site scan failed — continuing without styles"); }
-      setScanning(false);
-    };
 
     const seoStats = output ? {
       titleLen: (output.match(/<title>(.*?)<\/title>/i)?.[1]||"").length,
@@ -3036,32 +3022,6 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
       let mi = 0;
       const iv = setInterval(()=>{ mi=(mi+1)%loadMsgs.length; setLoadMsg(loadMsgs[mi]); }, 3200);
 
-      // Scan site for styles if not already done
-      let style = siteStyle;
-      if (!style) {
-        try {
-          const res  = await authFetch(`${WORKER_URL}/api/scan-site?siteUrl=${encodeURIComponent(selectedSite)}`);
-          const data = await res.json();
-          if (data.scanned) { style = data; setSiteStyle(data); }
-        } catch(e) {}
-      }
-
-      // Build style context from scan
-      const styleContext = style ? `
-SITE DESIGN — you MUST match this site's visual identity closely:
-- Brand name: ${style.brandName}
-- Header/navbar background: ${style.headerBg || style.themeColor || style.cssVars?.['primary-color'] || style.colors?.[0] || '#333'}
-- Theme/brand colour: ${style.themeColor || style.headerBg || style.cssVars?.['primary-color'] || style.cssVars?.['brand-color'] || style.colors?.[0] || '#333'}
-- Page background: ${style.primaryBg || style.cssVars?.['background-color'] || style.cssVars?.['bg-color'] || '#ffffff'}
-- Text colour: ${style.primaryText || style.cssVars?.['text-color'] || '#333'}
-- Top detected colours (in order of frequency): ${style.colors?.slice(0,10).join(', ') || 'not detected'}
-${style.cssVars && Object.keys(style.cssVars).length > 0 ? '- CSS variables found: ' + Object.entries(style.cssVars).slice(0,8).map(([k,v]) => `--${k}: ${v}`).join(', ') : ''}
-- Fonts detected: ${style.fonts?.join(', ') || 'system-ui, sans-serif'}
-- Google Fonts URLs: ${style.gFonts?.join(', ') || 'none'}
-- Nav links to replicate: ${style.navLinks?.join(' | ') || 'none'}
-
-CRITICAL: Use the header/brand colour for the navbar and hero section background. Use the detected fonts. The generated article must look like it belongs on this website.` : '';
-
       // Load previously generated content to avoid duplication
       let contentHistory = [];
       try { contentHistory = JSON.parse(localStorage.getItem(`ra_content_history_${selectedSite}`) || "[]"); } catch {}
@@ -3070,7 +3030,7 @@ CRITICAL: Use the header/brand colour for the navbar and hero section background
         : "";
 
       try {
-        const prompt = `You are an expert SEO content writer. Generate a complete, production-ready HTML blog post.
+        const prompt = `You are an expert SEO content writer. Generate a complete, production-ready HTML blog post styled with RankActions branding.
 
 OUTPUT ONLY raw HTML starting with <!DOCTYPE html>. No markdown, no code fences, no explanation.
 
@@ -3081,26 +3041,40 @@ INPUTS:
 - Target word count: ~${wordCount} words
 - Primary CTA: ${cta.trim() || "Contact us to find out more"}
 - Additional notes: ${notes.trim() || "none"}
-- Website: ${displaySite(selectedSite)}
-${styleContext}
+- Client website: ${displaySite(selectedSite)}
 ${historyContext}
 
-BUILD THIS STRUCTURE:
-1. HEAD: title tag (50-60 chars, keyword first), meta description (145-155 chars, include keyword), canonical URL (https://${selectedSite}/[keyword-slug]/), robots, Open Graph tags, JSON-LD Article schema, datePublished today
-2. NAV: replicate detected nav links if available, otherwise simple nav with site name and 3-4 links
-3. HERO SECTION: H1 containing exact keyword "${kw.trim()}", subtitle, author, date, read time
-4. ARTICLE BODY: max-width 760px, margin auto, padding 3rem 2rem
-   - Opening paragraph with keyword in first 100 words
-   - 4-6 H2 sections (keyword-rich headings)
-   - At least one H3 subsection
-   - One tip/callout box (border-left: 3px solid accent colour)
-   - Natural keyword usage — no stuffing
-   - 3-5 internal links: <a href="/[related-slug]/">[related topic]</a>
-   - Each internal link should have a comment: <!-- Internal link: link to your [page type] page -->
-5. CTA SECTION: "${cta.trim() || "Get in touch today"}" button
-6. FOOTER: site name, copyright ${new Date().getFullYear()}
+VISUAL DESIGN — RankActions brand (light body for readability, dark branded chrome):
 
-IMPORTANT — Label internal links clearly so non-technical users know what they are.`;
+CSS to include in <style>:
+- Body: background #ffffff, color #1a1a1a, font-family 'DM Sans', -apple-system, sans-serif, line-height 1.65
+- Heading font: 'Barlow Condensed', Impact, sans-serif (uppercase tracking, font-weight 700)
+- Brand red accent: #ef3e4a (use for links, CTA button, callout border-left, H2 underlines)
+- Header bar: dark background #0f0e0c, white text, padding 1rem 2rem, contains RankActions wordmark on the left in Barlow Condensed uppercase, and on the right small text "Generated for ${displaySite(selectedSite)}"
+- Footer bar: dark background #0f0e0c, white text, padding 1.5rem 2rem, centered, says "Generated by RankActions — AI-powered SEO content" with "rankactions.com" linked in red #ef3e4a
+- Article body: max-width 760px, margin auto, padding 3rem 2rem
+- Hero section: light grey #f5f3ee background, padding 3rem 2rem, centered
+- Links: color #ef3e4a, text-decoration underline
+- CTA button: background #ef3e4a, color white, padding .9rem 2rem, border-radius 6px, font-weight 700, no underline, font-family Barlow Condensed uppercase letter-spacing 1px
+- Callout/tip box: background #faf8f4, border-left 3px solid #ef3e4a, padding 1rem 1.5rem, margin 1.5rem 0
+- Include Google Fonts link: https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=DM+Sans:wght@400;500;700&display=swap
+
+BUILD THIS STRUCTURE:
+1. HEAD: title tag (50-60 chars, keyword first), meta description (145-155 chars, include keyword), canonical URL (https://${selectedSite}/[keyword-slug]/), robots, Open Graph tags, JSON-LD Article schema, datePublished today, the Google Fonts link, and a <style> block with the CSS above
+2. HEADER BAR: dark, with "RankActions" wordmark on the left (Barlow Condensed, uppercase) and "Generated for ${displaySite(selectedSite)}" on the right in small light-grey text
+3. HERO SECTION: H1 containing exact keyword "${kw.trim()}", subtitle, author, date, read time
+4. ARTICLE BODY:
+   - Opening paragraph with keyword in first 100 words
+   - 4-6 H2 sections (keyword-rich headings, in Barlow Condensed uppercase)
+   - At least one H3 subsection
+   - One tip/callout box (red border-left)
+   - Natural keyword usage — no stuffing
+   - 3-5 internal links to the client's site: <a href="https://${selectedSite}/[related-slug]/">[related topic]</a>
+   - Each internal link should have a comment: <!-- Internal link: link to your [page type] page -->
+5. CTA SECTION: prominent red button with text "${cta.trim() || "Get in touch today"}"
+6. FOOTER BAR: dark, centered, "Generated by RankActions — AI-powered SEO content" with "rankactions.com" linked in red
+
+IMPORTANT — Label internal links clearly so non-technical users know what they are. The page must look professional and on-brand for RankActions while still being a usable blog post the client can publish.`;
 
         const text = await callClaude(prompt,
           "Expert SEO content writer. Output ONLY raw HTML starting with <!DOCTYPE html>. No markdown. No explanations.",
@@ -3236,13 +3210,8 @@ IMPORTANT — Label internal links clearly so non-technical users know what they
               <button className="cg-gen-btn" disabled={!kw.trim()||loading} onClick={generate}>
                 {loading ? <><span className="spinner-sm"/>{" Generating…"}</> : "✨ Generate article"}
               </button>
-              <button
-                style={{width:"100%",padding:".6rem",background:"var(--s3)",border:"1px solid var(--border)",borderRadius:8,color:siteStyle?"var(--green)":"var(--text2)",fontFamily:"var(--font)",fontSize:".82rem",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:".5rem"}}
-                onClick={scanSite} disabled={scanning}>
-                {scanning ? <><span className="spinner-sm"/> Scanning site…</> : siteStyle ? "✓ Site styles scanned — regenerate to apply" : "🎨 Scan site for colours & fonts"}
-              </button>
               <div className="cg-tip">
-                ⏱ Generation takes 20–40 seconds. The article is created in your browser and never stored on our servers.
+                ⏱ Generation takes 20–40 seconds. Articles are styled with RankActions branding and ready to share. Content is created in your browser and never stored on our servers.
               </div>
             </div>
           </div>
