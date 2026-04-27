@@ -510,7 +510,8 @@ const CSS = `
 .links-generate-btn{background:var(--green);color:#000;border:none;border-radius:8px;padding:.5rem 1.1rem;font-family:var(--font);font-size:.82rem;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:.4rem;transition:opacity .15s;}
 .links-generate-btn:hover{opacity:.88;}
 .links-generate-btn:disabled{opacity:.5;cursor:not-allowed;}
-.links-opp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1px;background:var(--border);}
+.links-opp-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);}
+@media(max-width:1200px){.links-opp-grid{grid-template-columns:repeat(2,1fr);}}
 .links-opp-card{background:var(--s1);padding:1.25rem 1.5rem;display:flex;flex-direction:column;gap:.65rem;}
 .links-opp-type{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:.2rem .55rem;border-radius:4px;display:inline-block;width:fit-content;}
 .links-opp-type.easy{background:var(--gdim);color:var(--green);}
