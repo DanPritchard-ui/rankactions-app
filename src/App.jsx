@@ -818,6 +818,18 @@ async function authFetch(url, options = {}) {
   return fetch(url, { ...options, headers });
 }
 
+// Initiate Google OAuth. Browser navigation can't send headers, so we
+// pass the Clerk JWT as a short-lived query param. The worker verifies
+// it the same way it verifies header-borne JWTs.
+async function startGoogleOAuth() {
+  const token = await _getToken();
+  if (!token) {
+    alert("You need to be signed in to connect Google. Please sign in and try again.");
+    return;
+  }
+  window.location.href = `${WORKER_URL}/auth/google?token=${encodeURIComponent(token)}`;
+}
+
 async function callClaude(userMsg, systemMsg, mode = 'standard') {
   const res = await authFetch(`${WORKER_URL}/api/ai`, {
     method: "POST",
@@ -1947,7 +1959,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
           <div className="ob-h">Connect your data</div>
           <div className="ob-sub">Clicking Connect takes you to Google — we only request read-only access and never store your actual site data.</div>
           <div className="ob-connect-grid">
-            <div className="ob-connect-card active" onClick={()=>window.location.href=`${WORKER_URL}/auth/google`}>
+            <div className="ob-connect-card active" onClick={startGoogleOAuth}>
               <div className="ob-connect-icon">🔗</div>
               <div className="ob-connect-name">Connect Google</div>
               <div className="ob-connect-sub">Search Console + Analytics</div>
@@ -2114,7 +2126,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
         </span>
         {isConnected
           ? <button className="disconnect-btn" onClick={disconnect}>Disconnect GSC</button>
-          : <button className="connect-btn" onClick={()=>window.location.href=`${WORKER_URL}/auth/google`}>🔗 Connect Google</button>}
+          : <button className="connect-btn" onClick={startGoogleOAuth}>🔗 Connect Google</button>}
         {/* Admin-only plan switcher for testing */}
         {isAdmin && (
           <select
@@ -2146,7 +2158,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
   // Banner shown at top of each content area
   const DataBanner = () => {
     if (dataError) return <div className="data-banner error">⚠ {dataError}<button className="data-banner-action" onClick={fetchSiteData}>Retry</button></div>;
-    if (!isConnected) return <div className="data-banner">📊 Showing demo data. Connect Google Search Console for your real numbers.<button className="data-banner-action" onClick={()=>window.location.href=`${WORKER_URL}/auth/google`}>Connect Google →</button></div>;
+    if (!isConnected) return <div className="data-banner">📊 Showing demo data. Connect Google Search Console for your real numbers.<button className="data-banner-action" onClick={startGoogleOAuth}>Connect Google →</button></div>;
     if (siteData)     return <div className="data-banner live">✓ Live data · {displaySite(selectedSite)} · Last {siteData.dateRange.days} days<button className="data-banner-action" onClick={fetchSiteData}>Refresh</button></div>;
     return null;
   };
@@ -5311,7 +5323,7 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
             {isConnected ? (
               <button style={dangerBtn} onClick={disconnectGoogle}>Disconnect</button>
             ) : (
-              <button style={{...btnStyle,color:"var(--green)",borderColor:"var(--green)"}} onClick={()=>window.location.href=`${WORKER_URL}/auth/google`}>Connect Google</button>
+              <button style={{...btnStyle,color:"var(--green)",borderColor:"var(--green)"}} onClick={startGoogleOAuth}>Connect Google</button>
             )}
           </div>
         </div>
