@@ -3,6 +3,7 @@ import {
   SignIn, SignUp, UserButton,
   useUser, useClerk, SignedIn, SignedOut
 } from "@clerk/clerk-react";
+import { sanitizeAiHtml } from "./utils/sanitize";
 
 // ─────────────────────────────────────────────────────────────
 // ⚙️  CONFIG — paste your Worker URL here after deploying it
@@ -808,17 +809,12 @@ const CONV_DATA = [
 ];
 
 // ─── AI helper — routes through Worker to avoid CORS ─────────
-// Authenticated fetch helper — includes Clerk session token + userId fallback
+// Authenticated fetch helper — includes Clerk session token
 async function authFetch(url, options = {}) {
   const token = await _getToken();
   const headers = { ...options.headers };
   if (token) headers['Authorization'] = `Bearer ${token}`;
-  // Add userId as fallback query param if available
-  const uid = localStorage.getItem("rankactions_userId");
-  if (uid && !url.includes("userId=")) {
-    const sep = url.includes("?") ? "&" : "?";
-    url = `${url}${sep}userId=${encodeURIComponent(uid)}`;
-  }
+ 
   return fetch(url, { ...options, headers });
 }
 
@@ -921,7 +917,7 @@ export default function RankActions() {
       const res = await authFetch(`${WORKER_URL}/api/request-indexing`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pageUrl: fullUrl, userId: uid }),
+        body: JSON.stringify({ pageUrl: fullUrl }),
       });
       const data = await res.json();
       if (data.success) {
@@ -1010,8 +1006,8 @@ export default function RankActions() {
     const clerkId = user.id;
     const userId  = localStorage.getItem("rankactions_userId") || "";
 
-    const profileUrl = `${WORKER_URL}/api/user/profile?clerkId=${encodeURIComponent(clerkId)}` + (userId ? `&userId=${encodeURIComponent(userId)}` : "");
-    fetch(profileUrl)
+    const profileUrl = `${WORKER_URL}/api/user/profile`;
+	authFetch(profileUrl)
       .then(r => r.json())
       .then(data => {
         if (data.found) {
@@ -1073,7 +1069,7 @@ export default function RankActions() {
 
       if (uid) {
         // Fresh OAuth return — fetch the user's GSC sites then let them pick
-        authFetch(`${WORKER_URL}/api/gsc-sites?userId=${encodeURIComponent(uid)}`)
+        authFetch(`${WORKER_URL}/api/gsc-sites`)
           .then(r => r.json())
           .then(data => {
             const gscSites = data.sites || [];
@@ -1178,7 +1174,7 @@ export default function RankActions() {
     if (params.get("stripe") === "success") {
       setTimeout(async () => {
         try {
-          const res = await authFetch(`${WORKER_URL}/api/user/profile?clerkId=${encodeURIComponent(user?.id)}`);
+          const res = await authFetch(`${WORKER_URL}/api/user/profile`);
           const data = await res.json();
           if (data.found && data.plan) {
             setPlan(data.plan);
@@ -1221,7 +1217,7 @@ export default function RankActions() {
     try {
       const siteUrl = selectedSite.startsWith("http") || selectedSite.startsWith("sc-domain:") ? selectedSite : `https://${selectedSite}`;
       const res = await authFetch(
-        `${WORKER_URL}/api/search-console?userId=${encodeURIComponent(userId)}&siteUrl=${encodeURIComponent(siteUrl)}`
+        `${WORKER_URL}/api/search-console?siteUrl=${encodeURIComponent(siteUrl)}`
       );
       if (!res.ok) throw new Error((await res.json()).error || "Failed to load data");
       setSiteData(await res.json());
@@ -1698,7 +1694,17 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
     setCroLoading(false);
   };
 
-  const disconnect = () => {
+  const disconnect = async () => {
+    if (!confirm("Disconnect Google? This will revoke our access to your Search Console data. You can reconnect anytime.")) return;
+    try {
+      const res = await authFetch(`${WORKER_URL}/api/auth/disconnect`, { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(`Disconnect failed: ${data.error || res.statusText}. Your local session has been cleared but Google tokens may still be active. Please contact support.`);
+      }
+    } catch (err) {
+      alert(`Disconnect error: ${err.message}. Your local session has been cleared.`);
+    }
     localStorage.removeItem("rankactions_userId");
     setUserId(null); setIsConnected(false); setSiteData(null); setDataError(null); setAiSummary(null);
   };
@@ -1722,8 +1728,6 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           priceId,
-          clerkId: user?.id,
-          email: user?.primaryEmailAddress?.emailAddress,
         }),
       });
       const data = await res.json();
@@ -1943,7 +1947,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
           <div className="ob-h">Connect your data</div>
           <div className="ob-sub">Clicking Connect takes you to Google — we only request read-only access and never store your actual site data.</div>
           <div className="ob-connect-grid">
-            <div className="ob-connect-card active" onClick={()=>window.location.href=`${WORKER_URL}/auth/google?clerkId=${user?.id}`}>
+            <div className="ob-connect-card active" onClick={()=>window.location.href=`${WORKER_URL}/auth/google`}>
               <div className="ob-connect-icon">🔗</div>
               <div className="ob-connect-name">Connect Google</div>
               <div className="ob-connect-sub">Search Console + Analytics</div>
@@ -1999,7 +2003,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
     setAddingSite(true);
     setGscSitesLoading(true);
     try {
-      const res = await authFetch(`${WORKER_URL}/api/gsc-sites?userId=${encodeURIComponent(userId)}`);
+      const res = await authFetch(`${WORKER_URL}/api/gsc-sites`);
       const data = await res.json();
       const available = (data.sites || []).filter(s => !sites.includes(s.siteUrl) && !sites.includes(s.displayUrl));
       setAvailableGscSites(available);
@@ -2110,7 +2114,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
         </span>
         {isConnected
           ? <button className="disconnect-btn" onClick={disconnect}>Disconnect GSC</button>
-          : <button className="connect-btn" onClick={()=>window.location.href=`${WORKER_URL}/auth/google?clerkId=${user?.id}`}>🔗 Connect Google</button>}
+          : <button className="connect-btn" onClick={()=>window.location.href=`${WORKER_URL}/auth/google`}>🔗 Connect Google</button>}
         {/* Admin-only plan switcher for testing */}
         {isAdmin && (
           <select
@@ -2142,7 +2146,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
   // Banner shown at top of each content area
   const DataBanner = () => {
     if (dataError) return <div className="data-banner error">⚠ {dataError}<button className="data-banner-action" onClick={fetchSiteData}>Retry</button></div>;
-    if (!isConnected) return <div className="data-banner">📊 Showing demo data. Connect Google Search Console for your real numbers.<button className="data-banner-action" onClick={()=>window.location.href=`${WORKER_URL}/auth/google?clerkId=${user?.id}`}>Connect Google →</button></div>;
+    if (!isConnected) return <div className="data-banner">📊 Showing demo data. Connect Google Search Console for your real numbers.<button className="data-banner-action" onClick={()=>window.location.href=`${WORKER_URL}/auth/google`}>Connect Google →</button></div>;
     if (siteData)     return <div className="data-banner live">✓ Live data · {displaySite(selectedSite)} · Last {siteData.dateRange.days} days<button className="data-banner-action" onClick={fetchSiteData}>Refresh</button></div>;
     return null;
   };
@@ -3416,15 +3420,16 @@ IMPORTANT — Label internal links clearly so non-technical users know what they
                     style={{background:"var(--blue)",color:"#fff",border:"none",borderRadius:7,padding:".4rem .9rem",fontFamily:"var(--font)",fontSize:".8rem",fontWeight:600,cursor:"pointer"}}
                     onClick={()=>{
                       const w = window.open("","_blank");
-                      if(w){ w.document.open(); w.document.write(output); w.document.close(); }
+                      if(w){ w.document.open(); w.document.write(sanitizeAiHtml(output)); w.document.close(); }
                     }}>
                     🔍 Open in new tab
                   </button>
                 </div>
                 <iframe
                   key={annotated ? "annotated" : "clean"}
-                  ref={el=>{ if(el){ const d=el.contentDocument||el.contentWindow?.document; if(d){d.open();d.write(annotated ? buildAnnotated(output) : output);d.close();} } }}
+                  ref={el=>{ if(el){ const d=el.contentDocument||el.contentWindow?.document; if(d){d.open();d.write(sanitizeAiHtml(annotated ? buildAnnotated(output) : output));d.close();} } }}
                   style={{width:"100%",minHeight:580,border:"none",background:"white",flex:1}}
+				  sandbox=""
                   title="Article preview"
                 />
               </div>
@@ -3857,7 +3862,7 @@ ${stratHtml}${contentHtml}
 </body></html>`;
 
       const w = window.open("", "_blank");
-      w.document.write(html);
+      w.document.write(sanitizeAiHtml(html));
       w.document.close();
     };
 
@@ -5132,12 +5137,47 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
       }
     };
 
-    const disconnectGoogle = () => {
-      localStorage.removeItem("rankactions_userId");
-      setUserId(null);
-      setIsConnected(false);
-      setSiteData(null);
-    };
+    const disconnectGoogle = async () => {
+    if (!confirm("Disconnect Google? This will revoke our access to your Search Console data. You can reconnect anytime.")) return;
+    try {
+      const res = await authFetch(`${WORKER_URL}/api/auth/disconnect`, { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(`Disconnect failed: ${data.error || res.statusText}. Your local session has been cleared but Google tokens may still be active. Please contact support.`);
+      }
+    } catch (err) {
+      alert(`Disconnect error: ${err.message}. Your local session has been cleared.`);
+    }
+    localStorage.removeItem("rankactions_userId");
+    setUserId(null);
+    setIsConnected(false);
+    setSiteData(null);
+  };
+  
+  const deleteMyAccount = async () => {
+    const confirm1 = confirm("Delete your account? This will permanently remove your profile, sites, snapshots, and revoke Google access. This cannot be undone.");
+    if (!confirm1) return;
+    const confirm2 = prompt('Type "DELETE" (in capitals) to confirm permanent account deletion:');
+    if (confirm2 !== "DELETE") {
+      alert("Account deletion cancelled.");
+      return;
+    }
+    try {
+      const res = await authFetch(`${WORKER_URL}/api/me`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(`Deletion failed: ${data.error || res.statusText}. Please contact support@rankactions.com.`);
+        return;
+      }
+      // Clear all client state and sign out
+      try { localStorage.clear(); } catch {}
+      alert("Your account has been deleted. You will now be signed out.");
+      try { await signOut(); } catch {}
+      window.location.href = "https://rankactions.com";
+    } catch (err) {
+      alert(`Deletion error: ${err.message}. Please contact support@rankactions.com.`);
+    }
+  };
 
     const exportData = () => {
       const prospectData = {};
@@ -5196,7 +5236,7 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
 <div class="footer">Exported from RankActions · rankactions.com · ${new Date().toLocaleDateString("en-GB")}</div>
 </body></html>`;
       const w = window.open("", "_blank");
-      w.document.write(html);
+      w.document.write(sanitizeAiHtml(html));
       w.document.close();
     };
 
@@ -5271,7 +5311,7 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
             {isConnected ? (
               <button style={dangerBtn} onClick={disconnectGoogle}>Disconnect</button>
             ) : (
-              <button style={{...btnStyle,color:"var(--green)",borderColor:"var(--green)"}} onClick={()=>window.location.href=`${WORKER_URL}/auth/google?clerkId=${user?.id}`}>Connect Google</button>
+              <button style={{...btnStyle,color:"var(--green)",borderColor:"var(--green)"}} onClick={()=>window.location.href=`${WORKER_URL}/auth/google`}>Connect Google</button>
             )}
           </div>
         </div>
@@ -5312,7 +5352,7 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
             ) : (
               <div style={{display:"flex",gap:".5rem",alignItems:"center"}}>
                 <span style={{fontSize:".78rem",color:"var(--red)"}}>Are you sure?</span>
-                <button style={dangerBtn} onClick={()=>{window.location.href=`mailto:hello@rankactions.com?subject=Account%20Deletion%20Request&body=Please%20delete%20my%20RankActions%20account.%20Email:%20${encodeURIComponent(user?.primaryEmailAddress?.emailAddress||"")}`;}}>Yes, contact support</button>
+                <button style={dangerBtn} onClick={deleteMyAccount}>Yes, delete</button>
                 <button style={btnStyle} onClick={()=>setShowDeleteConfirm(false)}>Cancel</button>
               </div>
             )}
@@ -5347,7 +5387,7 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
           if (userId) {
             await authFetch(`${WORKER_URL}/api/rank-snapshot/save`, {
               method: "POST", headers: {"Content-Type":"application/json"},
-              body: JSON.stringify({ userId, siteUrl })
+              body: JSON.stringify({ siteUrl })
             }).catch(()=>{});
           }
           // Fetch snapshots

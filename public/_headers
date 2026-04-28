@@ -1,0 +1,56 @@
+# =============================================================
+# _headers — Cloudflare Pages security headers (H10)
+# =============================================================
+# Place this file in the deployed app's `public/` directory so
+# Vite copies it to `dist/_headers` at build time. Cloudflare
+# Pages applies these headers to every response.
+#
+# Test after deploy:
+#   curl -I https://app.rankactions.com/
+#
+# All non-essential third-party CDNs are explicitly listed below
+# — if you add a new dependency that loads from a different host,
+# add it to the relevant directive.
+# =============================================================
+
+/*
+  # ─── Content Security Policy ────────────────────────────────
+  # default-src 'self'      — same-origin only by default
+  # script-src              — Clerk JS (clerk.com), Stripe JS, Turnstile, GA
+  # connect-src             — our worker, Clerk API, Stripe API, Google APIs
+  # frame-src               — Stripe Checkout, Turnstile iframe
+  # img-src                 — self + Google profile pictures (https), data: for inline icons
+  # style-src               — self + Google Fonts (unsafe-inline retained for inline styles
+  #                           used heavily in App.jsx; long-term, refactor to CSS classes
+  #                           and remove unsafe-inline.)
+  # font-src                — Google Fonts
+  # object-src 'none'       — no <object>/<embed>/<applet> ever
+  # base-uri 'self'         — pin <base> to same origin (prevents URL hijack)
+  # form-action 'self'      — only allow form posts to same origin
+  # frame-ancestors 'none'  — refuse to be framed (anti-clickjacking)
+  # upgrade-insecure-requests — auto-upgrade http → https
+  Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self' 'unsafe-inline' https://*.clerk.accounts.dev https://*.clerk.com https://js.stripe.com https://challenges.cloudflare.com https://www.googletagmanager.com https://www.google-analytics.com; connect-src 'self' https://api.rankactions.com https://*.clerk.accounts.dev https://*.clerk.com https://api.stripe.com https://*.googleapis.com https://www.google-analytics.com; frame-src https://js.stripe.com https://hooks.stripe.com https://challenges.cloudflare.com https://*.clerk.accounts.dev https://*.clerk.com; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests
+  # ─── Anti-clickjacking (belt-and-braces with frame-ancestors) ──
+  X-Frame-Options: DENY
+  # ─── MIME sniffing protection ───────────────────────────────
+  X-Content-Type-Options: nosniff
+  # ─── HSTS (1 year, include subdomains, eligible for preload) ──
+  # WARNING: only enable preload after you've confirmed every
+  # subdomain serves HTTPS. Submit at https://hstspreload.org/
+  Strict-Transport-Security: max-age=300; includeSubDomains
+  # ─── Referrer Policy ────────────────────────────────────────
+  Referrer-Policy: strict-origin-when-cross-origin
+  # ─── Permissions Policy (lock down powerful APIs) ───────────
+  Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=(self "https://js.stripe.com"), usb=(), bluetooth=(), accelerometer=(), gyroscope=(), magnetometer=(), midi=(), serial=()
+  # ─── Cross-Origin isolation (defence-in-depth) ──────────────
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Resource-Policy: same-origin
+
+# Static assets — long cache, no cookies.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+  X-Content-Type-Options: nosniff
+
+# HTML — no cache (so deploys propagate immediately).
+/*.html
+  Cache-Control: public, max-age=0, must-revalidate
