@@ -3,7 +3,7 @@ import {
   SignIn, SignUp, UserButton,
   useUser, useClerk, SignedIn, SignedOut
 } from "@clerk/clerk-react";
-import { sanitizeAiHtml } from "./utils/sanitize";
+import { sanitizeAiHtml, sanitizeAiPreview } from "./utils/sanitize";
 
 // ─────────────────────────────────────────────────────────────
 // ⚙️  CONFIG — paste your Worker URL here after deploying it
@@ -3458,7 +3458,7 @@ IMPORTANT — Label internal links clearly so non-technical users know what they
                 </div>
                 <iframe
                   key={annotated ? "annotated" : "clean"}
-                  srcDoc={sanitizeAiHtml(annotated ? buildAnnotated(output) : output)}
+                  srcDoc={sanitizeAiPreview(annotated ? buildAnnotated(output) : output)}
                   style={{width:"100%",minHeight:580,border:"none",background:"white",flex:1}}
 				  sandbox="allow-same-origin"
                   title="Article preview"

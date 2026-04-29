@@ -98,6 +98,89 @@ export function sanitizeAiHtml(dirty) {
   return DOMPurify.sanitize(dirty, STRICT_CONFIG);
 }
 
+// ─── Permissive config for sandboxed iframe srcDoc ────────────
+// Used ONLY for the Content Generator preview iframe, which
+// renders inside <iframe sandbox="allow-same-origin"> — no script
+// execution, no form submit, no top-frame navigation. In that
+// reduced threat model, allowing <style>, <head>, <link rel=
+// "stylesheet"> to known font hosts, and inline style="..." is
+// safe and lets the AI's branded HTML render correctly.
+//
+// DO NOT use this for any same-origin DOM injection (innerHTML,
+// document.write to window.open, etc) — use sanitizeAiHtml().
+const PREVIEW_TAGS = [
+  ...SAFE_TAGS,
+  // Document structure — needed for full <!DOCTYPE> HTML pages
+  'html', 'head', 'body',
+  'title', 'meta', 'link',
+  // Styling
+  'style',
+  // Time / address (commonly used in articles)
+  'time', 'address',
+];
+
+const PREVIEW_ATTRS = [
+  ...SAFE_ATTRS,
+  // Inline styling — safe in sandboxed iframe (no script context)
+  'style',
+  // Meta/link details
+  'name', 'content', 'property', 'rel', 'charset',
+  'http-equiv', 'media', 'sizes',
+  // Time
+  'datetime',
+  // Open Graph / canonical / lang
+  'lang', 'dir',
+];
+
+const PREVIEW_CONFIG = Object.freeze({
+  ALLOWED_TAGS: PREVIEW_TAGS,
+  ALLOWED_ATTR: PREVIEW_ATTRS,
+  ALLOWED_URI_REGEXP: SAFE_URI_REGEX,
+  // Still block all the dangerous stuff. <script> is the headline,
+  // but iframe/object/embed/form/input would be vectors for
+  // navigation hijack / phishing inside the preview frame.
+  FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input',
+                'textarea', 'select', 'button',
+                'base', 'frame', 'frameset', 'applet',
+                'audio', 'video', 'canvas', 'svg', 'math'],
+  FORBID_ATTR: ['srcdoc', 'on*', 'formaction', 'action', 'background'],
+  USE_PROFILES: { html: true },
+  // Allow full document — we WANT <!DOCTYPE><html><head><body>
+  WHOLE_DOCUMENT: true,
+  RETURN_DOM: false,
+  RETURN_DOM_FRAGMENT: false,
+  RETURN_TRUSTED_TYPE: false,
+  ALLOW_DATA_ATTR: false,
+  ALLOW_UNKNOWN_PROTOCOLS: false,
+  SANITIZE_DOM: true,
+  SANITIZE_NAMED_PROPS: true,
+});
+
+/**
+ * Sanitize AI HTML for rendering inside a sandboxed <iframe srcDoc=…>.
+ * Allows <style>, <head>, <link rel="stylesheet">, inline style=""
+ * so AI-generated branded pages render correctly.
+ *
+ * SECURITY: The iframe MUST have sandbox="allow-same-origin" (no
+ * allow-scripts, no allow-forms, no allow-top-navigation). In that
+ * environment, scripts and event handlers are blocked by the sandbox
+ * regardless. This sanitiser strips the worst (<script>, <iframe>,
+ * forms, etc) as defence-in-depth, but the sandbox is the primary
+ * containment.
+ *
+ * @param {string} dirty – Raw HTML from an AI model
+ * @returns {string} Sanitized full HTML document safe for iframe srcDoc
+ */
+export function sanitizeAiPreview(dirty) {
+  if (typeof dirty !== 'string') return '';
+  if (dirty.length > 1_000_000) {
+    console.warn('sanitizeAiPreview: input exceeds 1MB, refusing');
+    return '';
+  }
+  ensureLinkHook();
+  return DOMPurify.sanitize(dirty, PREVIEW_CONFIG);
+}
+
 /**
  * Stricter variant for plain-text-only contexts: strips ALL HTML,
  * returning text content only. Use where you need a string and
