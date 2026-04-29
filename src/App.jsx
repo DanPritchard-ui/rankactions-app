@@ -1067,12 +1067,12 @@ export default function RankActions() {
 // learn the userId / connected sites, since the URL no longer carries
 // these for security reasons (C2/C6/C10 fixes).
   useEffect(() => {
-	console.log("[OAuth-return] mount. result=", result, "saved=", localStorage.getItem("rankactions_userId"));
     const params      = new URLSearchParams(window.location.search);
     const result      = params.get("auth");
     const saved       = localStorage.getItem("rankactions_userId");
     const savedSite   = localStorage.getItem("rankactions_selectedSite");
     const savedSites  = localStorage.getItem("rankactions_sites");
+	console.log("[OAuth-return] mount. result=", result, "saved=", localStorage.getItem("rankactions_userId"));
 
     if (result === "error" || result === "login_required") {
       setDataError("Google connection failed. Please try again.");
