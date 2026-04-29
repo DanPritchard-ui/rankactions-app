@@ -1067,6 +1067,7 @@ export default function RankActions() {
 // learn the userId / connected sites, since the URL no longer carries
 // these for security reasons (C2/C6/C10 fixes).
   useEffect(() => {
+	  if (!isLoaded || !isSignedIn) return;
     const params      = new URLSearchParams(window.location.search);
     const result      = params.get("auth");
     const saved       = localStorage.getItem("rankactions_userId");
@@ -1142,7 +1143,7 @@ export default function RankActions() {
       if (savedSites) setSites(JSON.parse(savedSites));
       setScreen("dashboard");
     }
-  }, []);
+  }, [isLoaded, isSignedIn]);
 
   // ── Sync user data to Worker for admin panel ───────────────
   useEffect(() => {
