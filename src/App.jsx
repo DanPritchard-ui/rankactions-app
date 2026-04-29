@@ -3067,13 +3067,27 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
 
     const suggestedKw = siteData?.topOpportunities?.[0]?.keyword || "";
 
+    // Normalise text for keyword matching: lowercase, strip HTML tags,
+    // collapse whitespace, strip punctuation, drop trailing 's' from
+    // words to handle plural/singular forms ("gdpr consultancy" vs
+    // "gdpr consultancies"). Returns a single space-separated string
+    // suitable for substring matching.
+    const normaliseForKw = (s) => String(s || "")
+      .toLowerCase()
+      .replace(/<[^>]+>/g, " ")            // strip HTML
+      .replace(/[^a-z0-9\s]/g, " ")        // strip punctuation
+      .split(/\s+/)
+      .filter(Boolean)
+      .map(w => w.length > 3 ? w.replace(/s$/, "") : w)  // drop trailing s on words >3 chars
+      .join(" ");
+
     const seoStats = output ? {
       titleLen: (output.match(/<title>(.*?)<\/title>/i)?.[1]||"").length,
       descLen:  (output.match(/meta name="description" content="(.*?)"/i)?.[1]||"").length,
       h2Count:  (output.match(/<h2/gi)||[]).length,
       h1Count:  (output.match(/<h1/gi)||[]).length,
       wordEst:  Math.round(output.replace(/<[^>]*>/g,"").split(/\s+/).length),
-      hasKw:    kw && output.toLowerCase().includes(kw.toLowerCase()),
+      hasKw:    !!(kw && normaliseForKw(output).includes(normaliseForKw(kw))),
       linkCount:(output.match(/<a\s/gi)||[]).length,
     } : null;
 
@@ -3168,7 +3182,7 @@ VISUAL DESIGN — RankActions brand (light cream body for readability, dark bran
 
 CSS to include in <style>:
 - Body: background #f5f1e8 (cream), color #0d0d0d, font-family 'DM Sans', -apple-system, sans-serif, line-height 1.65
-- Heading font: 'Barlow Condensed', Impact, sans-serif (uppercase tracking, font-weight 700)
+- Heading font: 'Barlow Condensed', Impact, sans-serif (font-weight 600, no uppercase, no positive letter-spacing — see Heading style rule below)
 - Brand primary green: #0e7a3c (use for links, CTA button background, callout border-left, H2 underlines)
 - Brand accent green: #1ea863 (use for hover states, secondary highlights, "Actions" wordmark colour)
 - Header bar: dark background #0d0d0d, white text, padding 1rem 2rem, contains the RankActions wordmark on the left — render it inline as TWO spans so colours match the brand: <span style="color:#ffffff">Rank</span><span style="color:#1ea863">Actions</span> in Barlow Condensed bold. On the right, small cream-coloured text "Generated for ${displaySite(selectedSite)}"
@@ -3179,23 +3193,33 @@ CSS to include in <style>:
 - CTA button: background #0e7a3c, color white, padding .9rem 2rem, border-radius 6px, font-weight 700, no underline, font-family Barlow Condensed uppercase letter-spacing 1px (hover: #1ea863)
 - Callout/tip box: background #faf6ed, border-left 3px solid #0e7a3c, padding 1rem 1.5rem, margin 1.5rem 0
 - Include Google Fonts link: https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=DM+Sans:wght@400;500;700&display=swap
+- Heading style: NOT all uppercase. Use sentence case or title case. Set CSS h1/h2/h3 with text-transform: none, font-weight 600 (NOT 700), color #0d0d0d. The Barlow Condensed font is already strong — additional uppercase + 700 weight makes headings overpowering on cream backgrounds. Letter-spacing should be 0 or -0.5px (NOT positive tracking).
+
+KEYWORD PLACEMENT — MANDATORY (this is an SEO tool, the article must pass an SEO check):
+- The exact phrase "${kw.trim()}" MUST appear in the <title> tag — placed near the front (first 30 chars)
+- The exact phrase "${kw.trim()}" MUST appear in the <meta name="description"> attribute
+- The exact phrase "${kw.trim()}" MUST appear in the <h1> — verbatim, not paraphrased, not pluralised, not split across other words
+- The exact phrase "${kw.trim()}" MUST appear in the FIRST sentence of the opening paragraph — in the first 25 words
+- The exact phrase "${kw.trim()}" MUST appear in at least 2 of the H2 headings
+- The exact phrase "${kw.trim()}" should appear in the body text 4-8 times total (natural usage, no stuffing)
+- Use the keyword EXACTLY as written above — same wording, same word order. Do not paraphrase, do not synonymise, do not abbreviate. If the keyword has an awkward word order, you must still use it verbatim.
 
 BUILD THIS STRUCTURE:
-1. HEAD: title tag (50-60 chars, keyword first), meta description (145-155 chars, include keyword), canonical URL (${siteBase}/[keyword-slug]/), robots, Open Graph tags, JSON-LD Article schema, datePublished today, the Google Fonts link, and a <style> block with the CSS above
+1. HEAD: title tag (50-60 chars, MUST start with or contain "${kw.trim()}" in the first 30 chars), meta description (145-155 chars, MUST include "${kw.trim()}"), canonical URL (${siteBase}/[keyword-slug]/), robots, Open Graph tags (og:title MUST include "${kw.trim()}"), JSON-LD Article schema, datePublished today, the Google Fonts link, and a <style> block with the CSS above
 2. HEADER BAR: dark, with the two-tone "RankActions" wordmark on the left (white "Rank" + green "Actions", Barlow Condensed bold) and "Generated for ${displaySite(selectedSite)}" on the right in small cream text
-3. HERO SECTION: H1 containing exact keyword "${kw.trim()}", subtitle, author, date, read time
+3. HERO SECTION: H1 containing the exact verbatim phrase "${kw.trim()}", followed by a subtitle, author byline, date, read time
 4. ARTICLE BODY:
-   - Opening paragraph with keyword in first 100 words
-   - 4-6 H2 sections (keyword-rich headings, in Barlow Condensed uppercase)
+   - Opening paragraph: the FIRST SENTENCE must contain the exact phrase "${kw.trim()}" within the first 25 words
+   - 4-6 H2 sections — at least 2 must contain the exact phrase "${kw.trim()}" in the heading text
    - At least one H3 subsection
    - One tip/callout box (green border-left)
-   - Natural keyword usage — no stuffing
+   - Natural keyword usage — no stuffing, but the exact phrase "${kw.trim()}" should appear 4-8 times in body text
    - 2-4 internal links — these MUST use URLs from the ALLOWED INTERNAL LINKS list above. Do NOT invent paths. If no relevant deep page exists for a topic, either link to the homepage from the list OR don't add a link at all rather than making one up. Format: <a href="[URL from the allowed list]">[descriptive anchor text]</a>
    - Each internal link should have a comment: <!-- Internal link: link to your [page type] page -->
 5. CTA SECTION: prominent green button with text "${cta.trim() || "Get in touch today"}"
 6. FOOTER BAR: dark, centered, "Generated by RankActions — AI-powered SEO content" with "rankactions.com" linked in green #1ea863
 
-IMPORTANT — Label internal links clearly so non-technical users know what they are. Every internal link MUST resolve to a real page (use only URLs from the ALLOWED INTERNAL LINKS list). The page must look professional and on-brand for RankActions while still being a usable blog post the client can publish.`;
+IMPORTANT — The keyword "${kw.trim()}" MUST appear verbatim in the title, meta description, H1, first sentence, and at least 2 H2s. This is the single most important rule. Label internal links clearly so non-technical users know what they are. Every internal link MUST resolve to a real page (use only URLs from the ALLOWED INTERNAL LINKS list). The page must look professional and on-brand for RankActions while still being a usable blog post the client can publish.`;
 
         const text = await callClaude(prompt,
           "Expert SEO content writer. Output ONLY raw HTML starting with <!DOCTYPE html>. No markdown. No explanations.",
