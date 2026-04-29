@@ -5271,6 +5271,35 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
       w.document.close();
     };
 
+    // GDPR Article 15 — full server-side data archive download.
+    // Different from exportData() above (which is a printable HTML report
+    // of client-side state). This pulls everything the server stores about
+    // the user as a complete JSON file — required for regulatory compliance.
+    const [downloadingArchive, setDownloadingArchive] = useState(false);
+    const downloadGdprArchive = async () => {
+      setDownloadingArchive(true);
+      try {
+        const res = await authFetch(`${WORKER_URL}/api/me/export`);
+        if (!res.ok) {
+          alert("Couldn't generate your data archive — please try again or contact hello@rankactions.com");
+          setDownloadingArchive(false);
+          return;
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `rankactions-data-${new Date().toISOString().slice(0,10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        alert("Couldn't generate your data archive — please try again or contact hello@rankactions.com");
+      }
+      setDownloadingArchive(false);
+    };
+
     const sectionStyle = {background:"var(--card)",border:"1px solid var(--b2)",borderRadius:12,padding:"1.5rem",marginBottom:"1rem"};
     const labelStyle = {fontSize:".72rem",fontWeight:700,textTransform:"uppercase",letterSpacing:".08em",color:"var(--text3)",marginBottom:".75rem"};
     const rowStyle = {display:"flex",justifyContent:"space-between",alignItems:"center",padding:".6rem 0",borderBottom:"1px solid var(--b2)"};
@@ -5373,8 +5402,14 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
         <div style={sectionStyle}>
           <div style={labelStyle}>Data Management</div>
           <div style={rowStyle}>
-            <div><div style={valStyle}>Export your data</div><div style={subStyle}>Download all your RankActions data as JSON</div></div>
+            <div><div style={valStyle}>Export your data</div><div style={subStyle}>Printable summary of your sites, fixes, content and strategy</div></div>
             <button style={btnStyle} onClick={exportData}>Export</button>
+          </div>
+          <div style={rowStyle}>
+            <div><div style={valStyle}>Download data archive (GDPR)</div><div style={subStyle}>Complete JSON of everything we hold about you — for your records or to take to another service</div></div>
+            <button style={btnStyle} onClick={downloadGdprArchive} disabled={downloadingArchive}>
+              {downloadingArchive ? "Generating…" : "Download"}
+            </button>
           </div>
           <div style={{...rowStyle,borderBottom:"none"}}>
             <div><div style={valStyle}>Delete account</div><div style={subStyle}>Permanently remove your account and all data</div></div>
