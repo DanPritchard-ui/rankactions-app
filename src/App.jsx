@@ -1067,6 +1067,7 @@ export default function RankActions() {
 // learn the userId / connected sites, since the URL no longer carries
 // these for security reasons (C2/C6/C10 fixes).
   useEffect(() => {
+	console.log("[OAuth-return] mount. result=", result, "saved=", localStorage.getItem("rankactions_userId"));
     const params      = new URLSearchParams(window.location.search);
     const result      = params.get("auth");
     const saved       = localStorage.getItem("rankactions_userId");
@@ -1091,6 +1092,8 @@ export default function RankActions() {
             setDataError("Connection succeeded but profile sync didn't complete. Please refresh.");
             return;
           }
+		  
+		  console.log("[OAuth-return] profile fetched:", profile, "uid:", profile.userId, "found:", profile.found);
           const uid = profile.userId;
           setUserId(uid);
           setIsConnected(true);
