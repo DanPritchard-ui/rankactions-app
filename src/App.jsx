@@ -2412,43 +2412,78 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
 
               {/* Starting Out — prominent CTA for brand-new sites.
                   Walks the user through a guided keyword research and
-                  content planning flow that doesn't depend on GSC data. */}
-              <div style={{
-                background:"linear-gradient(135deg, rgba(15,219,138,.08), rgba(36,124,255,.08))",
-                border:"1px solid rgba(15,219,138,.25)",
-                borderRadius:10,
-                padding:"1.1rem 1.25rem",
-                marginBottom:"1.5rem",
-                display:"flex",
-                alignItems:"center",
-                justifyContent:"space-between",
-                gap:"1rem",
-                flexWrap:"wrap",
-              }}>
-                <div style={{flex:"1 1 280px"}}>
-                  <div style={{fontSize:".9rem",fontWeight:700,color:"var(--text)",marginBottom:".25rem"}}>
-                    🚀 Just built your site? Start here
-                  </div>
-                  <div style={{fontSize:".8rem",color:"var(--text2)",lineHeight:1.5}}>
-                    A 5-minute guided setup that picks the right keywords for your business and builds a content roadmap — no GSC data required.
-                  </div>
-                </div>
-                <button onClick={()=>setScreen("startingOut")}
-                  style={{
-                    background:"var(--green)",
-                    color:"#000",
-                    border:"none",
-                    borderRadius:8,
-                    padding:".6rem 1.1rem",
-                    fontSize:".85rem",
-                    fontWeight:700,
-                    cursor:"pointer",
-                    fontFamily:"inherit",
-                    flexShrink:0,
+                  content planning flow that doesn't depend on GSC data.
+                  CTA copy + destination changes based on wizard state:
+                  not started → start setup; in progress → continue;
+                  complete → view content plan in Strategy Planner. */}
+              {(() => {
+                const wizardState = (() => {
+                  try { return JSON.parse(localStorage.getItem(`ra_starting_out_${selectedSite}`) || "null"); }
+                  catch { return null; }
+                })();
+                const wizardCompleted  = !!wizardState?.completed;
+                const wizardInProgress = !!wizardState && !wizardState.completed && (wizardState.currentStep > 1 || wizardState.profile?.businessName);
+
+                let title, subtitle, ctaLabel, ctaTarget;
+                if (wizardCompleted) {
+                  title    = "✓ Your content plan is ready";
+                  subtitle = "Open the Strategy Planner to see your roadmap, track progress, and start writing content.";
+                  ctaLabel = "View content plan →";
+                  ctaTarget = "strategy";
+                } else if (wizardInProgress) {
+                  const stepNum = wizardState.currentStep || 1;
+                  title    = `📋 Continue your setup (Step ${stepNum} of 6)`;
+                  subtitle = "You started the guided setup but didn't finish — pick up right where you left off.";
+                  ctaLabel = "Continue setup →";
+                  ctaTarget = "startingOut";
+                } else {
+                  title    = "🚀 Just built your site? Start here";
+                  subtitle = "A 5-minute guided setup that picks the right keywords for your business and builds a content roadmap — no GSC data required.";
+                  ctaLabel = "Start setup →";
+                  ctaTarget = "startingOut";
+                }
+
+                return (
+                  <div style={{
+                    background: wizardCompleted
+                      ? "linear-gradient(135deg, rgba(15,219,138,.12), rgba(15,219,138,.04))"
+                      : "linear-gradient(135deg, rgba(15,219,138,.08), rgba(36,124,255,.08))",
+                    border: wizardCompleted ? "1px solid rgba(15,219,138,.4)" : "1px solid rgba(15,219,138,.25)",
+                    borderRadius:10,
+                    padding:"1.1rem 1.25rem",
+                    marginBottom:"1.5rem",
+                    display:"flex",
+                    alignItems:"center",
+                    justifyContent:"space-between",
+                    gap:"1rem",
+                    flexWrap:"wrap",
                   }}>
-                  Start setup →
-                </button>
-              </div>
+                    <div style={{flex:"1 1 280px"}}>
+                      <div style={{fontSize:".9rem",fontWeight:700,color:"var(--text)",marginBottom:".25rem"}}>
+                        {title}
+                      </div>
+                      <div style={{fontSize:".8rem",color:"var(--text2)",lineHeight:1.5}}>
+                        {subtitle}
+                      </div>
+                    </div>
+                    <button onClick={()=>setScreen(ctaTarget)}
+                      style={{
+                        background:"var(--green)",
+                        color:"#000",
+                        border:"none",
+                        borderRadius:8,
+                        padding:".6rem 1.1rem",
+                        fontSize:".85rem",
+                        fontWeight:700,
+                        cursor:"pointer",
+                        fontFamily:"inherit",
+                        flexShrink:0,
+                      }}>
+                      {ctaLabel}
+                    </button>
+                  </div>
+                );
+              })()}
 
               <div style={{fontSize:".85rem",fontWeight:600,color:"var(--text)",marginBottom:".6rem"}}>
                 Or in the meantime, here's what to do:
