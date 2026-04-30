@@ -4690,6 +4690,10 @@ Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource
     const KeywordBadge = ({ keyword }) => {
       const data = keywordEnrichment[normaliseKw(keyword)];
       if (!data || data.available === false) return null;
+      // Defensive: bail if there's nothing useful to render. Guards against
+      // future partial-response shapes (e.g. DFS prod returning volume but
+      // null competitionIndex on degraded responses, or vice versa).
+      if (data.volume == null && data.competitionIndex == null) return null;
       const vol = data.volume;
       const comp = data.competitionIndex; // 0-100 from DataForSEO
       const compLabel = comp == null ? null : comp < 33 ? "Easy" : comp < 66 ? "Medium" : "Hard";
@@ -6517,6 +6521,439 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
   };
 
   // ─────────────────────────────────────────────────────────────
+  // Starting Out — guided onboarding wizard for new sites
+  // ─────────────────────────────────────────────────────────────
+  // 6-step wizard that helps users with brand-new sites (no GSC
+  // data yet) build their SEO foundation. State is persisted to
+  // localStorage `ra_starting_out_${selectedSite}` so users can
+  // save & exit at any point and resume later.
+  //
+  // PHASE 1 (Business Profile) is fully built. Phases 2-6 show a
+  // "coming soon" placeholder but the wizard shell + state +
+  // navigation are all wired up so we can drop them in incrementally.
+  const StartingOutWizard = () => {
+    const STEPS = [
+      { num: 1, id: "profile",     title: "Your Business",   sub: "Tell us about your business so we can find the right keywords" },
+      { num: 2, id: "seeds",       title: "Seed Keywords",   sub: "AI suggests starter keywords clustered by intent" },
+      { num: 3, id: "data",        title: "Real Data",       sub: "Pull search volume + difficulty from DataForSEO" },
+      { num: 4, id: "competitors", title: "Competitors",     sub: "See what your rivals are ranking for" },
+      { num: 5, id: "targets",     title: "Your Targets",    sub: "AI prioritises 10-15 keywords to focus on" },
+      { num: 6, id: "roadmap",     title: "Content Plan",    sub: "Build a roadmap to start ranking" },
+    ];
+
+    const STORAGE_KEY = `ra_starting_out_${selectedSite}`;
+    const DEFAULT_STATE = {
+      currentStep: 1,
+      profile: {
+        businessName: "",
+        description: "",
+        services: [],
+        location: "",
+        targetCustomer: "",
+        country: "gb",
+      },
+      seedKeywords: null,
+      enrichedKeywords: null,
+      competitors: null,
+      targets: null,
+      roadmap: null,
+      updatedAt: null,
+    };
+
+    const loadState = (siteKey) => {
+      try {
+        const stored = JSON.parse(localStorage.getItem(`ra_starting_out_${siteKey}`) || "null");
+        if (stored && stored.profile) return { ...DEFAULT_STATE, ...stored, profile: { ...DEFAULT_STATE.profile, ...stored.profile }};
+      } catch {}
+      return DEFAULT_STATE;
+    };
+
+    const [state, setState] = useState(() => loadState(selectedSite));
+    const [serviceInput, setServiceInput] = useState("");
+
+    // Reload state when site changes (same ref pattern as RankTracker/StrategyPlanner)
+    const wizardSiteRef = useRef(selectedSite);
+    useEffect(() => {
+      if (wizardSiteRef.current === selectedSite) return;
+      wizardSiteRef.current = selectedSite;
+      setState(loadState(selectedSite));
+      setServiceInput("");
+    }, [selectedSite]);
+
+    // Persist on every state change (cheap, single key, debouncing not worth it)
+    useEffect(() => {
+      const toSave = { ...state, updatedAt: new Date().toISOString() };
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave)); } catch {}
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [state]);
+
+    const updateProfile = (patch) => setState(s => ({ ...s, profile: { ...s.profile, ...patch }}));
+    const goToStep = (n) => setState(s => ({ ...s, currentStep: Math.max(1, Math.min(STEPS.length, n)) }));
+
+    // Phase 1 validation — keep thresholds modest so users aren't blocked
+    // by perfectionism, strict enough to give the AI useful signal
+    const p = state.profile;
+    const profileValid =
+      p.businessName.trim().length >= 2 &&
+      p.description.trim().length >= 20 &&
+      p.services.length > 0 &&
+      p.location.trim().length >= 2 &&
+      p.targetCustomer.trim().length >= 10;
+
+    // Services chip input
+    const addService = () => {
+      const v = serviceInput.trim().replace(/,$/, "");
+      if (!v) return;
+      if (v.length > 60) return;
+      if (p.services.some(s => s.toLowerCase() === v.toLowerCase())) {
+        setServiceInput("");
+        return;
+      }
+      if (p.services.length >= 10) return;
+      updateProfile({ services: [...p.services, v] });
+      setServiceInput("");
+    };
+    const removeService = (s) => updateProfile({ services: p.services.filter(x => x !== s) });
+
+    const inputStyle = {
+      width: "100%",
+      background: "var(--bg)",
+      border: "1.5px solid var(--border)",
+      borderRadius: 8,
+      padding: ".7rem .9rem",
+      color: "var(--text)",
+      fontFamily: "inherit",
+      fontSize: ".88rem",
+      outline: "none",
+      transition: "border-color .15s",
+    };
+    const labelStyle = {
+      display: "block",
+      fontSize: ".78rem",
+      fontWeight: 600,
+      color: "var(--text)",
+      marginBottom: ".4rem",
+    };
+    const helpStyle = {
+      fontSize: ".72rem",
+      color: "var(--text3)",
+      marginTop: ".35rem",
+      lineHeight: 1.5,
+    };
+    const requiredMark = <span style={{ color: "var(--green)", marginLeft: ".15rem" }}>*</span>;
+
+    const COUNTRIES = [
+      { code: "gb", name: "United Kingdom" },
+      { code: "us", name: "United States" },
+      { code: "ca", name: "Canada" },
+      { code: "au", name: "Australia" },
+      { code: "ie", name: "Ireland" },
+      { code: "nz", name: "New Zealand" },
+    ];
+
+    return (
+      <div className="content" style={{ maxWidth: 760, margin: "0 auto", padding: "1.25rem 1rem 4rem" }}>
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1.75rem", gap: "1rem", flexWrap: "wrap" }}>
+          <div style={{ flex: "1 1 280px" }}>
+            <div style={{ fontSize: ".68rem", textTransform: "uppercase", letterSpacing: ".14em", color: "var(--green)", fontWeight: 700, marginBottom: ".3rem" }}>
+              🚀 Starting Out
+            </div>
+            <div style={{ fontSize: "1.45rem", fontWeight: 700, letterSpacing: "-.02em", lineHeight: 1.2, color: "var(--text)" }}>
+              Build your SEO foundation
+            </div>
+            <div style={{ fontSize: ".82rem", color: "var(--text2)", marginTop: ".35rem", lineHeight: 1.5 }}>
+              {STEPS[state.currentStep - 1].sub}
+            </div>
+          </div>
+          <button onClick={() => setScreen("dashboard")}
+            style={{ background: "var(--s2)", color: "var(--text2)", border: "1px solid var(--border)", borderRadius: 7, padding: ".5rem .9rem", fontSize: ".78rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>
+            Save & exit
+          </button>
+        </div>
+
+        {/* Step indicator */}
+        <div style={{ marginBottom: "1.75rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: ".5rem", fontSize: ".75rem", color: "var(--text2)" }}>
+            <span>Step {state.currentStep} of {STEPS.length}</span>
+            <span style={{ color: "var(--text3)" }}>{Math.round((state.currentStep / STEPS.length) * 100)}% complete</span>
+          </div>
+          <div style={{ height: 4, background: "var(--s1)", borderRadius: 2, overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${(state.currentStep / STEPS.length) * 100}%`, background: "var(--green)", transition: "width .3s ease" }} />
+          </div>
+          {/* Desktop step labels — hidden on narrow screens via media-style flex behaviour */}
+          <div style={{ display: "flex", marginTop: ".85rem", gap: ".4rem", flexWrap: "wrap" }}>
+            {STEPS.map(step => {
+              const isCurrent = state.currentStep === step.num;
+              const isDone = state.currentStep > step.num;
+              const canClick = isDone;
+              return (
+                <div key={step.id}
+                  onClick={() => canClick && goToStep(step.num)}
+                  style={{
+                    fontSize: ".68rem",
+                    color: isCurrent ? "var(--green)" : isDone ? "var(--text2)" : "var(--text3)",
+                    fontWeight: isCurrent ? 700 : 500,
+                    cursor: canClick ? "pointer" : "default",
+                    flex: "1 1 90px",
+                    minWidth: 80,
+                    textAlign: "center",
+                    padding: ".25rem 0",
+                    borderTop: isCurrent ? "2px solid var(--green)" : isDone ? "2px solid var(--text3)" : "2px solid var(--border)",
+                    transition: "border-color .15s",
+                  }}>
+                  {isDone && "✓ "}{step.num}. {step.title}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ── Step 1: Business Profile ───────────────────────────── */}
+        {state.currentStep === 1 && (
+          <>
+            <div style={{ background: "var(--s1)", border: "1px solid var(--border)", borderRadius: 12, padding: "1.5rem 1.25rem" }}>
+              {/* Business name */}
+              <div style={{ marginBottom: "1.25rem" }}>
+                <label style={labelStyle}>Business name{requiredMark}</label>
+                <input type="text" value={p.businessName}
+                  onChange={e => updateProfile({ businessName: e.target.value })}
+                  placeholder="e.g. Acme Plumbing Services"
+                  maxLength={120}
+                  style={inputStyle}
+                  onFocus={e => e.target.style.borderColor = "var(--green)"}
+                  onBlur={e => e.target.style.borderColor = "var(--border)"} />
+              </div>
+
+              {/* Description */}
+              <div style={{ marginBottom: "1.25rem" }}>
+                <label style={labelStyle}>What does your business do?{requiredMark}</label>
+                <textarea value={p.description}
+                  onChange={e => updateProfile({ description: e.target.value })}
+                  placeholder="e.g. We're a family-run plumbing firm serving homeowners across Birmingham. We handle emergency call-outs, boiler installations, bathroom refits, and routine maintenance."
+                  rows={3}
+                  maxLength={500}
+                  style={{ ...inputStyle, resize: "vertical", minHeight: 80, fontFamily: "inherit", lineHeight: 1.5 }}
+                  onFocus={e => e.target.style.borderColor = "var(--green)"}
+                  onBlur={e => e.target.style.borderColor = "var(--border)"} />
+                <div style={{ ...helpStyle, display: "flex", justifyContent: "space-between" }}>
+                  <span>Be specific — this is what the AI uses to find your keywords.</span>
+                  <span style={{ color: p.description.length >= 20 ? "var(--text2)" : "var(--text3)" }}>{p.description.length}/500</span>
+                </div>
+              </div>
+
+              {/* Services chips */}
+              <div style={{ marginBottom: "1.25rem" }}>
+                <label style={labelStyle}>Your services or specialties{requiredMark}</label>
+                <div style={{ display: "flex", gap: ".4rem", marginBottom: p.services.length > 0 ? ".6rem" : 0 }}>
+                  <input type="text" value={serviceInput}
+                    onChange={e => {
+                      const v = e.target.value;
+                      // Auto-add on comma
+                      if (v.endsWith(",")) {
+                        setServiceInput(v.slice(0, -1));
+                        setTimeout(addService, 0);
+                      } else {
+                        setServiceInput(v);
+                      }
+                    }}
+                    onKeyDown={e => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addService();
+                      } else if (e.key === "Backspace" && serviceInput === "" && p.services.length > 0) {
+                        removeService(p.services[p.services.length - 1]);
+                      }
+                    }}
+                    placeholder={p.services.length === 0 ? "e.g. Boiler repair (press Enter to add)" : "Add another…"}
+                    maxLength={60}
+                    disabled={p.services.length >= 10}
+                    style={{ ...inputStyle, flex: 1 }}
+                    onFocus={e => e.target.style.borderColor = "var(--green)"}
+                    onBlur={e => e.target.style.borderColor = "var(--border)"} />
+                  <button type="button" onClick={addService}
+                    disabled={!serviceInput.trim() || p.services.length >= 10}
+                    style={{
+                      background: serviceInput.trim() && p.services.length < 10 ? "var(--green)" : "var(--s2)",
+                      color: serviceInput.trim() && p.services.length < 10 ? "#000" : "var(--text3)",
+                      border: "none",
+                      borderRadius: 8,
+                      padding: ".7rem 1rem",
+                      fontSize: ".82rem",
+                      fontWeight: 700,
+                      cursor: serviceInput.trim() && p.services.length < 10 ? "pointer" : "not-allowed",
+                      fontFamily: "inherit",
+                      flexShrink: 0,
+                    }}>
+                    Add
+                  </button>
+                </div>
+                {p.services.length > 0 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: ".4rem" }}>
+                    {p.services.map(s => (
+                      <span key={s} style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: ".4rem",
+                        background: "var(--gdim)",
+                        color: "var(--green)",
+                        border: "1px solid rgba(15,219,138,.25)",
+                        borderRadius: 16,
+                        padding: ".3rem .65rem .3rem .8rem",
+                        fontSize: ".78rem",
+                        fontWeight: 500,
+                      }}>
+                        {s}
+                        <button type="button" onClick={() => removeService(s)}
+                          aria-label={`Remove ${s}`}
+                          style={{ background: "transparent", border: "none", color: "var(--green)", cursor: "pointer", fontSize: ".95rem", lineHeight: 1, padding: 0, opacity: .65, fontFamily: "inherit" }}
+                          onMouseEnter={e => e.currentTarget.style.opacity = "1"}
+                          onMouseLeave={e => e.currentTarget.style.opacity = ".65"}>×</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div style={helpStyle}>
+                  {p.services.length}/10 services · Press Enter or comma to add. Backspace removes the last one.
+                </div>
+              </div>
+
+              {/* Location */}
+              <div style={{ marginBottom: "1.25rem" }}>
+                <label style={labelStyle}>Where do you serve customers?{requiredMark}</label>
+                <input type="text" value={p.location}
+                  onChange={e => updateProfile({ location: e.target.value })}
+                  placeholder="e.g. Birmingham and the West Midlands"
+                  maxLength={120}
+                  style={inputStyle}
+                  onFocus={e => e.target.style.borderColor = "var(--green)"}
+                  onBlur={e => e.target.style.borderColor = "var(--border)"} />
+                <div style={helpStyle}>City, region, or "UK-wide" if you serve customers nationally or remotely.</div>
+              </div>
+
+              {/* Target customer */}
+              <div style={{ marginBottom: "1.25rem" }}>
+                <label style={labelStyle}>Who's your ideal customer?{requiredMark}</label>
+                <textarea value={p.targetCustomer}
+                  onChange={e => updateProfile({ targetCustomer: e.target.value })}
+                  placeholder="e.g. Homeowners aged 35-65 in mid-to-high income areas, typically dealing with an urgent boiler problem or planning a bathroom upgrade."
+                  rows={2}
+                  maxLength={400}
+                  style={{ ...inputStyle, resize: "vertical", minHeight: 64, fontFamily: "inherit", lineHeight: 1.5 }}
+                  onFocus={e => e.target.style.borderColor = "var(--green)"}
+                  onBlur={e => e.target.style.borderColor = "var(--border)"} />
+                <div style={{ ...helpStyle, display: "flex", justifyContent: "space-between" }}>
+                  <span>Demographics, situation, what they're trying to solve.</span>
+                  <span style={{ color: p.targetCustomer.length >= 10 ? "var(--text2)" : "var(--text3)" }}>{p.targetCustomer.length}/400</span>
+                </div>
+              </div>
+
+              {/* Country */}
+              <div style={{ marginBottom: 0 }}>
+                <label style={labelStyle}>Primary market</label>
+                <select value={p.country}
+                  onChange={e => updateProfile({ country: e.target.value })}
+                  style={{ ...inputStyle, cursor: "pointer", appearance: "none", backgroundImage: "url(\"data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3e%3cpath fill='%238590b8' d='M6 8L0 0h12z'/%3e%3c/svg%3e\")", backgroundRepeat: "no-repeat", backgroundPosition: "right 1rem center", paddingRight: "2.5rem" }}>
+                  {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
+                </select>
+                <div style={helpStyle}>Used to fetch country-specific search volumes from DataForSEO.</div>
+              </div>
+            </div>
+
+            {/* Continue button */}
+            <div style={{ marginTop: "1.25rem", display: "flex", gap: ".6rem", flexWrap: "wrap" }}>
+              <button onClick={() => goToStep(2)}
+                disabled={!profileValid}
+                style={{
+                  flex: "1 1 200px",
+                  background: profileValid ? "var(--green)" : "var(--s2)",
+                  color: profileValid ? "#000" : "var(--text3)",
+                  border: "none",
+                  borderRadius: 8,
+                  padding: ".85rem 1.25rem",
+                  fontSize: ".9rem",
+                  fontWeight: 700,
+                  cursor: profileValid ? "pointer" : "not-allowed",
+                  fontFamily: "inherit",
+                  transition: "background .15s",
+                }}>
+                Continue to seed keywords →
+              </button>
+            </div>
+            {!profileValid && (p.businessName || p.description || p.services.length || p.location || p.targetCustomer) && (
+              <div style={{ marginTop: ".75rem", fontSize: ".75rem", color: "var(--text3)", textAlign: "center" }}>
+                Fill in all required fields (marked <span style={{ color: "var(--green)" }}>*</span>) to continue.
+              </div>
+            )}
+
+            {/* Why we need this — context card */}
+            <div style={{ marginTop: "2rem", background: "rgba(77,123,255,.06)", border: "1px solid rgba(77,123,255,.2)", borderRadius: 10, padding: "1rem 1.1rem" }}>
+              <div style={{ fontSize: ".78rem", fontWeight: 700, color: "var(--blue)", marginBottom: ".4rem" }}>
+                💡 Why we need this
+              </div>
+              <div style={{ fontSize: ".78rem", color: "var(--text2)", lineHeight: 1.6 }}>
+                Without Google Search Console data, we can't see what people are already finding you for. So we work backwards from what your business does, where you operate, and who you serve. The more specific you are here, the more useful the keywords we suggest in the next step.
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ── Steps 2-6: placeholder until built ─────────────────── */}
+        {state.currentStep > 1 && (
+          <>
+            <div style={{ background: "var(--s1)", border: "1px solid var(--border)", borderRadius: 12, padding: "2.5rem 1.5rem", textAlign: "center" }}>
+              <div style={{ fontSize: "2rem", marginBottom: ".75rem" }}>🚧</div>
+              <div style={{ fontSize: "1.05rem", fontWeight: 700, color: "var(--text)", marginBottom: ".5rem" }}>
+                {STEPS[state.currentStep - 1].title} — coming soon
+              </div>
+              <div style={{ fontSize: ".82rem", color: "var(--text2)", maxWidth: 440, margin: "0 auto", lineHeight: 1.6, marginBottom: "1.25rem" }}>
+                {STEPS[state.currentStep - 1].sub}. Your business profile has been saved — when this step is built, you'll be able to pick up right here.
+              </div>
+              <div style={{ display: "inline-flex", gap: ".5rem", padding: ".6rem .9rem", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, fontSize: ".75rem", color: "var(--text2)" }}>
+                <span style={{ color: "var(--green)" }}>✓</span>
+                <span>Profile saved for <strong style={{ color: "var(--text)" }}>{p.businessName || "this site"}</strong></span>
+              </div>
+            </div>
+
+            <div style={{ marginTop: "1.25rem", display: "flex", gap: ".6rem", flexWrap: "wrap" }}>
+              <button onClick={() => goToStep(state.currentStep - 1)}
+                style={{
+                  background: "var(--s2)",
+                  color: "var(--text)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                  padding: ".75rem 1.1rem",
+                  fontSize: ".85rem",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  flex: "0 0 auto",
+                }}>
+                ← Back
+              </button>
+              <button onClick={() => setScreen("dashboard")}
+                style={{
+                  flex: "1 1 200px",
+                  background: "var(--s2)",
+                  color: "var(--text2)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                  padding: ".75rem 1.1rem",
+                  fontSize: ".85rem",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}>
+                Save & return to dashboard
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  // ─────────────────────────────────────────────────────────────
   // ROOT
   // ─────────────────────────────────────────────────────────────
   return (
@@ -6533,18 +6970,7 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
           {screen==="links"      && <LinkBuildingScreen/>}
           {screen==="tracker"    && <RankTracker/>}
           {screen==="audit"      && <PageAudit/>}
-          {screen==="startingOut" && (
-            <div className="content" style={{textAlign:"center",paddingTop:"4rem",color:"var(--text3)"}}>
-              <div style={{fontSize:"1.1rem",fontWeight:600,color:"var(--text2)",marginBottom:".5rem"}}>Starting Out wizard</div>
-              <div style={{fontSize:".85rem",maxWidth:480,margin:"0 auto",lineHeight:1.6}}>
-                Coming soon — a guided setup that walks you through choosing the right keywords and building a content roadmap for your new site.
-              </div>
-              <button onClick={()=>setScreen("dashboard")}
-                style={{marginTop:"1.5rem",background:"var(--s2)",color:"var(--text)",border:"1px solid var(--border)",borderRadius:7,padding:".5rem 1rem",fontSize:".82rem",fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
-                ← Back to dashboard
-              </button>
-            </div>
-          )}
+          {screen==="startingOut" && <StartingOutWizard/>}
           {screen==="settings"   && <SettingsScreen/>}
           {screen==="reports"    && <ReportsTab/>}
           {screen==="admin"      && isAdmin && <AdminPanel/>}
