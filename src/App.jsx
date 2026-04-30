@@ -6894,6 +6894,123 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
       return set;
     };
 
+    // Phase 5 — Recommended Target List (AI synthesis)
+    const [generatingPh5, setGeneratingPh5] = useState(false);
+    const [generateErrorPh5, setGenerateErrorPh5] = useState(null);
+
+    // Build the unified candidate list from Phases 2/3/4 selections.
+    // This is what gets sent to the AI for synthesis.
+    const candidateKeywords = () => {
+      const out = [];
+      const seen = new Set();
+
+      // Phase 3 enrichment lookup map
+      const ph3Map = new Map();
+      if (state.enrichedKeywords?.list) {
+        for (const item of state.enrichedKeywords.list) {
+          ph3Map.set(normaliseKw(item.keyword), item);
+        }
+      }
+
+      // Phase 2 selected → enriched if available
+      for (const kw of selectedSeedKeywords()) {
+        const norm = normaliseKw(kw);
+        if (seen.has(norm)) continue;
+        const ph3 = ph3Map.get(norm);
+        // Skip if user deselected in Phase 3 (only relevant if enrichment exists)
+        if (ph3 && state.enrichedKeywords?.deselected?.includes(ph3.keyword)) continue;
+        seen.add(norm);
+        out.push({
+          keyword: norm,
+          intent: bucketOf(kw) || "unknown",
+          volume: ph3?.volume ?? null,
+          competitionIndex: ph3?.competitionIndex ?? null,
+          source: "seed",
+        });
+      }
+
+      // Phase 4 explicitly-selected competitor keywords
+      if (state.competitors?.list && Array.isArray(state.competitors.selected)) {
+        for (const item of state.competitors.list) {
+          if (!state.competitors.selected.includes(item.keyword)) continue;
+          const norm = normaliseKw(item.keyword);
+          if (seen.has(norm)) continue;
+          seen.add(norm);
+          out.push({
+            keyword: norm,
+            intent: item.intent || "unknown",
+            volume: item.volume ?? null,
+            competitionIndex: item.competitionIndex ?? null,
+            competitors: item.competitors?.length || 0,
+            source: "competitor",
+          });
+        }
+      }
+
+      return out;
+    };
+
+    const generateRecommendedTargets = async () => {
+      const candidates = candidateKeywords();
+      if (candidates.length === 0) {
+        setGenerateErrorPh5("No candidate keywords available — go back and select some.");
+        return;
+      }
+      setGeneratingPh5(true);
+      setGenerateErrorPh5(null);
+      try {
+        const res = await authFetch(`${WORKER_URL}/api/starting-out/recommended-targets`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            profile: state.profile,
+            country: state.profile.country,
+            candidates,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setGenerateErrorPh5(data?.error || "Couldn't generate target list — please try again.");
+          setGeneratingPh5(false);
+          return;
+        }
+        setState(s => ({
+          ...s,
+          targets: {
+            summary: data.summary || "",
+            list: Array.isArray(data.targets) ? data.targets : [],
+            generatedAt: data.generatedAt,
+            provider: data.provider,
+            // All AI-recommended targets selected by default — user can deselect
+            deselected: [],
+          },
+        }));
+      } catch (err) {
+        setGenerateErrorPh5("Couldn't reach the server — please check your connection.");
+      }
+      setGeneratingPh5(false);
+    };
+
+    const isTargetSelected = (kw) => {
+      return !!state.targets && !state.targets.deselected.includes(kw);
+    };
+    const toggleTarget = (kw) => {
+      setState(s => {
+        const ds = s.targets?.deselected || [];
+        return {
+          ...s,
+          targets: {
+            ...s.targets,
+            deselected: ds.includes(kw) ? ds.filter(x => x !== kw) : [...ds, kw],
+          },
+        };
+      });
+    };
+    const targetSelectedCount = () => {
+      if (!state.targets?.list) return 0;
+      return state.targets.list.filter(t => isTargetSelected(t.keyword)).length;
+    };
+
     // Phase 1 validation — keep thresholds modest so users aren't blocked
     // by perfectionism, strict enough to give the AI useful signal
     const p = state.profile;
@@ -8018,8 +8135,313 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
           );
         })()}
 
-        {/* ── Steps 5-6: placeholder until built ─────────────────── */}
-        {state.currentStep > 4 && (
+        {/* ── Step 5: Recommended Targets (AI Synthesis) ─────────── */}
+        {state.currentStep === 5 && (() => {
+          const candidates = candidateKeywords();
+
+          // Empty state — no AI-generated targets yet
+          if (!state.targets) {
+            // Edge case: no candidates from earlier phases
+            if (candidates.length === 0) {
+              return (
+                <>
+                  <div style={{ background: "var(--s1)", border: "1px solid var(--border)", borderRadius: 12, padding: "2rem 1.5rem", textAlign: "center" }}>
+                    <div style={{ fontSize: "2rem", marginBottom: ".75rem" }}>⚠️</div>
+                    <div style={{ fontSize: "1.05rem", fontWeight: 700, color: "var(--text)", marginBottom: ".5rem" }}>
+                      No candidate keywords yet
+                    </div>
+                    <div style={{ fontSize: ".85rem", color: "var(--text2)", maxWidth: 480, margin: "0 auto", lineHeight: 1.6 }}>
+                      Go back and make sure you've selected at least one keyword in Step 2. We need keywords to recommend a target list.
+                    </div>
+                  </div>
+                  <div style={{ marginTop: "1.25rem", display: "flex", gap: ".6rem", flexWrap: "wrap" }}>
+                    <button onClick={() => goToStep(4)}
+                      style={{ background: "var(--s2)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 8, padding: ".75rem 1.1rem", fontSize: ".85rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                      ← Back
+                    </button>
+                  </div>
+                </>
+              );
+            }
+
+            // Pre-fetch state — show candidate breakdown + generate button
+            const seedCount = candidates.filter(c => c.source === "seed").length;
+            const compCount = candidates.filter(c => c.source === "competitor").length;
+            const withVolume = candidates.filter(c => c.volume != null).length;
+
+            return (
+              <>
+                <div style={{ background: "var(--s1)", border: "1px solid var(--border)", borderRadius: 12, padding: "1.75rem 1.5rem" }}>
+                  <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
+                    <div style={{ fontSize: "2.5rem", marginBottom: ".75rem" }}>🎯</div>
+                    <div style={{ fontSize: "1.05rem", fontWeight: 700, color: "var(--text)", marginBottom: ".5rem" }}>
+                      Get your prioritised target list
+                    </div>
+                    <div style={{ fontSize: ".85rem", color: "var(--text2)", maxWidth: 500, margin: "0 auto", lineHeight: 1.6 }}>
+                      AI will review your <strong style={{ color: "var(--text)" }}>{candidates.length}</strong> candidate keyword{candidates.length === 1 ? "" : "s"} and recommend 10-15 to focus on first, organised by priority with reasoning for each.
+                    </div>
+                  </div>
+
+                  {/* Candidate breakdown */}
+                  <div style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, padding: "1rem", marginBottom: "1.25rem", fontSize: ".82rem", color: "var(--text2)", lineHeight: 1.6 }}>
+                    <div style={{ fontWeight: 700, color: "var(--text)", marginBottom: ".4rem", fontSize: ".82rem" }}>
+                      What the AI is reviewing
+                    </div>
+                    <div style={{ display: "flex", gap: "1.25rem", flexWrap: "wrap", fontSize: ".78rem" }}>
+                      <div>
+                        <span style={{ color: "var(--text3)" }}>From your seeds:</span>{" "}
+                        <strong style={{ color: "var(--text)" }}>{seedCount}</strong>
+                      </div>
+                      {compCount > 0 && (
+                        <div>
+                          <span style={{ color: "var(--text3)" }}>From competitors:</span>{" "}
+                          <strong style={{ color: "var(--text)" }}>{compCount}</strong>
+                        </div>
+                      )}
+                      <div>
+                        <span style={{ color: "var(--text3)" }}>With real data:</span>{" "}
+                        <strong style={{ color: "var(--text)" }}>{withVolume}</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  {generateErrorPh5 && (
+                    <div style={{ background: "var(--rdim)", border: "1px solid rgba(240,62,95,.3)", borderRadius: 8, padding: ".75rem 1rem", color: "var(--red)", fontSize: ".82rem", marginBottom: "1rem", lineHeight: 1.5 }}>
+                      {generateErrorPh5}
+                    </div>
+                  )}
+
+                  <button onClick={generateRecommendedTargets} disabled={generatingPh5}
+                    style={{
+                      width: "100%",
+                      background: generatingPh5 ? "var(--s2)" : "var(--green)",
+                      color: generatingPh5 ? "var(--text3)" : "#000",
+                      border: "none",
+                      borderRadius: 8,
+                      padding: ".9rem 1.25rem",
+                      fontSize: ".9rem",
+                      fontWeight: 700,
+                      cursor: generatingPh5 ? "wait" : "pointer",
+                      fontFamily: "inherit",
+                    }}>
+                    {generatingPh5 ? "🤖 Reviewing your keywords… (15-30s)" : "✨ Generate target list"}
+                  </button>
+
+                  <div style={{ marginTop: ".75rem", fontSize: ".72rem", color: "var(--text3)", textAlign: "center", lineHeight: 1.5 }}>
+                    Doesn't use DataForSEO quota — pure AI synthesis.
+                  </div>
+                </div>
+
+                <div style={{ marginTop: "1.25rem", display: "flex", gap: ".6rem", flexWrap: "wrap" }}>
+                  <button onClick={() => goToStep(4)} disabled={generatingPh5}
+                    style={{ background: "var(--s2)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 8, padding: ".75rem 1.1rem", fontSize: ".85rem", fontWeight: 600, cursor: generatingPh5 ? "wait" : "pointer", fontFamily: "inherit" }}>
+                    ← Back
+                  </button>
+                </div>
+              </>
+            );
+          }
+
+          // Result state — AI targets loaded
+          const targets = state.targets.list || [];
+          const handleRegenerate = () => {
+            if (window.confirm("Regenerate will replace these recommendations. Your selections will be lost. Continue?")) {
+              setState(s => ({ ...s, targets: null }));
+              setTimeout(() => generateRecommendedTargets(), 0);
+            }
+          };
+
+          const TIERS = [
+            {
+              key: "must",
+              title: "Must-target",
+              icon: "🎯",
+              desc: "Focus on these immediately — strongest signals across the board",
+              color: "var(--green)",
+              bg: "rgba(15,219,138,.06)",
+              border: "rgba(15,219,138,.25)",
+            },
+            {
+              key: "opportunity",
+              title: "Opportunity",
+              icon: "🚀",
+              desc: "Solid secondary targets — pursue once must-targets show traction",
+              color: "var(--blue)",
+              bg: "rgba(77,123,255,.06)",
+              border: "rgba(77,123,255,.2)",
+            },
+            {
+              key: "long-shot",
+              title: "Long-shot",
+              icon: "🌱",
+              desc: "Aspirational — keep on the radar, build content for these later",
+              color: "var(--amber)",
+              bg: "rgba(245,166,35,.06)",
+              border: "rgba(245,166,35,.2)",
+            },
+          ];
+
+          // Build a candidate lookup so we can show signals next to AI's reasoning
+          const candidateLookup = new Map(candidates.map(c => [c.keyword, c]));
+
+          const renderTargetRow = (target) => {
+            const sel = isTargetSelected(target.keyword);
+            const cand = candidateLookup.get(normaliseKw(target.keyword));
+            const vol = cand?.volume;
+            const comp = cand?.competitionIndex;
+            const compLabel = comp == null ? null : comp < 33 ? "Easy" : comp < 66 ? "Medium" : "Hard";
+            const compColor = comp == null ? "var(--text3)" : comp < 33 ? "var(--green)" : comp < 66 ? "var(--amber)" : "var(--red)";
+
+            return (
+              <div key={target.keyword}
+                onClick={() => toggleTarget(target.keyword)}
+                style={{
+                  padding: ".85rem 1rem",
+                  background: sel ? "var(--gdim)" : "var(--bg)",
+                  border: sel ? "1px solid rgba(15,219,138,.3)" : "1px solid var(--border)",
+                  borderRadius: 8,
+                  cursor: "pointer",
+                  transition: "background .12s, border-color .12s",
+                  marginBottom: ".5rem",
+                }}>
+                <div style={{ display: "flex", alignItems: "center", gap: ".75rem", marginBottom: target.reasoning ? ".4rem" : 0 }}>
+                  <span style={{ fontSize: ".95rem", lineHeight: 1, opacity: sel ? 1 : .4, color: sel ? "var(--green)" : "var(--text3)", flexShrink: 0, width: 14, textAlign: "center" }}>
+                    {sel ? "✓" : "○"}
+                  </span>
+                  <span style={{ flex: 1, fontSize: ".9rem", fontWeight: 600, color: sel ? "var(--text)" : "var(--text2)", wordBreak: "break-word" }}>
+                    {target.keyword}
+                  </span>
+                  {/* Signal pills */}
+                  <div style={{ display: "flex", gap: ".4rem", flexShrink: 0, alignItems: "center" }}>
+                    {vol != null && (
+                      <span style={{ fontSize: ".68rem", fontFamily: "var(--mono)", color: "var(--text3)" }}>
+                        {vol.toLocaleString()}/mo
+                      </span>
+                    )}
+                    {compLabel && (
+                      <span style={{ fontSize: ".68rem", fontWeight: 600, color: compColor }}>
+                        {compLabel}
+                      </span>
+                    )}
+                    {cand?.source === "competitor" && cand?.competitors > 0 && (
+                      <span style={{ fontSize: ".62rem", padding: ".1rem .4rem", borderRadius: 4, background: "var(--bdim)", color: "var(--blue)", fontWeight: 600, textTransform: "uppercase", letterSpacing: ".05em" }}>
+                        {cand.competitors} rivals
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {target.reasoning && (
+                  <div style={{ fontSize: ".77rem", color: sel ? "var(--text2)" : "var(--text3)", lineHeight: 1.5, paddingLeft: "calc(14px + .75rem)" }}>
+                    {target.reasoning}
+                  </div>
+                )}
+              </div>
+            );
+          };
+
+          const totalSelected = targetSelectedCount();
+          const groupedTargets = TIERS.map(tier => ({
+            ...tier,
+            items: targets.filter(t => t.tier === tier.key),
+          }));
+
+          return (
+            <>
+              {/* Strategic summary */}
+              {state.targets.summary && (
+                <div style={{ background: "linear-gradient(135deg, rgba(15,219,138,.08), rgba(77,123,255,.06))", border: "1px solid rgba(15,219,138,.2)", borderRadius: 12, padding: "1.1rem 1.25rem", marginBottom: "1.25rem" }}>
+                  <div style={{ fontSize: ".68rem", textTransform: "uppercase", letterSpacing: ".12em", color: "var(--green)", fontWeight: 700, marginBottom: ".4rem" }}>
+                    📋 Strategic Overview
+                  </div>
+                  <div style={{ fontSize: ".88rem", color: "var(--text)", lineHeight: 1.55, fontWeight: 500 }}>
+                    {state.targets.summary}
+                  </div>
+                </div>
+              )}
+
+              {/* Summary header with regenerate */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem", flexWrap: "wrap", gap: ".75rem", padding: ".75rem 1rem", background: "var(--s1)", border: "1px solid var(--border)", borderRadius: 10 }}>
+                <div>
+                  <div style={{ fontSize: ".88rem", fontWeight: 700, color: "var(--text)" }}>
+                    Your target list
+                  </div>
+                  <div style={{ fontSize: ".74rem", color: "var(--text2)", marginTop: ".15rem" }}>
+                    <strong style={{ color: "var(--green)" }}>{totalSelected}</strong> of {targets.length} selected
+                    {state.targets.provider && <> · via {state.targets.provider}</>}
+                  </div>
+                </div>
+                <button onClick={handleRegenerate} disabled={generatingPh5}
+                  style={{ background: "var(--s2)", color: "var(--text2)", border: "1px solid var(--border)", borderRadius: 7, padding: ".45rem .85rem", fontSize: ".75rem", fontWeight: 600, cursor: generatingPh5 ? "wait" : "pointer", fontFamily: "inherit" }}>
+                  {generatingPh5 ? "Regenerating…" : "↻ Regenerate"}
+                </button>
+              </div>
+
+              {/* Tier sections */}
+              {groupedTargets.map(tier => {
+                if (tier.items.length === 0) return null;
+                const tierSelected = tier.items.filter(t => isTargetSelected(t.keyword)).length;
+                return (
+                  <div key={tier.key} style={{ background: tier.bg, border: `1px solid ${tier.border}`, borderRadius: 12, padding: "1.1rem 1.1rem", marginBottom: "1rem" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: ".25rem", gap: ".5rem", flexWrap: "wrap" }}>
+                      <div style={{ fontSize: ".95rem", fontWeight: 700, color: tier.color, display: "flex", alignItems: "center", gap: ".4rem" }}>
+                        <span style={{ fontSize: "1.1rem" }}>{tier.icon}</span>
+                        {tier.title}
+                      </div>
+                      <div style={{ fontSize: ".7rem", color: "var(--text3)", fontFamily: "var(--mono)" }}>
+                        {tierSelected}/{tier.items.length}
+                      </div>
+                    </div>
+                    <div style={{ fontSize: ".74rem", color: "var(--text2)", marginBottom: ".85rem", lineHeight: 1.5 }}>
+                      {tier.desc}
+                    </div>
+                    {tier.items.map(renderTargetRow)}
+                  </div>
+                );
+              })}
+
+              {/* Insight footer */}
+              <div style={{ background: "rgba(77,123,255,.06)", border: "1px solid rgba(77,123,255,.2)", borderRadius: 10, padding: "1rem 1.1rem", marginBottom: "1rem" }}>
+                <div style={{ fontSize: ".78rem", fontWeight: 700, color: "var(--blue)", marginBottom: ".4rem" }}>
+                  💡 What happens next
+                </div>
+                <div style={{ fontSize: ".77rem", color: "var(--text2)", lineHeight: 1.6 }}>
+                  Step 6 turns your selected targets into a content roadmap — for each keyword, deciding whether you need a new page, an existing one to optimise, or a guide to write. You can always come back here to refine.
+                </div>
+              </div>
+
+              {/* Navigation */}
+              <div style={{ marginTop: "1.25rem", display: "flex", gap: ".6rem", flexWrap: "wrap" }}>
+                <button onClick={() => goToStep(4)}
+                  style={{ background: "var(--s2)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 8, padding: ".75rem 1.1rem", fontSize: ".85rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", flex: "0 0 auto" }}>
+                  ← Back
+                </button>
+                <button onClick={() => goToStep(6)} disabled={totalSelected < 1}
+                  style={{
+                    flex: "1 1 200px",
+                    background: totalSelected < 1 ? "var(--s2)" : "var(--green)",
+                    color: totalSelected < 1 ? "var(--text3)" : "#000",
+                    border: "none",
+                    borderRadius: 8,
+                    padding: ".75rem 1.1rem",
+                    fontSize: ".85rem",
+                    fontWeight: 700,
+                    cursor: totalSelected < 1 ? "not-allowed" : "pointer",
+                    fontFamily: "inherit",
+                  }}>
+                  Continue with {totalSelected} target{totalSelected === 1 ? "" : "s"} →
+                </button>
+              </div>
+              {totalSelected < 1 && (
+                <div style={{ marginTop: ".75rem", fontSize: ".75rem", color: "var(--text3)", textAlign: "center" }}>
+                  Select at least one target to continue.
+                </div>
+              )}
+            </>
+          );
+        })()}
+
+        {/* ── Step 6: placeholder until built ─────────────────────── */}
+        {state.currentStep > 5 && (
           <>
             <div style={{ background: "var(--s1)", border: "1px solid var(--border)", borderRadius: 12, padding: "2.5rem 1.5rem", textAlign: "center" }}>
               <div style={{ fontSize: "2rem", marginBottom: ".75rem" }}>🚧</div>
