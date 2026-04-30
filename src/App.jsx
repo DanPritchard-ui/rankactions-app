@@ -6963,13 +6963,11 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
         <Sidebar/>
         <div className="main-area">
           <TopBar/>
-          {/* DEV ONLY — quick wizard test entry point. Remove before production deploy. */}
-          {import.meta.env.DEV && (
-            <button onClick={()=>setScreen("startingOut")}
-              style={{position:"fixed",bottom:20,right:20,zIndex:9999,background:"#0fdb8a",color:"#000",border:"none",borderRadius:8,padding:".6rem 1rem",fontSize:".8rem",fontWeight:700,cursor:"pointer",boxShadow:"0 4px 12px rgba(0,0,0,.4)",fontFamily:"inherit"}}>
-              🧪 Test wizard
-            </button>
-          )}
+          {/* TEMP — wizard test entry point. Remove before production launch. */}
+          <button onClick={()=>setScreen("startingOut")}
+            style={{position:"fixed",bottom:20,right:20,zIndex:9999,background:"#0fdb8a",color:"#000",border:"none",borderRadius:8,padding:".6rem 1rem",fontSize:".8rem",fontWeight:700,cursor:"pointer",boxShadow:"0 4px 12px rgba(0,0,0,.4)",fontFamily:"inherit"}}>
+            🧪 Test wizard
+          </button>
           {screen==="dashboard"  && <DashboardContent/>}
           {screen==="siteDetail" && <SiteDetailContent/>}
           {screen==="content"    && <ContentGenerator/>}
