@@ -6590,6 +6590,73 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
     const updateProfile = (patch) => setState(s => ({ ...s, profile: { ...s.profile, ...patch }}));
     const goToStep = (n) => setState(s => ({ ...s, currentStep: Math.max(1, Math.min(STEPS.length, n)) }));
 
+    // Phase 2 — transient state for the AI call. Kept outside `state` so
+    // we don't persist loading flags to localStorage.
+    const [generating, setGenerating] = useState(false);
+    const [generateError, setGenerateError] = useState(null);
+
+    // Call the worker's seed-keyword endpoint. AI generates 24 keywords
+    // organised by intent. No DataForSEO quota burn — that comes in Phase 3.
+    const generateSeedKeywords = async () => {
+      setGenerating(true);
+      setGenerateError(null);
+      try {
+        const res = await authFetch(`${WORKER_URL}/api/starting-out/seed-keywords`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            profile: state.profile,
+            country: state.profile.country,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setGenerateError(data?.error || "Couldn't generate keywords — please try again");
+          setGenerating(false);
+          return;
+        }
+        setState(s => ({
+          ...s,
+          seedKeywords: {
+            buckets: {
+              informational: data.informational || [],
+              commercial:    data.commercial    || [],
+              navigational:  data.navigational  || [],
+            },
+            generatedAt: data.generatedAt,
+            provider:    data.provider,
+            // Default = everything selected. Track DESELECTED list (typically
+            // shorter than selected) so the data structure is compact.
+            deselected: [],
+          },
+        }));
+      } catch (err) {
+        setGenerateError("Couldn't reach the server — please check your connection");
+      }
+      setGenerating(false);
+    };
+
+    // Selection helpers for the keyword chips
+    const isKwSelected = (kw) => !!state.seedKeywords && !state.seedKeywords.deselected.includes(kw);
+    const toggleKw = (kw) => {
+      setState(s => {
+        const ds = s.seedKeywords?.deselected || [];
+        return {
+          ...s,
+          seedKeywords: {
+            ...s.seedKeywords,
+            deselected: ds.includes(kw) ? ds.filter(x => x !== kw) : [...ds, kw],
+          },
+        };
+      });
+    };
+    const allSeedKeywords = () => {
+      if (!state.seedKeywords) return [];
+      const b = state.seedKeywords.buckets;
+      return [...(b.informational || []), ...(b.commercial || []), ...(b.navigational || [])];
+    };
+    const selectedSeedKeywords = () => allSeedKeywords().filter(kw => isKwSelected(kw));
+
     // Phase 1 validation — keep thresholds modest so users aren't blocked
     // by perfectionism, strict enough to give the AI useful signal
     const p = state.profile;
@@ -6898,8 +6965,183 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
           </>
         )}
 
-        {/* ── Steps 2-6: placeholder until built ─────────────────── */}
-        {state.currentStep > 1 && (
+        {/* ── Step 2: Seed Keywords ──────────────────────────────── */}
+        {state.currentStep === 2 && (
+          <>
+            {/* Empty state — no keywords generated yet */}
+            {!state.seedKeywords && (
+              <div style={{ background: "var(--s1)", border: "1px solid var(--border)", borderRadius: 12, padding: "1.75rem 1.5rem" }}>
+                <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
+                  <div style={{ fontSize: "2.5rem", marginBottom: ".75rem" }}>🤖</div>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 700, color: "var(--text)", marginBottom: ".5rem" }}>
+                    Generate your seed keywords
+                  </div>
+                  <div style={{ fontSize: ".85rem", color: "var(--text2)", maxWidth: 500, margin: "0 auto", lineHeight: 1.6 }}>
+                    AI will suggest 24 starter keywords based on your profile, organised by search intent. You'll review and refine them next.
+                  </div>
+                </div>
+
+                {/* Profile preview — so user can sanity-check what AI will see */}
+                <div style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, padding: "1rem", marginBottom: "1.25rem" }}>
+                  <div style={{ color: "var(--text3)", fontWeight: 700, fontSize: ".68rem", textTransform: "uppercase", letterSpacing: ".1em", marginBottom: ".5rem" }}>
+                    Generating for
+                  </div>
+                  <div style={{ color: "var(--text)", fontWeight: 600, fontSize: ".88rem", marginBottom: ".3rem" }}>{p.businessName}</div>
+                  <div style={{ color: "var(--text2)", fontSize: ".78rem", lineHeight: 1.5, marginBottom: ".5rem" }}>{p.description}</div>
+                  <div style={{ color: "var(--text3)", fontSize: ".72rem", lineHeight: 1.5 }}>
+                    <strong style={{ color: "var(--text2)" }}>Services:</strong> {p.services.join(" · ")}
+                    <br />
+                    <strong style={{ color: "var(--text2)" }}>Location:</strong> {p.location} · <strong style={{ color: "var(--text2)" }}>Market:</strong> {COUNTRIES.find(c => c.code === p.country)?.name}
+                  </div>
+                </div>
+
+                {generateError && (
+                  <div style={{ background: "var(--rdim)", border: "1px solid rgba(240,62,95,.3)", borderRadius: 8, padding: ".75rem 1rem", color: "var(--red)", fontSize: ".82rem", marginBottom: "1rem", lineHeight: 1.5 }}>
+                    {generateError}
+                  </div>
+                )}
+
+                <button onClick={generateSeedKeywords} disabled={generating}
+                  style={{
+                    width: "100%",
+                    background: generating ? "var(--s2)" : "var(--green)",
+                    color: generating ? "var(--text3)" : "#000",
+                    border: "none",
+                    borderRadius: 8,
+                    padding: ".9rem 1.25rem",
+                    fontSize: ".9rem",
+                    fontWeight: 700,
+                    cursor: generating ? "wait" : "pointer",
+                    fontFamily: "inherit",
+                  }}>
+                  {generating ? "🤖 Generating keywords… (10-20s)" : "✨ Generate keywords"}
+                </button>
+
+                <div style={{ marginTop: ".75rem", fontSize: ".72rem", color: "var(--text3)", textAlign: "center", lineHeight: 1.5 }}>
+                  Don't worry — this doesn't use any of your DataForSEO quota. Real keyword data comes in the next step.
+                </div>
+              </div>
+            )}
+
+            {/* Result state — keywords loaded, render buckets */}
+            {state.seedKeywords && (() => {
+              const total = allSeedKeywords().length;
+              const selected = selectedSeedKeywords().length;
+              const handleRegenerate = () => {
+                if (window.confirm("Regenerate will replace your current keywords. Your selections will be lost. Continue?")) {
+                  generateSeedKeywords();
+                }
+              };
+              const buckets = [
+                { key: "informational", title: "Informational", desc: "Questions and educational queries — early-funnel traffic", color: "var(--blue)", bg: "rgba(77,123,255,.06)", border: "rgba(77,123,255,.2)" },
+                { key: "commercial",    title: "Commercial",    desc: "Research queries from people close to buying",        color: "var(--amber)", bg: "rgba(245,166,35,.06)", border: "rgba(245,166,35,.2)" },
+                { key: "navigational",  title: "Transactional", desc: "High-intent queries — ready to engage now",            color: "var(--green)", bg: "rgba(15,219,138,.06)", border: "rgba(15,219,138,.2)" },
+              ];
+              return (
+                <>
+                  {/* Summary header */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: ".75rem", padding: ".75rem 1rem", background: "var(--s1)", border: "1px solid var(--border)", borderRadius: 10 }}>
+                    <div>
+                      <div style={{ fontSize: ".88rem", fontWeight: 700, color: "var(--text)" }}>
+                        Review your keywords
+                      </div>
+                      <div style={{ fontSize: ".74rem", color: "var(--text2)", marginTop: ".15rem" }}>
+                        <strong style={{ color: "var(--green)" }}>{selected}</strong> of {total} selected
+                        {state.seedKeywords.provider && <> · via {state.seedKeywords.provider}</>}
+                      </div>
+                    </div>
+                    <button onClick={handleRegenerate} disabled={generating}
+                      style={{ background: "var(--s2)", color: "var(--text2)", border: "1px solid var(--border)", borderRadius: 7, padding: ".45rem .85rem", fontSize: ".75rem", fontWeight: 600, cursor: generating ? "wait" : "pointer", fontFamily: "inherit" }}>
+                      {generating ? "Regenerating…" : "↻ Regenerate"}
+                    </button>
+                  </div>
+
+                  {generateError && (
+                    <div style={{ background: "var(--rdim)", border: "1px solid rgba(240,62,95,.3)", borderRadius: 8, padding: ".75rem 1rem", color: "var(--red)", fontSize: ".82rem", marginBottom: "1rem", lineHeight: 1.5 }}>
+                      {generateError}
+                    </div>
+                  )}
+
+                  {/* Three intent buckets */}
+                  {buckets.map(bucket => {
+                    const items = state.seedKeywords.buckets[bucket.key] || [];
+                    if (items.length === 0) return null;
+                    const bucketSelected = items.filter(kw => isKwSelected(kw)).length;
+                    return (
+                      <div key={bucket.key} style={{ background: bucket.bg, border: `1px solid ${bucket.border}`, borderRadius: 12, padding: "1rem 1.1rem", marginBottom: ".85rem" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: ".25rem" }}>
+                          <div style={{ fontSize: ".85rem", fontWeight: 700, color: bucket.color }}>{bucket.title}</div>
+                          <div style={{ fontSize: ".7rem", color: "var(--text3)", fontFamily: "var(--mono)" }}>{bucketSelected}/{items.length}</div>
+                        </div>
+                        <div style={{ fontSize: ".72rem", color: "var(--text2)", marginBottom: ".85rem", lineHeight: 1.5 }}>
+                          {bucket.desc}
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: ".4rem" }}>
+                          {items.map(kw => {
+                            const sel = isKwSelected(kw);
+                            return (
+                              <button key={kw} type="button" onClick={() => toggleKw(kw)}
+                                style={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: ".4rem",
+                                  background: sel ? "var(--gdim)" : "var(--bg)",
+                                  color: sel ? "var(--green)" : "var(--text3)",
+                                  border: sel ? "1px solid rgba(15,219,138,.35)" : "1px solid var(--border)",
+                                  borderRadius: 16,
+                                  padding: ".35rem .75rem",
+                                  fontSize: ".78rem",
+                                  fontWeight: 500,
+                                  cursor: "pointer",
+                                  fontFamily: "inherit",
+                                  transition: "all .12s",
+                                  textAlign: "left",
+                                }}>
+                                <span style={{ fontSize: ".8rem", lineHeight: 1, opacity: sel ? 1 : .5 }}>{sel ? "✓" : "○"}</span>
+                                {kw}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* Navigation buttons */}
+                  <div style={{ marginTop: "1.25rem", display: "flex", gap: ".6rem", flexWrap: "wrap" }}>
+                    <button onClick={() => goToStep(1)}
+                      style={{ background: "var(--s2)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 8, padding: ".75rem 1.1rem", fontSize: ".85rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", flex: "0 0 auto" }}>
+                      ← Back
+                    </button>
+                    <button onClick={() => goToStep(3)} disabled={selected < 1}
+                      style={{
+                        flex: "1 1 200px",
+                        background: selected < 1 ? "var(--s2)" : "var(--green)",
+                        color: selected < 1 ? "var(--text3)" : "#000",
+                        border: "none",
+                        borderRadius: 8,
+                        padding: ".75rem 1.1rem",
+                        fontSize: ".85rem",
+                        fontWeight: 700,
+                        cursor: selected < 1 ? "not-allowed" : "pointer",
+                        fontFamily: "inherit",
+                      }}>
+                      Continue with {selected} keyword{selected === 1 ? "" : "s"} →
+                    </button>
+                  </div>
+                  {selected < 1 && (
+                    <div style={{ marginTop: ".75rem", fontSize: ".75rem", color: "var(--text3)", textAlign: "center" }}>
+                      Select at least one keyword to continue.
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </>
+        )}
+
+        {/* ── Steps 3-6: placeholder until built ─────────────────── */}
+        {state.currentStep > 2 && (
           <>
             <div style={{ background: "var(--s1)", border: "1px solid var(--border)", borderRadius: 12, padding: "2.5rem 1.5rem", textAlign: "center" }}>
               <div style={{ fontSize: "2rem", marginBottom: ".75rem" }}>🚧</div>
