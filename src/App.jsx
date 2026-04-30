@@ -6755,6 +6755,145 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
       return null;
     };
 
+    // Phase 4 — Competitor keyword discovery via DataForSEO Labs
+    const [enrichingPh4, setEnrichingPh4] = useState(false);
+    const [enrichErrorPh4, setEnrichErrorPh4] = useState(null);
+    const [domainInput, setDomainInput] = useState("");
+    // Local list of competitor domains being assembled before submitting.
+    // Once submitted, the canonical list lives in state.competitors.domains.
+    const [pendingDomains, setPendingDomains] = useState(() => {
+      return state.competitors?.domains || [];
+    });
+
+    // Sync pendingDomains when the wizard state's competitors change
+    // (e.g. when user switches sites or restores a session)
+    useEffect(() => {
+      setPendingDomains(state.competitors?.domains || []);
+    }, [state.competitors?.domains, selectedSite]);
+
+    // Strip protocol/www/paths to a bare hostname — matches worker's
+    // normaliseDomain so what the user types matches what gets cached
+    const normaliseDomain = (s) => String(s || "")
+      .toLowerCase()
+      .trim()
+      .replace(/^https?:\/\//, "")
+      .replace(/^www\./, "")
+      .split("/")[0]
+      .split("?")[0]
+      .split(":")[0]
+      .trim();
+
+    const isValidDomain = (d) => d.includes(".") && d.length >= 4 && d.length <= 100 && !/\s/.test(d);
+
+    const addDomain = () => {
+      const v = normaliseDomain(domainInput);
+      if (!v || !isValidDomain(v)) return;
+      if (pendingDomains.includes(v)) {
+        setDomainInput("");
+        return;
+      }
+      if (pendingDomains.length >= 5) return;
+      setPendingDomains([...pendingDomains, v]);
+      setDomainInput("");
+    };
+    const removeDomain = (d) => setPendingDomains(pendingDomains.filter(x => x !== d));
+
+    const fetchCompetitorKeywords = async () => {
+      if (pendingDomains.length === 0) {
+        setEnrichErrorPh4("Add at least one competitor domain.");
+        return;
+      }
+      setEnrichingPh4(true);
+      setEnrichErrorPh4(null);
+      try {
+        const res = await authFetch(`${WORKER_URL}/api/starting-out/competitor-keywords`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            domains: pendingDomains,
+            country: state.profile.country,
+            limit: 50,
+          }),
+        });
+        const data = await res.json();
+
+        if (res.status === 402) {
+          if (data.upgrade) {
+            setEnrichErrorPh4("Competitor analysis is a Pro feature. Upgrade your plan to continue.");
+          } else {
+            setEnrichErrorPh4(`Monthly quota reached (${data.used}/${data.limit}). Resets next month.`);
+          }
+          setEnrichingPh4(false);
+          return;
+        }
+        if (!res.ok) {
+          setEnrichErrorPh4(data?.error || "Couldn't fetch competitor data — please try again.");
+          setEnrichingPh4(false);
+          return;
+        }
+
+        // Check if we got useful data — if every domain returned 0 keywords
+        // it's likely a domain-not-in-DFS situation worth flagging
+        const totalKeywords = (data.keywords || []).length;
+        if (totalKeywords === 0) {
+          setEnrichErrorPh4("No ranking keywords found for those domains. Either they don't have organic visibility, or DataForSEO doesn't have data for them. Try different competitors.");
+          setEnrichingPh4(false);
+          return;
+        }
+
+        setState(s => ({
+          ...s,
+          competitors: {
+            domains: pendingDomains,
+            list: data.keywords || [],
+            competitorSummary: data.competitors || [],
+            fetchedAt: new Date().toISOString(),
+            quotaUsed:  data.quotaUsed  ?? null,
+            quotaLimit: data.quotaLimit ?? null,
+            country: state.profile.country,
+            // Phase 4 default: NOTHING selected. User opts in to keywords
+            // they want to add to their list (different model from Phase 2/3
+            // where we default-select everything).
+            selected: [],
+          },
+        }));
+      } catch (err) {
+        setEnrichErrorPh4("Couldn't reach the server — please check your connection.");
+      }
+      setEnrichingPh4(false);
+    };
+
+    const isCompetitorKwSelected = (kw) => {
+      return !!state.competitors && state.competitors.selected.includes(kw);
+    };
+    const toggleCompetitorKw = (kw) => {
+      setState(s => {
+        const sel = s.competitors?.selected || [];
+        return {
+          ...s,
+          competitors: {
+            ...s.competitors,
+            selected: sel.includes(kw) ? sel.filter(x => x !== kw) : [...sel, kw],
+          },
+        };
+      });
+    };
+    const competitorSelectedCount = () => state.competitors?.selected?.length || 0;
+
+    // Check whether a competitor keyword is already in the user's list
+    // (from Phase 2 selected → Phase 3 selected). Lets us deprioritise
+    // duplicates in the UI.
+    const ph3SelectedSet = () => {
+      const set = new Set();
+      // Phase 3 enriched list, filtered by deselected
+      (state.enrichedKeywords?.list || [])
+        .filter(item => isPh3Selected(item.keyword))
+        .forEach(item => set.add(normaliseKw(item.keyword)));
+      // Plus Phase 2 selected (in case user came directly from there)
+      selectedSeedKeywords().forEach(kw => set.add(normaliseKw(kw)));
+      return set;
+    };
+
     // Phase 1 validation — keep thresholds modest so users aren't blocked
     // by perfectionism, strict enough to give the AI useful signal
     const p = state.profile;
@@ -7502,8 +7641,385 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
           );
         })()}
 
-        {/* ── Steps 4-6: placeholder until built ─────────────────── */}
-        {state.currentStep > 3 && (
+        {/* ── Step 4: Competitor Keyword Discovery ───────────────── */}
+        {state.currentStep === 4 && (() => {
+          // Empty state — no competitor data yet
+          if (!state.competitors) {
+            // Free/Starter — locked
+            if (!isPro) {
+              return (
+                <>
+                  <div style={{ background: "var(--s1)", border: "1px solid var(--border)", borderRadius: 12, padding: "1.75rem 1.5rem", textAlign: "center" }}>
+                    <div style={{ fontSize: "2.5rem", marginBottom: ".75rem" }}>🔒</div>
+                    <div style={{ fontSize: "1.05rem", fontWeight: 700, color: "var(--text)", marginBottom: ".5rem" }}>
+                      Competitor analysis is a Pro feature
+                    </div>
+                    <div style={{ fontSize: ".85rem", color: "var(--text2)", maxWidth: 480, margin: "0 auto 1.25rem", lineHeight: 1.6 }}>
+                      Upgrade to Pro to discover what your competitors are ranking for. We'll pull their top keywords from DataForSEO Labs and surface gaps you should be targeting.
+                    </div>
+                    <button onClick={() => setShowUpgrade(true)}
+                      style={{ background: "var(--green)", color: "#000", border: "none", borderRadius: 8, padding: ".75rem 1.5rem", fontSize: ".88rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                      ✨ Upgrade to Pro
+                    </button>
+                  </div>
+                  <div style={{ marginTop: "1.25rem", display: "flex", gap: ".6rem", flexWrap: "wrap" }}>
+                    <button onClick={() => goToStep(3)}
+                      style={{ background: "var(--s2)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 8, padding: ".75rem 1.1rem", fontSize: ".85rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", flex: "0 0 auto" }}>
+                      ← Back
+                    </button>
+                    <button onClick={() => setScreen("dashboard")}
+                      style={{ flex: "1 1 200px", background: "var(--s2)", color: "var(--text2)", border: "1px solid var(--border)", borderRadius: 8, padding: ".75rem 1.1rem", fontSize: ".85rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                      Save & return to dashboard
+                    </button>
+                  </div>
+                </>
+              );
+            }
+
+            // Pro+ — domain input
+            return (
+              <>
+                <div style={{ background: "var(--s1)", border: "1px solid var(--border)", borderRadius: 12, padding: "1.75rem 1.5rem" }}>
+                  <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
+                    <div style={{ fontSize: "2.5rem", marginBottom: ".75rem" }}>🔍</div>
+                    <div style={{ fontSize: "1.05rem", fontWeight: 700, color: "var(--text)", marginBottom: ".5rem" }}>
+                      Find what your competitors rank for
+                    </div>
+                    <div style={{ fontSize: ".85rem", color: "var(--text2)", maxWidth: 500, margin: "0 auto", lineHeight: 1.6 }}>
+                      Add up to 5 competitor websites. We'll pull their top organic keywords from DataForSEO and show you opportunities you might have missed.
+                    </div>
+                  </div>
+
+                  {/* Domain input */}
+                  <div style={{ marginBottom: "1rem" }}>
+                    <label style={{ display: "block", fontSize: ".78rem", fontWeight: 600, color: "var(--text)", marginBottom: ".4rem" }}>
+                      Competitor websites <span style={{ color: "var(--text3)", fontWeight: 400 }}>({pendingDomains.length}/5)</span>
+                    </label>
+                    <div style={{ display: "flex", gap: ".4rem", marginBottom: pendingDomains.length > 0 ? ".6rem" : 0 }}>
+                      <input type="text" value={domainInput}
+                        onChange={e => setDomainInput(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === "Enter") { e.preventDefault(); addDomain(); }
+                          else if (e.key === "Backspace" && domainInput === "" && pendingDomains.length > 0) {
+                            removeDomain(pendingDomains[pendingDomains.length - 1]);
+                          }
+                        }}
+                        placeholder={pendingDomains.length === 0 ? "e.g. competitor.com (press Enter to add)" : "Add another…"}
+                        disabled={pendingDomains.length >= 5}
+                        maxLength={100}
+                        style={{ flex: 1, background: "var(--bg)", border: "1.5px solid var(--border)", borderRadius: 8, padding: ".7rem .9rem", color: "var(--text)", fontFamily: "inherit", fontSize: ".88rem", outline: "none", transition: "border-color .15s" }}
+                        onFocus={e => e.target.style.borderColor = "var(--green)"}
+                        onBlur={e => e.target.style.borderColor = "var(--border)"} />
+                      <button type="button" onClick={addDomain}
+                        disabled={!domainInput.trim() || pendingDomains.length >= 5 || !isValidDomain(normaliseDomain(domainInput))}
+                        style={{
+                          background: domainInput.trim() && pendingDomains.length < 5 && isValidDomain(normaliseDomain(domainInput)) ? "var(--green)" : "var(--s2)",
+                          color: domainInput.trim() && pendingDomains.length < 5 && isValidDomain(normaliseDomain(domainInput)) ? "#000" : "var(--text3)",
+                          border: "none",
+                          borderRadius: 8,
+                          padding: ".7rem 1rem",
+                          fontSize: ".82rem",
+                          fontWeight: 700,
+                          cursor: domainInput.trim() && pendingDomains.length < 5 && isValidDomain(normaliseDomain(domainInput)) ? "pointer" : "not-allowed",
+                          fontFamily: "inherit",
+                          flexShrink: 0,
+                        }}>
+                        Add
+                      </button>
+                    </div>
+                    {pendingDomains.length > 0 && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: ".4rem" }}>
+                        {pendingDomains.map(d => (
+                          <span key={d} style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: ".4rem",
+                            background: "var(--bdim)",
+                            color: "var(--blue)",
+                            border: "1px solid rgba(77,123,255,.25)",
+                            borderRadius: 16,
+                            padding: ".3rem .65rem .3rem .8rem",
+                            fontSize: ".78rem",
+                            fontWeight: 500,
+                            fontFamily: "var(--mono)",
+                          }}>
+                            {d}
+                            <button type="button" onClick={() => removeDomain(d)}
+                              aria-label={`Remove ${d}`}
+                              style={{ background: "transparent", border: "none", color: "var(--blue)", cursor: "pointer", fontSize: ".95rem", lineHeight: 1, padding: 0, opacity: .65, fontFamily: "inherit" }}
+                              onMouseEnter={e => e.currentTarget.style.opacity = "1"}
+                              onMouseLeave={e => e.currentTarget.style.opacity = ".65"}>×</button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div style={{ fontSize: ".72rem", color: "var(--text3)", marginTop: ".4rem", lineHeight: 1.5 }}>
+                      Just the domain — we'll strip http/www/paths automatically.
+                    </div>
+                  </div>
+
+                  {/* Quota warning */}
+                  <div style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, padding: "1rem", marginBottom: "1rem", fontSize: ".82rem", color: "var(--text2)", lineHeight: 1.55 }}>
+                    <div style={{ fontWeight: 700, color: "var(--text)", marginBottom: ".3rem" }}>
+                      ⚠ This will use 1 DataForSEO session
+                    </div>
+                    Cached competitor data is reused for free across users. You'll only burn a credit if at least one of these domains is new to our system.
+                  </div>
+
+                  {enrichErrorPh4 && (
+                    <div style={{ background: "var(--rdim)", border: "1px solid rgba(240,62,95,.3)", borderRadius: 8, padding: ".75rem 1rem", color: "var(--red)", fontSize: ".82rem", marginBottom: "1rem", lineHeight: 1.5 }}>
+                      {enrichErrorPh4}
+                    </div>
+                  )}
+
+                  <button onClick={fetchCompetitorKeywords}
+                    disabled={enrichingPh4 || pendingDomains.length === 0}
+                    style={{
+                      width: "100%",
+                      background: enrichingPh4 || pendingDomains.length === 0 ? "var(--s2)" : "var(--green)",
+                      color: enrichingPh4 || pendingDomains.length === 0 ? "var(--text3)" : "#000",
+                      border: "none",
+                      borderRadius: 8,
+                      padding: ".9rem 1.25rem",
+                      fontSize: ".9rem",
+                      fontWeight: 700,
+                      cursor: enrichingPh4 ? "wait" : pendingDomains.length === 0 ? "not-allowed" : "pointer",
+                      fontFamily: "inherit",
+                    }}>
+                    {enrichingPh4
+                      ? "🔍 Analysing competitors… (10-30s)"
+                      : pendingDomains.length === 0
+                        ? "Add at least one competitor"
+                        : `🔍 Analyse ${pendingDomains.length} competitor${pendingDomains.length === 1 ? "" : "s"}`}
+                  </button>
+                </div>
+
+                <div style={{ marginTop: "1.25rem", display: "flex", gap: ".6rem", flexWrap: "wrap" }}>
+                  <button onClick={() => goToStep(3)} disabled={enrichingPh4}
+                    style={{ background: "var(--s2)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 8, padding: ".75rem 1.1rem", fontSize: ".85rem", fontWeight: 600, cursor: enrichingPh4 ? "wait" : "pointer", fontFamily: "inherit", flex: "0 0 auto" }}>
+                    ← Back
+                  </button>
+                  <button onClick={() => goToStep(5)}
+                    style={{ flex: "1 1 200px", background: "var(--s2)", color: "var(--text2)", border: "1px solid var(--border)", borderRadius: 8, padding: ".75rem 1.1rem", fontSize: ".85rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                    Skip competitor analysis →
+                  </button>
+                </div>
+              </>
+            );
+          }
+
+          // Result state — competitor data loaded
+          const list = state.competitors.list || [];
+          const summary = state.competitors.competitorSummary || [];
+          const existingKws = ph3SelectedSet();
+          const newCount = list.filter(k => !existingKws.has(normaliseKw(k.keyword))).length;
+          const dupeCount = list.length - newCount;
+
+          // Build a per-domain colour map for the overlap bars
+          const domainColors = ["var(--blue)", "var(--green)", "var(--amber)", "var(--red)", "#9b6bff"];
+          const domainColorOf = (domain) => {
+            const idx = state.competitors.domains.indexOf(domain);
+            return idx >= 0 ? domainColors[idx % domainColors.length] : "var(--text3)";
+          };
+
+          const handleReanalyse = () => {
+            if (window.confirm("This will reset your selections and use another DataForSEO session. Continue?")) {
+              setState(s => ({ ...s, competitors: null }));
+            }
+          };
+
+          const renderRow = (item) => {
+            const sel = isCompetitorKwSelected(item.keyword);
+            const vol = item.volume;
+            const comp = item.competitionIndex;
+            const compLabel = comp == null ? "—" : comp < 33 ? "Easy" : comp < 66 ? "Medium" : "Hard";
+            const compColor = comp == null ? "var(--text3)" : comp < 33 ? "var(--green)" : comp < 66 ? "var(--amber)" : "var(--red)";
+            const isDupe = existingKws.has(normaliseKw(item.keyword));
+            const overlap = item.competitors?.length || 0;
+            const totalCompetitors = state.competitors.domains.length;
+            const competitorList = (item.competitors || []).map(c => `${c.domain}${c.position ? ` (#${c.position})` : ""}`).join(" · ");
+
+            return (
+              <div key={item.keyword}
+                onClick={() => !isDupe && toggleCompetitorKw(item.keyword)}
+                title={competitorList}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: ".75rem",
+                  padding: ".7rem .9rem",
+                  background: isDupe ? "transparent" : sel ? "var(--gdim)" : "var(--bg)",
+                  border: isDupe ? "1px solid var(--border)" : sel ? "1px solid rgba(15,219,138,.3)" : "1px solid var(--border)",
+                  borderRadius: 8,
+                  cursor: isDupe ? "default" : "pointer",
+                  transition: "background .12s, border-color .12s",
+                  marginBottom: ".4rem",
+                  opacity: isDupe ? 0.55 : 1,
+                }}>
+                <span style={{ fontSize: ".95rem", lineHeight: 1, opacity: isDupe ? .3 : sel ? 1 : .4, color: isDupe ? "var(--text3)" : sel ? "var(--green)" : "var(--text3)", flexShrink: 0, width: 14, textAlign: "center" }}>
+                  {isDupe ? "—" : sel ? "✓" : "○"}
+                </span>
+                <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: ".5rem", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: ".84rem", color: isDupe ? "var(--text3)" : sel ? "var(--text)" : "var(--text2)", fontWeight: 500, wordBreak: "break-word", textDecoration: isDupe ? "line-through" : "none" }}>
+                    {item.keyword}
+                  </span>
+                  {isDupe && (
+                    <span style={{ fontSize: ".62rem", padding: ".1rem .4rem", borderRadius: 4, background: "var(--s2)", color: "var(--text3)", fontWeight: 600, textTransform: "uppercase", letterSpacing: ".05em", flexShrink: 0 }}>
+                      In your list
+                    </span>
+                  )}
+                  {item.intent && !isDupe && (
+                    <span style={{ fontSize: ".62rem", padding: ".1rem .4rem", borderRadius: 4, background: "transparent", border: "1px solid var(--text3)", color: "var(--text3)", fontWeight: 600, textTransform: "uppercase", letterSpacing: ".05em", flexShrink: 0 }}>
+                      {item.intent}
+                    </span>
+                  )}
+                </div>
+                {/* Overlap dots — one per competitor that ranks for this kw */}
+                <div style={{ display: "flex", gap: "2px", flexShrink: 0 }} title={`${overlap} of ${totalCompetitors} competitors rank for this`}>
+                  {state.competitors.domains.map(d => {
+                    const ranks = (item.competitors || []).some(c => c.domain === d);
+                    return (
+                      <span key={d} style={{
+                        width: 8, height: 8, borderRadius: 2,
+                        background: ranks ? domainColorOf(d) : "var(--border)",
+                      }} />
+                    );
+                  })}
+                </div>
+                <div style={{ fontSize: ".75rem", fontFamily: "var(--mono)", color: vol == null ? "var(--text3)" : isDupe ? "var(--text3)" : "var(--text)", flexShrink: 0, minWidth: 70, textAlign: "right" }}>
+                  {vol == null ? "—" : `${vol.toLocaleString()}/mo`}
+                </div>
+                <div style={{ fontSize: ".72rem", fontWeight: 600, color: isDupe ? "var(--text3)" : compColor, flexShrink: 0, minWidth: 52, textAlign: "right" }}>
+                  {compLabel}
+                </div>
+              </div>
+            );
+          };
+
+          const newKeywords = list.filter(k => !existingKws.has(normaliseKw(k.keyword)));
+          const dupeKeywords = list.filter(k =>  existingKws.has(normaliseKw(k.keyword)));
+          const selectedCount = competitorSelectedCount();
+
+          return (
+            <>
+              {/* Summary header */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: ".75rem", padding: ".75rem 1rem", background: "var(--s1)", border: "1px solid var(--border)", borderRadius: 10 }}>
+                <div>
+                  <div style={{ fontSize: ".88rem", fontWeight: 700, color: "var(--text)" }}>
+                    Competitor keywords
+                  </div>
+                  <div style={{ fontSize: ".74rem", color: "var(--text2)", marginTop: ".15rem" }}>
+                    <strong style={{ color: "var(--green)" }}>{selectedCount}</strong> new selected · {newCount} new · {dupeCount} already in your list
+                    {state.competitors.quotaLimit != null && (
+                      <> · Quota: {state.competitors.quotaUsed}/{state.competitors.quotaLimit}</>
+                    )}
+                  </div>
+                </div>
+                <button onClick={handleReanalyse} disabled={enrichingPh4}
+                  style={{ background: "var(--s2)", color: "var(--text2)", border: "1px solid var(--border)", borderRadius: 7, padding: ".45rem .85rem", fontSize: ".75rem", fontWeight: 600, cursor: enrichingPh4 ? "wait" : "pointer", fontFamily: "inherit" }}>
+                  ↻ Change competitors
+                </button>
+              </div>
+
+              {/* Competitor breakdown chips */}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: ".4rem", marginBottom: "1rem" }}>
+                {summary.map(c => (
+                  <div key={c.domain} style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: ".5rem",
+                    padding: ".4rem .75rem",
+                    background: "var(--s1)",
+                    border: `1px solid ${c.error ? "rgba(240,62,95,.3)" : "var(--border)"}`,
+                    borderRadius: 16,
+                    fontSize: ".74rem",
+                  }}>
+                    <span style={{ width: 8, height: 8, borderRadius: 2, background: domainColorOf(c.domain), flexShrink: 0 }} />
+                    <span style={{ fontFamily: "var(--mono)", color: "var(--text)" }}>{c.domain}</span>
+                    <span style={{ color: c.error ? "var(--red)" : "var(--text3)", fontFamily: "var(--mono)" }}>
+                      {c.error ? "error" : `${c.keywordCount} kw`}{c.cached ? " · cached" : ""}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Column header strip */}
+              <div style={{ display: "flex", alignItems: "center", gap: ".75rem", padding: "0 .9rem .35rem", fontSize: ".68rem", color: "var(--text3)", textTransform: "uppercase", letterSpacing: ".08em", fontWeight: 700 }}>
+                <span style={{ width: 14, flexShrink: 0 }}> </span>
+                <span style={{ flex: 1 }}>Keyword</span>
+                <span style={{ flexShrink: 0 }}>Overlap</span>
+                <span style={{ minWidth: 70, textAlign: "right" }}>Volume</span>
+                <span style={{ minWidth: 52, textAlign: "right" }}>Difficulty</span>
+              </div>
+
+              {/* New keywords (the actionable ones) */}
+              {newKeywords.length > 0 && (
+                <div style={{ marginBottom: dupeKeywords.length > 0 ? "1rem" : 0 }}>
+                  {newKeywords.map(renderRow)}
+                </div>
+              )}
+
+              {/* Already-in-list keywords (deprioritised, collapsed) */}
+              {dupeKeywords.length > 0 && (
+                <div style={{ marginBottom: "1rem" }}>
+                  <div style={{ fontSize: ".72rem", color: "var(--text3)", padding: "0 .9rem .4rem", fontWeight: 600 }}>
+                    Already in your list ({dupeKeywords.length}) — confirms you're on the right track
+                  </div>
+                  {dupeKeywords.map(renderRow)}
+                </div>
+              )}
+
+              {newKeywords.length === 0 && (
+                <div style={{ background: "var(--s1)", border: "1px solid var(--border)", borderRadius: 10, padding: "1.25rem", textAlign: "center", marginBottom: "1rem" }}>
+                  <div style={{ fontSize: ".88rem", color: "var(--text)", fontWeight: 600, marginBottom: ".4rem" }}>
+                    No new keywords found
+                  </div>
+                  <div style={{ fontSize: ".78rem", color: "var(--text2)", lineHeight: 1.55 }}>
+                    Your competitors aren't ranking for anything you don't already have on your list. Either you've covered the space well, or these competitors are in a different lane than expected. Try different competitors if you want broader coverage.
+                  </div>
+                </div>
+              )}
+
+              {/* Insight footer */}
+              <div style={{ background: "rgba(77,123,255,.06)", border: "1px solid rgba(77,123,255,.2)", borderRadius: 10, padding: "1rem 1.1rem", marginBottom: "1rem" }}>
+                <div style={{ fontSize: ".78rem", fontWeight: 700, color: "var(--blue)", marginBottom: ".4rem" }}>
+                  💡 How to read overlap
+                </div>
+                <div style={{ fontSize: ".77rem", color: "var(--text2)", lineHeight: 1.6 }}>
+                  Each row shows coloured dots — one per competitor domain. A filled dot means that competitor ranks in the top 50 for that keyword. More dots = stronger signal that the keyword matters in your space. Hover over a row to see exact positions.
+                </div>
+              </div>
+
+              {/* Navigation */}
+              <div style={{ marginTop: "1.25rem", display: "flex", gap: ".6rem", flexWrap: "wrap" }}>
+                <button onClick={() => goToStep(3)}
+                  style={{ background: "var(--s2)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 8, padding: ".75rem 1.1rem", fontSize: ".85rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", flex: "0 0 auto" }}>
+                  ← Back
+                </button>
+                <button onClick={() => goToStep(5)}
+                  style={{
+                    flex: "1 1 200px",
+                    background: "var(--green)",
+                    color: "#000",
+                    border: "none",
+                    borderRadius: 8,
+                    padding: ".75rem 1.1rem",
+                    fontSize: ".85rem",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}>
+                  {selectedCount === 0
+                    ? "Continue without adding any →"
+                    : `Continue with ${selectedCount} new keyword${selectedCount === 1 ? "" : "s"} →`}
+                </button>
+              </div>
+            </>
+          );
+        })()}
+
+        {/* ── Steps 5-6: placeholder until built ─────────────────── */}
+        {state.currentStep > 4 && (
           <>
             <div style={{ background: "var(--s1)", border: "1px solid var(--border)", borderRadius: 12, padding: "2.5rem 1.5rem", textAlign: "center" }}>
               <div style={{ fontSize: "2rem", marginBottom: ".75rem" }}>🚧</div>
