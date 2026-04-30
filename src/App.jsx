@@ -4,6 +4,7 @@ import {
   useUser, useClerk, SignedIn, SignedOut
 } from "@clerk/clerk-react";
 import { sanitizeAiHtml, sanitizeAiPreview } from "./utils/sanitize";
+import { exportAuditPdf } from "./utils/exportAuditPdf";
 
 // ─────────────────────────────────────────────────────────────
 // ⚙️  CONFIG — paste your Worker URL here after deploying it
@@ -6066,6 +6067,17 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
         {auditLoading && <div style={{textAlign:"center",padding:"3rem",color:"var(--text3)"}}><div className="spinner-sm" style={{margin:"0 auto .75rem"}}/>Scanning SEO and performance — this may take 10-15 seconds...</div>}
         {auditData?.error && <div style={{padding:"1rem",background:"rgba(240,62,95,.08)",border:"1px solid rgba(240,62,95,.2)",borderRadius:10,color:"#f03e5f",fontSize:".85rem"}}>Could not audit: {auditData.error}</div>}
         {auditData?.audited && <>
+          {/* ── Download PDF button ── */}
+          <div style={{display:"flex",justifyContent:"flex-end",marginBottom:".75rem"}}>
+            <button
+              type="button"
+              onClick={()=>exportAuditPdf({audit:auditData,perf:perfData})}
+              disabled={perfLoading}
+              title={perfLoading?"Wait for page speed scan to finish for a complete report":"Download branded PDF report"}
+              style={{padding:".5rem 1rem",background:"transparent",color:"var(--green)",border:"1px solid var(--green)",borderRadius:8,fontFamily:"var(--font)",fontWeight:600,fontSize:".8rem",cursor:perfLoading?"wait":"pointer",opacity:perfLoading?.5:1,display:"inline-flex",alignItems:"center",gap:".4rem"}}>
+              {perfLoading?"⏳ Waiting for page speed…":"📄 Download PDF report"}
+            </button>
+          </div>
           {/* ── Triple score gauges + summary ── */}
           <div style={{display:"grid",gridTemplateColumns:"auto auto auto 1fr",gap:"1rem",marginBottom:"1.25rem",alignItems:"center"}}>
             {/* SEO Score */}
