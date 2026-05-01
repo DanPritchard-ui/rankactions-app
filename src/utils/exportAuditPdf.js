@@ -266,15 +266,15 @@ export function exportAuditPdf({ audit, perf, tier, branding } = {}) {
   };
 
   const sectionHeading = (txt) => {
-    ensureSpace(12);
+    ensureSpace(16);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(13);
     setText(brand.dark);
     doc.text(txt, margin, y);
     setDraw(brand.accent);
     doc.setLineWidth(0.6);
-    doc.line(margin, y + 1.5, margin + 18, y + 1.5);
-    y += 8;
+    doc.line(margin, y + 1.5, margin + 22, y + 1.5);
+    y += 12;
   };
 
   // Wraps text and returns total height drawn (in mm).
@@ -1044,7 +1044,7 @@ export function exportAuditPdf({ audit, perf, tier, branding } = {}) {
       sectionHeading('SEO issues to fix');
 
       actionable.forEach((issue) => {
-        const innerW = contentW - 8;
+        const innerW = contentW - 12;
         const tipText = CATEGORY_EXPLANATIONS[issue.category] || '';
 
         const titleH   = measureWrapped(issue.issue, innerW, 10);
@@ -1052,8 +1052,8 @@ export function exportAuditPdf({ audit, perf, tier, branding } = {}) {
         const fixH     = issue.fix ? measureWrapped(issue.fix, innerW, 9) : 0;
         const currentH = issue.current ? measureWrapped(`Current: ${String(issue.current).slice(0, 400)}`, innerW, 8, 3.5) : 0;
 
-        const blockH = 7 + titleH + (tipH ? tipH + 2 : 0) + (fixH ? fixH + 3 : 0) + (currentH ? currentH + 2 : 0) + 6;
-        ensureSpace(blockH + 2);
+        const blockH = 9 + titleH + (tipH ? tipH + 2 : 0) + (fixH ? fixH + 3 : 0) + (currentH ? currentH + 2 : 0) + 7;
+        ensureSpace(blockH + 3);
 
         const color = severityColor(issue.type);
 
@@ -1062,7 +1062,7 @@ export function exportAuditPdf({ audit, perf, tier, branding } = {}) {
         setDraw(C.border);
         doc.setLineWidth(0.3);
         doc.roundedRect(margin, y, contentW, blockH, 2, 2, 'FD');
-        // Severity bar
+        // Severity bar (left edge)
         setFill(color);
         doc.rect(margin, y, 1.4, blockH, 'F');
 
@@ -1072,35 +1072,35 @@ export function exportAuditPdf({ audit, perf, tier, branding } = {}) {
         doc.setFontSize(7);
         const labelW = doc.getTextWidth(label) + 4;
         setFill(color);
-        doc.roundedRect(margin + 4, y + 2, labelW, 5, 1, 1, 'F');
+        doc.roundedRect(margin + 6, y + 3.5, labelW, 5, 1, 1, 'F');
         setText('#ffffff');
-        doc.text(label, margin + 4 + labelW / 2, y + 5.5, { align: 'center' });
+        doc.text(label, margin + 6 + labelW / 2, y + 7, { align: 'center' });
 
         setText(C.textMute);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(8);
-        doc.text(issue.category || '', margin + 4 + labelW + 3, y + 5.5);
+        doc.text(issue.category || '', margin + 6 + labelW + 3, y + 7);
 
-        let yy = y + 10;
+        let yy = y + 12;
         // Title
-        yy += drawWrapped(issue.issue || '', margin + 4, yy, innerW, 'bold', 10, C.text);
+        yy += drawWrapped(issue.issue || '', margin + 6, yy, innerW, 'bold', 10, C.text);
         // Inline tip explanation (Tip dropdown content)
         if (tipText) {
           yy += 1;
-          yy += drawWrapped(`What this is: ${tipText}`, margin + 4, yy + 1, innerW, 'italic', 8, C.textSoft, 3.5);
+          yy += drawWrapped(`What this is: ${tipText}`, margin + 6, yy + 1, innerW, 'italic', 8, C.textSoft, 3.5);
         }
         // Fix recommendation
         if (issue.fix) {
           yy += 2;
-          yy += drawWrapped(issue.fix, margin + 4, yy + 1, innerW, 'normal', 9, C.text);
+          yy += drawWrapped(issue.fix, margin + 6, yy + 1, innerW, 'normal', 9, C.text);
         }
         // Current value
         if (issue.current) {
           yy += 1;
-          yy += drawWrapped(`Current: ${String(issue.current).slice(0, 400)}`, margin + 4, yy + 1, innerW, 'italic', 8, C.textMute, 3.5);
+          yy += drawWrapped(`Current: ${String(issue.current).slice(0, 400)}`, margin + 6, yy + 1, innerW, 'italic', 8, C.textMute, 3.5);
         }
 
-        y += blockH + 3;
+        y += blockH + 5;
       });
     }
   }
@@ -1112,12 +1112,12 @@ export function exportAuditPdf({ audit, perf, tier, branding } = {}) {
     sectionHeading('Page speed opportunities');
 
     perf.opportunities.forEach((op) => {
-      const innerW = contentW - 8;
+      const innerW = contentW - 12;
       const cleanDesc = op.description ? op.description.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').trim() : '';
       const titleH = measureWrapped(op.title || '', innerW, 10);
       const descH  = cleanDesc ? measureWrapped(cleanDesc, innerW, 9) : 0;
-      const blockH = 9 + titleH + (descH ? descH + 2 : 0) + 5;
-      ensureSpace(blockH + 2);
+      const blockH = 11 + titleH + (descH ? descH + 2 : 0) + 6;
+      ensureSpace(blockH + 3);
 
       const accent = (op.score != null && op.score <= 0.5) ? C.red : C.amber;
       setFill(C.panelBg);
@@ -1128,16 +1128,16 @@ export function exportAuditPdf({ audit, perf, tier, branding } = {}) {
       doc.rect(margin, y, 1.4, blockH, 'F');
 
       // Savings badges
-      let badgeX = margin + 4;
+      let badgeX = margin + 6;
       if (op.savings) {
         const txt = `Save ${op.savings}`;
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(7);
         const w = doc.getTextWidth(txt) + 4;
         setFill(brand.accent);
-        doc.roundedRect(badgeX, y + 2, w, 5, 1, 1, 'F');
+        doc.roundedRect(badgeX, y + 3.5, w, 5, 1, 1, 'F');
         setText('#ffffff');
-        doc.text(txt, badgeX + w / 2, y + 5.5, { align: 'center' });
+        doc.text(txt, badgeX + w / 2, y + 7, { align: 'center' });
         badgeX += w + 2;
       }
       if (op.savingsBytes) {
@@ -1146,19 +1146,19 @@ export function exportAuditPdf({ audit, perf, tier, branding } = {}) {
         doc.setFontSize(7);
         const w = doc.getTextWidth(txt) + 4;
         setFill(C.blue);
-        doc.roundedRect(badgeX, y + 2, w, 5, 1, 1, 'F');
+        doc.roundedRect(badgeX, y + 3.5, w, 5, 1, 1, 'F');
         setText('#ffffff');
-        doc.text(txt, badgeX + w / 2, y + 5.5, { align: 'center' });
+        doc.text(txt, badgeX + w / 2, y + 7, { align: 'center' });
       }
 
-      let yy = y + 11;
-      yy += drawWrapped(op.title || '', margin + 4, yy, innerW, 'bold', 10, C.text);
+      let yy = y + 13;
+      yy += drawWrapped(op.title || '', margin + 6, yy, innerW, 'bold', 10, C.text);
       if (cleanDesc) {
         yy += 2;
-        drawWrapped(cleanDesc, margin + 4, yy + 1, innerW, 'normal', 9, C.textMute);
+        drawWrapped(cleanDesc, margin + 6, yy + 1, innerW, 'normal', 9, C.textMute);
       }
 
-      y += blockH + 3;
+      y += blockH + 5;
     });
   }
 
@@ -1169,17 +1169,17 @@ export function exportAuditPdf({ audit, perf, tier, branding } = {}) {
     sectionHeading('Page speed diagnostics');
     perf.diagnostics.forEach((d) => {
       const lines = doc.splitTextToSize(d.title || '', contentW - 8);
-      ensureSpace(lines.length * 4 + 4);
+      ensureSpace(lines.length * 4.5 + 4);
       const dot = (d.score != null && d.score <= 0.5) ? C.red : C.amber;
       setFill(dot);
-      doc.circle(margin + 2, y - 1, 1.2, 'F');
+      doc.circle(margin + 2, y - 1.2, 0.9, 'F');
       setText(brand.dark);
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
+      doc.setFontSize(9.5);
       doc.text(lines, margin + 6, y);
-      y += lines.length * 4 + 1;
+      y += lines.length * 4.5 + 2;
     });
-    y += 4;
+    y += 6;
   }
 
   // ───────────────────────────────────────────────────────────────────────────
