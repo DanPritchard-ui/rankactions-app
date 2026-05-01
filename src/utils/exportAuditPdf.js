@@ -265,8 +265,19 @@ export function exportAuditPdf({ audit, perf, tier, branding } = {}) {
     }
   };
 
-  const sectionHeading = (txt) => {
-    ensureSpace(16);
+  // Section heading with "keep with next" support.
+  //
+  // The optional `keepWithNext` parameter (mm) tells the heading how much
+  // vertical space it needs to reserve for at least the first content block
+  // that follows. Without this, the heading can render at the bottom of a
+  // page while the first content card pushes itself onto the next page,
+  // leaving an awkward orphan heading and a big blank gap.
+  //
+  // Callers should pass an estimate of the smallest reasonable first block
+  // (a single-line card is ~30mm; a multi-line card with all fields is
+  // ~60mm — pass something around 40mm for typical card lists).
+  const sectionHeading = (txt, keepWithNext = 0) => {
+    ensureSpace(16 + keepWithNext);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(13);
     setText(brand.dark);
@@ -1041,7 +1052,7 @@ export function exportAuditPdf({ audit, perf, tier, branding } = {}) {
       .sort((a, b) => (order[a.type] ?? 99) - (order[b.type] ?? 99));
 
     if (actionable.length) {
-      sectionHeading('SEO issues to fix');
+      sectionHeading('SEO issues to fix', 40);
 
       actionable.forEach((issue) => {
         const innerW = contentW - 12;
@@ -1109,7 +1120,7 @@ export function exportAuditPdf({ audit, perf, tier, branding } = {}) {
   // PAGE SPEED OPPORTUNITIES (PSI)
   // ───────────────────────────────────────────────────────────────────────────
   if (perf && Array.isArray(perf.opportunities) && perf.opportunities.length) {
-    sectionHeading('Page speed opportunities');
+    sectionHeading('Page speed opportunities', 40);
 
     perf.opportunities.forEach((op) => {
       const innerW = contentW - 12;
@@ -1166,7 +1177,7 @@ export function exportAuditPdf({ audit, perf, tier, branding } = {}) {
   // PAGE SPEED DIAGNOSTICS
   // ───────────────────────────────────────────────────────────────────────────
   if (perf && Array.isArray(perf.diagnostics) && perf.diagnostics.length) {
-    sectionHeading('Page speed diagnostics');
+    sectionHeading('Page speed diagnostics', 12);
     perf.diagnostics.forEach((d) => {
       const lines = doc.splitTextToSize(d.title || '', contentW - 8);
       ensureSpace(lines.length * 4.5 + 4);
@@ -1186,7 +1197,7 @@ export function exportAuditPdf({ audit, perf, tier, branding } = {}) {
   // AI SEARCH READINESS — every check, with examples + fix
   // ───────────────────────────────────────────────────────────────────────────
   if (audit.aiReadiness) {
-    sectionHeading('AI Search readiness');
+    sectionHeading('AI Search readiness', 30);
 
     // Subheading
     if (typeof audit.aiReadiness.passed === 'number' && typeof audit.aiReadiness.total === 'number') {
