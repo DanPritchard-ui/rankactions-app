@@ -5,6 +5,12 @@ import {
 } from "@clerk/clerk-react";
 import { sanitizeAiHtml, sanitizeAiPreview } from "./utils/sanitize";
 import { exportAuditPdf } from "./utils/exportAuditPdf";
+import {
+  loadUserData,
+  saveUserData,
+  setUserDataTokenGetter,
+  useRemoteState,
+} from "./utils/userData";
 
 // ─────────────────────────────────────────────────────────────
 // ⚙️  CONFIG — paste your Worker URL here after deploying it
@@ -864,6 +870,9 @@ export default function RankActions() {
         return null;
       } catch { return null; }
     };
+    // Wire the same getter into the userData helper so it can authenticate
+    // its own fetches without importing Clerk directly.
+    setUserDataTokenGetter(_getToken);
   }, [session]);
 
   // Auth UI state
@@ -3902,6 +3911,10 @@ h1, h2, h3, h4, h5, h6 {
     const [reportSummary, setReportSummary] = useState(null);
     const [summaryGen, setSummaryGen] = useState(false);
 
+    // Server-backed strategy state (used by the dashboard "Strategy Progress"
+    // widget and the export report function).
+    const [reportStrategy] = useRemoteState(selectedSite, 'strategy', null);
+
     const fixes = getPriorityFixes();
     const seoRows = getSeoRows();
     const completedFixes = [...doneFixes];
@@ -3957,7 +3970,7 @@ Write 3-4 short paragraphs: overall performance, biggest opportunities, what to 
       const strikingKws = siteData?.keywords?.filter(k => k.position > 10 && k.position <= 20) || [];
       let stratHtml = "";
       try {
-        const strat = JSON.parse(localStorage.getItem(`ra_strategy_${selectedSite}`) || "null");
+        const strat = reportStrategy;
         if (strat) {
           const pub = strat.clusters.filter(c=>c.status==="published").length + (strat.pillar.status==="published"?1:0);
           const total = strat.clusters.length + 1;
@@ -4311,8 +4324,7 @@ ${stratHtml}${contentHtml}
 
         {/* Strategy Progress */}
         {(() => {
-          let strat = null;
-          try { strat = JSON.parse(localStorage.getItem(`ra_strategy_${selectedSite}`) || "null"); } catch {}
+          const strat = reportStrategy;
           if (!strat) return null;
           const published = strat.clusters.filter(c=>c.status==="published").length + (strat.pillar.status==="published"?1:0);
           const drafted = strat.clusters.filter(c=>c.status==="drafted").length + (strat.pillar.status==="drafted"?1:0);
@@ -4620,17 +4632,27 @@ Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource
   // Pillar + Cluster content strategy based on GSC data
   // ─────────────────────────────────────────────────────────────
   const StrategyPlanner = () => {
-    const [view, setView] = useState(() => {
-      try { return JSON.parse(localStorage.getItem(`ra_strategy_${selectedSite}`) || "null") ? "planner" : "suggestions"; } catch { return "suggestions"; }
-    });
     const [generating, setGenerating] = useState(false);
     const [suggestions, setSuggestions] = useState(null);
     const [customTopic, setCustomTopic] = useState("");
 
-    // Load saved strategy for this site
-    const [strategy, setStrategy] = useState(() => {
-      try { return JSON.parse(localStorage.getItem(`ra_strategy_${selectedSite}`) || "null"); } catch { return null; }
-    });
+    // Strategy is now server-backed. While loading we render a brief skeleton
+    // (handled by the early-return below) so we don't flash empty state.
+    const [strategy, setStrategy, strategyStatus] = useRemoteState(selectedSite, 'strategy', null);
+
+    // View follows strategy: planner view if a strategy exists, else suggestions.
+    // We start in 'suggestions' and auto-switch to 'planner' once the strategy
+    // loads (if it has clusters). Resets on site change so the auto-switch
+    // fires for each site, but manual switches (user clicks "Generate new")
+    // within a site are preserved by the per-site init flag.
+    const [view, setView] = useState("suggestions");
+    const viewInitForSiteRef = useRef(null);
+    useEffect(() => {
+      if (strategyStatus !== 'ready') return;
+      if (viewInitForSiteRef.current === selectedSite) return;
+      viewInitForSiteRef.current = selectedSite;
+      setView(strategy && strategy.clusters ? 'planner' : 'suggestions');
+    }, [strategyStatus, strategy, selectedSite]);
 
     // Keyword enrichment via DataForSEO. Map of normalised keyword → { volume, cpc, competition, ... }
     // Persisted to localStorage so the user doesn't lose their data on reload.
@@ -4742,10 +4764,9 @@ Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource
       );
     };
 
-    const saveStrategy = (s) => {
-      setStrategy(s);
-      localStorage.setItem(`ra_strategy_${selectedSite}`, JSON.stringify(s));
-    };
+    // setStrategy is from useRemoteState — it updates local state AND persists
+    // to server (debounced) AND mirrors to localStorage. No separate save call needed.
+    const saveStrategy = (s) => setStrategy(s);
 
     // Generate cluster suggestions from GSC data
     const generateSuggestions = async (topic) => {
@@ -4755,9 +4776,10 @@ Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource
         const kwData = siteData?.keywords?.slice(0, 30).map(k => `"${k.keyword}" (pos #${k.position}, ${k.impressions} impressions, ${k.clicks} clicks)`).join("\n") || "No keyword data available";
         const pages = siteData?.pages?.slice(0, 10).map(p => p.page).join("\n") || "No page data";
 
-        // Load previous strategies and content to avoid duplication
+        // Load previous strategies and content to avoid duplication.
+        // Strategy history is server-backed; content history still local (migrated in a later stage).
         let prevStrategies = [];
-        try { prevStrategies = JSON.parse(localStorage.getItem(`ra_strategy_history_${selectedSite}`) || "[]"); } catch {}
+        try { prevStrategies = (await loadUserData(selectedSite, 'strategy_history')) || []; } catch {}
         let contentHistory = [];
         try { contentHistory = JSON.parse(localStorage.getItem(`ra_content_history_${selectedSite}`) || "[]"); } catch {}
         const currentStrategy = strategy;
@@ -4870,14 +4892,13 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
     };
 
     // Accept a suggestion and turn it into an active strategy
-    const acceptStrategy = (s) => {
+    const acceptStrategy = async (s) => {
       // Save current strategy to history before replacing
       if (strategy) {
         try {
-          const histKey = `ra_strategy_history_${selectedSite}`;
-          const hist = JSON.parse(localStorage.getItem(histKey) || "[]");
+          const hist = (await loadUserData(selectedSite, 'strategy_history')) || [];
           hist.push({ topic: strategy.topic, date: strategy.createdAt?.slice(0,10) || new Date().toISOString().slice(0,10), clusters: strategy.clusters.map(c => c.keyword) });
-          localStorage.setItem(histKey, JSON.stringify(hist.slice(-20))); // keep last 20
+          await saveUserData(selectedSite, 'strategy_history', hist.slice(-20)); // keep last 20
         } catch {}
       }
       const newStrategy = {
@@ -5561,17 +5582,17 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
     }
   };
 
-    const exportData = () => {
+    const exportData = async () => {
       const prospectData = {};
       const fixData = {};
       const contentData = {};
       const strategyData = {};
-      sites.forEach(s => {
+      for (const s of sites) {
         try { prospectData[s] = JSON.parse(localStorage.getItem(`ra_prospects_${s}`) || "[]"); } catch {}
         try { fixData[s] = JSON.parse(localStorage.getItem(`ra_done_${s}`) || "[]"); } catch {}
         try { contentData[s] = JSON.parse(localStorage.getItem(`ra_content_history_${s}`) || "[]"); } catch {}
-        try { strategyData[s] = JSON.parse(localStorage.getItem(`ra_strategy_${s}`) || "null"); } catch {}
-      });
+        try { strategyData[s] = (await loadUserData(s, 'strategy')) || null; } catch {}
+      }
       const realSites = sites.filter(s => s && s !== "mywebsite.com");
 
       const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>RankActions — Your Data Export</title>
@@ -7296,7 +7317,7 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
     // Mark wizard as complete and hand off to Strategy Planner.
     // Converts the AI-generated roadmap into the Strategy Planner's
     // pillar+clusters shape so users have a single home for their plan.
-    const completeWizard = () => {
+    const completeWizard = async () => {
       const items = state.roadmap?.items || [];
 
       // Edge case: no roadmap → just mark complete and exit
@@ -7308,16 +7329,15 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
 
       // Backup any existing strategy to history before replacing
       try {
-        const existing = JSON.parse(localStorage.getItem(`ra_strategy_${selectedSite}`) || "null");
+        const existing = await loadUserData(selectedSite, 'strategy');
         if (existing && (existing.clusters || []).length > 0) {
-          const histKey = `ra_strategy_history_${selectedSite}`;
-          const hist = JSON.parse(localStorage.getItem(histKey) || "[]");
+          const hist = (await loadUserData(selectedSite, 'strategy_history')) || [];
           hist.push({
             topic: existing.topic,
             date: existing.createdAt?.slice(0, 10) || new Date().toISOString().slice(0, 10),
             clusters: (existing.clusters || []).map(c => c.keyword),
           });
-          localStorage.setItem(histKey, JSON.stringify(hist.slice(-20)));
+          await saveUserData(selectedSite, 'strategy_history', hist.slice(-20));
         }
       } catch {}
 
@@ -7379,7 +7399,7 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
 
       // Save the strategy and mark wizard complete
       try {
-        localStorage.setItem(`ra_strategy_${selectedSite}`, JSON.stringify(newStrategy));
+        await saveUserData(selectedSite, 'strategy', newStrategy);
       } catch {}
 
       setState(s => ({
