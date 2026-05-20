@@ -5,12 +5,6 @@ import {
 } from "@clerk/clerk-react";
 import { sanitizeAiHtml, sanitizeAiPreview } from "./utils/sanitize";
 import { exportAuditPdf } from "./utils/exportAuditPdf";
-import {
-  loadUserData,
-  saveUserData,
-  setUserDataTokenGetter,
-  useRemoteState,
-} from "./utils/userData";
 
 // ─────────────────────────────────────────────────────────────
 // ⚙️  CONFIG — paste your Worker URL here after deploying it
@@ -870,9 +864,6 @@ export default function RankActions() {
         return null;
       } catch { return null; }
     };
-    // Wire the same getter into the userData helper so it can authenticate
-    // its own fetches without importing Clerk directly.
-    setUserDataTokenGetter(_getToken);
   }, [session]);
 
   // Auth UI state
@@ -1754,12 +1745,12 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
   // STRIPE — checkout and billing portal helpers
   // ─────────────────────────────────────────────────────────────
   const STRIPE_PRICES = {
-    starter_monthly: 'price_1TP6AHPxXBgdsxBI4OWdtv0Z',
-    starter_annual:  'price_1TP6AnPxXBgdsxBI10fIEXuS',
-    pro_monthly:     'price_1TP6R4PxXBgdsxBIeBQGpjYk',
-    pro_annual:      'price_1TOf5DPxXBgdsxBIhil9CD59',
-    agency_monthly:  'price_1TOf44PxXBgdsxBIMfYph4FF',
-    agency_annual:   'price_1TOf4kPxXBgdsxBIEXUjDAlx',
+    starter_monthly: 'price_1TZ9dEPrI9axbg39lqIgwFyV',
+    starter_annual:  'price_1TZ9dEPrI9axbg39h05zJZyI',
+    pro_monthly:     'price_1TZ9g1PrI9axbg39uYLUU8BG',
+    pro_annual:      'price_1TZ9gNPrI9axbg39hmEWGiwK',
+    agency_monthly:  'price_1TZ9hyPrI9axbg399EmmbZQK',
+    agency_annual:   'price_1TZ9hyPrI9axbg39zjjjw3UR',
   };
 
   const startCheckout = async (priceId) => {
@@ -3911,10 +3902,6 @@ h1, h2, h3, h4, h5, h6 {
     const [reportSummary, setReportSummary] = useState(null);
     const [summaryGen, setSummaryGen] = useState(false);
 
-    // Server-backed strategy state (used by the dashboard "Strategy Progress"
-    // widget and the export report function).
-    const [reportStrategy] = useRemoteState(selectedSite, 'strategy', null);
-
     const fixes = getPriorityFixes();
     const seoRows = getSeoRows();
     const completedFixes = [...doneFixes];
@@ -3970,7 +3957,7 @@ Write 3-4 short paragraphs: overall performance, biggest opportunities, what to 
       const strikingKws = siteData?.keywords?.filter(k => k.position > 10 && k.position <= 20) || [];
       let stratHtml = "";
       try {
-        const strat = reportStrategy;
+        const strat = JSON.parse(localStorage.getItem(`ra_strategy_${selectedSite}`) || "null");
         if (strat) {
           const pub = strat.clusters.filter(c=>c.status==="published").length + (strat.pillar.status==="published"?1:0);
           const total = strat.clusters.length + 1;
@@ -4324,7 +4311,8 @@ ${stratHtml}${contentHtml}
 
         {/* Strategy Progress */}
         {(() => {
-          const strat = reportStrategy;
+          let strat = null;
+          try { strat = JSON.parse(localStorage.getItem(`ra_strategy_${selectedSite}`) || "null"); } catch {}
           if (!strat) return null;
           const published = strat.clusters.filter(c=>c.status==="published").length + (strat.pillar.status==="published"?1:0);
           const drafted = strat.clusters.filter(c=>c.status==="drafted").length + (strat.pillar.status==="drafted"?1:0);
@@ -4632,27 +4620,17 @@ Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource
   // Pillar + Cluster content strategy based on GSC data
   // ─────────────────────────────────────────────────────────────
   const StrategyPlanner = () => {
+    const [view, setView] = useState(() => {
+      try { return JSON.parse(localStorage.getItem(`ra_strategy_${selectedSite}`) || "null") ? "planner" : "suggestions"; } catch { return "suggestions"; }
+    });
     const [generating, setGenerating] = useState(false);
     const [suggestions, setSuggestions] = useState(null);
     const [customTopic, setCustomTopic] = useState("");
 
-    // Strategy is now server-backed. While loading we render a brief skeleton
-    // (handled by the early-return below) so we don't flash empty state.
-    const [strategy, setStrategy, strategyStatus] = useRemoteState(selectedSite, 'strategy', null);
-
-    // View follows strategy: planner view if a strategy exists, else suggestions.
-    // We start in 'suggestions' and auto-switch to 'planner' once the strategy
-    // loads (if it has clusters). Resets on site change so the auto-switch
-    // fires for each site, but manual switches (user clicks "Generate new")
-    // within a site are preserved by the per-site init flag.
-    const [view, setView] = useState("suggestions");
-    const viewInitForSiteRef = useRef(null);
-    useEffect(() => {
-      if (strategyStatus !== 'ready') return;
-      if (viewInitForSiteRef.current === selectedSite) return;
-      viewInitForSiteRef.current = selectedSite;
-      setView(strategy && strategy.clusters ? 'planner' : 'suggestions');
-    }, [strategyStatus, strategy, selectedSite]);
+    // Load saved strategy for this site
+    const [strategy, setStrategy] = useState(() => {
+      try { return JSON.parse(localStorage.getItem(`ra_strategy_${selectedSite}`) || "null"); } catch { return null; }
+    });
 
     // Keyword enrichment via DataForSEO. Map of normalised keyword → { volume, cpc, competition, ... }
     // Persisted to localStorage so the user doesn't lose their data on reload.
@@ -4764,9 +4742,10 @@ Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource
       );
     };
 
-    // setStrategy is from useRemoteState — it updates local state AND persists
-    // to server (debounced) AND mirrors to localStorage. No separate save call needed.
-    const saveStrategy = (s) => setStrategy(s);
+    const saveStrategy = (s) => {
+      setStrategy(s);
+      localStorage.setItem(`ra_strategy_${selectedSite}`, JSON.stringify(s));
+    };
 
     // Generate cluster suggestions from GSC data
     const generateSuggestions = async (topic) => {
@@ -4776,10 +4755,9 @@ Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource
         const kwData = siteData?.keywords?.slice(0, 30).map(k => `"${k.keyword}" (pos #${k.position}, ${k.impressions} impressions, ${k.clicks} clicks)`).join("\n") || "No keyword data available";
         const pages = siteData?.pages?.slice(0, 10).map(p => p.page).join("\n") || "No page data";
 
-        // Load previous strategies and content to avoid duplication.
-        // Strategy history is server-backed; content history still local (migrated in a later stage).
+        // Load previous strategies and content to avoid duplication
         let prevStrategies = [];
-        try { prevStrategies = (await loadUserData(selectedSite, 'strategy_history')) || []; } catch {}
+        try { prevStrategies = JSON.parse(localStorage.getItem(`ra_strategy_history_${selectedSite}`) || "[]"); } catch {}
         let contentHistory = [];
         try { contentHistory = JSON.parse(localStorage.getItem(`ra_content_history_${selectedSite}`) || "[]"); } catch {}
         const currentStrategy = strategy;
@@ -4892,13 +4870,14 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
     };
 
     // Accept a suggestion and turn it into an active strategy
-    const acceptStrategy = async (s) => {
+    const acceptStrategy = (s) => {
       // Save current strategy to history before replacing
       if (strategy) {
         try {
-          const hist = (await loadUserData(selectedSite, 'strategy_history')) || [];
+          const histKey = `ra_strategy_history_${selectedSite}`;
+          const hist = JSON.parse(localStorage.getItem(histKey) || "[]");
           hist.push({ topic: strategy.topic, date: strategy.createdAt?.slice(0,10) || new Date().toISOString().slice(0,10), clusters: strategy.clusters.map(c => c.keyword) });
-          await saveUserData(selectedSite, 'strategy_history', hist.slice(-20)); // keep last 20
+          localStorage.setItem(histKey, JSON.stringify(hist.slice(-20))); // keep last 20
         } catch {}
       }
       const newStrategy = {
@@ -5582,17 +5561,17 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
     }
   };
 
-    const exportData = async () => {
+    const exportData = () => {
       const prospectData = {};
       const fixData = {};
       const contentData = {};
       const strategyData = {};
-      for (const s of sites) {
+      sites.forEach(s => {
         try { prospectData[s] = JSON.parse(localStorage.getItem(`ra_prospects_${s}`) || "[]"); } catch {}
         try { fixData[s] = JSON.parse(localStorage.getItem(`ra_done_${s}`) || "[]"); } catch {}
         try { contentData[s] = JSON.parse(localStorage.getItem(`ra_content_history_${s}`) || "[]"); } catch {}
-        try { strategyData[s] = (await loadUserData(s, 'strategy')) || null; } catch {}
-      }
+        try { strategyData[s] = JSON.parse(localStorage.getItem(`ra_strategy_${s}`) || "null"); } catch {}
+      });
       const realSites = sites.filter(s => s && s !== "mywebsite.com");
 
       const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>RankActions — Your Data Export</title>
@@ -5989,110 +5968,6 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
 
     const [url, setUrl] = useState(auditUrl || urlForSite(selectedSite));
 
-    // Agency white-label state. Two text inputs (company name + URL) shown
-    // inline next to the Download PDF button, ONLY visible to Agency-tier
-    // users. Both fields persist to localStorage (one set of values per user,
-    // not per-site — the agency name doesn't change per audited client).
-    // Empty values are fine; the PDF builder falls back to RankActions
-    // defaults for any branding field that isn't supplied.
-    const [wlName, setWlName] = useState(() => {
-      try { return localStorage.getItem("ra_wl_name") || ""; } catch { return ""; }
-    });
-    const [wlUrl, setWlUrl] = useState(() => {
-      try { return localStorage.getItem("ra_wl_url") || ""; } catch { return ""; }
-    });
-
-    // Persist on change. Wrapped in try/catch because localStorage can throw
-    // in private-browsing or quota-exceeded scenarios.
-    const updateWlName = (v) => {
-      setWlName(v);
-      try { localStorage.setItem("ra_wl_name", v); } catch {}
-    };
-    const updateWlUrl = (v) => {
-      setWlUrl(v);
-      try { localStorage.setItem("ra_wl_url", v); } catch {}
-    };
-
-    // Build the branding object passed to exportAuditPdf. Returns undefined
-    // if not Agency or both fields blank — the exporter then falls through to
-    // RankActions defaults, exactly as it did before this feature existed.
-    const buildWlBranding = () => {
-      if (!isAgency) return undefined;
-      const name = wlName.trim();
-      const siteUrl = wlUrl.trim();
-      if (!name && !siteUrl) return undefined;
-
-      // Two-tone wordmark split: if the agency name has multiple words, the
-      // last word renders in accent colour, the rest in dark. Single-word
-      // names render entirely in dark with empty suffix. Avoids needing the
-      // user to manually pick a split.
-      let prefix = name, suffix = "";
-      if (name) {
-        const parts = name.split(/\s+/);
-        if (parts.length > 1) {
-          suffix = parts.pop();
-          prefix = parts.join(" ") + " ";
-        }
-      }
-
-      // Strip protocol from URL for display ("e2e-integration.co.uk" reads
-      // cleaner than "https://e2e-integration.co.uk" in a footer).
-      const cleanUrl = siteUrl.replace(/^https?:\/\//i, "").replace(/\/+$/, "");
-
-      // Replace RankActions-specific cover-page sales copy with neutral,
-      // honest, audit-focused content. The agency isn't claiming to BE an
-      // SEO platform — they're delivering an audit using one. Copy reflects
-      // that.
-      return {
-        name: name || "Page SEO Audit",
-        wordmarkPrefix: prefix || "Page SEO ",
-        wordmarkSuffix: suffix || "Audit",
-        siteUrl: cleanUrl || undefined,
-
-        tagline: "Page SEO audit and recommendations",
-        intro: name
-          ? `A detailed page-level audit prepared by ${name}, covering on-page SEO, page speed (mobile), and AI search readiness — with prioritised recommendations.`
-          : "A detailed page-level audit covering on-page SEO, page speed (mobile), and AI search readiness — with prioritised recommendations.",
-        builtForLine: "On-page SEO · Page speed · AI search readiness · Prioritised recommendations",
-
-        // Replace the FIND/FIX/TRACK columns with neutral content describing
-        // what's IN this report, not what RankActions does as a product.
-        howWorksTitle: "What this report covers",
-        stages: [
-          {
-            stage: "SEO",
-            title: "On-page SEO",
-            desc: "Title tags, meta descriptions, headings, structured data, image alt text, internal linking, canonical tags, and more — graded out of 100.",
-            bullets: ["13 individual SEO checks", "Severity-ranked issues", "Plain-English explanations"],
-          },
-          {
-            stage: "SPEED",
-            title: "Page performance",
-            desc: "Mobile page speed measured by Google's PageSpeed Insights — Core Web Vitals (LCP, CLS, FCP) plus opportunities to reduce load time.",
-            bullets: ["Core Web Vitals", "Speed opportunities", "Mobile-first metrics"],
-          },
-          {
-            stage: "AI",
-            title: "AI search readiness",
-            desc: "Structural signals that determine whether ChatGPT, Google AI Overviews, and Perplexity will cite this page when answering relevant questions.",
-            bullets: ["FAQ + HowTo schema", "Question-based headings", "Author + content freshness"],
-          },
-        ],
-        whyTitle: "How to use this report",
-        proofPoints: [
-          ["Start with the top 3 priorities", "The first page lists the three highest-impact issues to fix — these typically deliver the largest measurable change."],
-          ["Work through severity bands", "Critical issues first, then warnings. Each item has a plain-English explanation and a recommended fix."],
-          ["Re-run regularly", "Page audits are point-in-time snapshots. Re-run monthly or after major changes to track progress."],
-        ],
-        ctaTitle: "Questions about this report?",
-        ctaBody: name && cleanUrl
-          ? `Get in touch with ${name} at ${cleanUrl} for help interpreting these results and implementing recommendations.`
-          : name
-            ? `Get in touch with ${name} for help interpreting these results and implementing recommendations.`
-            : `Get in touch for help interpreting these results and implementing recommendations.`,
-      };
-    };
-
     // Track which site this component last *observed* in state. Initialised
     // to selectedSite so first mount is treated as a no-op — we only act
     // when the site actually changes, never on initial render. Same pattern
@@ -6192,33 +6067,11 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
         {auditLoading && <div style={{textAlign:"center",padding:"3rem",color:"var(--text3)"}}><div className="spinner-sm" style={{margin:"0 auto .75rem"}}/>Scanning SEO and performance — this may take 10-15 seconds...</div>}
         {auditData?.error && <div style={{padding:"1rem",background:"rgba(240,62,95,.08)",border:"1px solid rgba(240,62,95,.2)",borderRadius:10,color:"#f03e5f",fontSize:".85rem"}}>Could not audit: {auditData.error}</div>}
         {auditData?.audited && <>
-          {/* ── Download PDF button + Agency white-label inputs ── */}
-          <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",gap:".5rem",marginBottom:".75rem",flexWrap:"wrap"}}>
-            {isAgency && (
-              <>
-                <input
-                  type="text"
-                  value={wlName}
-                  onChange={e=>updateWlName(e.target.value)}
-                  placeholder="Report by (your company name)"
-                  maxLength={60}
-                  title="Optional. If set, replaces RankActions branding on the cover page with your company name."
-                  style={{padding:".5rem .75rem",background:"var(--s2)",color:"var(--text)",border:"1px solid var(--border)",borderRadius:8,fontFamily:"var(--font)",fontSize:".8rem",outline:"none",width:"220px"}}
-                />
-                <input
-                  type="text"
-                  value={wlUrl}
-                  onChange={e=>updateWlUrl(e.target.value)}
-                  placeholder="yourcompany.co.uk"
-                  maxLength={80}
-                  title="Optional. Your website URL — appears in the report footer."
-                  style={{padding:".5rem .75rem",background:"var(--s2)",color:"var(--text)",border:"1px solid var(--border)",borderRadius:8,fontFamily:"var(--font)",fontSize:".8rem",outline:"none",width:"180px"}}
-                />
-              </>
-            )}
+          {/* ── Download PDF button ── */}
+          <div style={{display:"flex",justifyContent:"flex-end",marginBottom:".75rem"}}>
             <button
               type="button"
-              onClick={()=>exportAuditPdf({audit:auditData,perf:perfData,tier:plan,branding:buildWlBranding()})}
+              onClick={()=>exportAuditPdf({audit:auditData,perf:perfData,tier:plan})}
               disabled={perfLoading}
               title={perfLoading?"Wait for page speed scan to finish for a complete report":"Download branded PDF report"}
               style={{padding:".5rem 1rem",background:"transparent",color:"var(--green)",border:"1px solid var(--green)",borderRadius:8,fontFamily:"var(--font)",fontWeight:600,fontSize:".8rem",cursor:perfLoading?"wait":"pointer",opacity:perfLoading?.5:1,display:"inline-flex",alignItems:"center",gap:".4rem"}}>
@@ -7317,7 +7170,7 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
     // Mark wizard as complete and hand off to Strategy Planner.
     // Converts the AI-generated roadmap into the Strategy Planner's
     // pillar+clusters shape so users have a single home for their plan.
-    const completeWizard = async () => {
+    const completeWizard = () => {
       const items = state.roadmap?.items || [];
 
       // Edge case: no roadmap → just mark complete and exit
@@ -7329,15 +7182,16 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
 
       // Backup any existing strategy to history before replacing
       try {
-        const existing = await loadUserData(selectedSite, 'strategy');
+        const existing = JSON.parse(localStorage.getItem(`ra_strategy_${selectedSite}`) || "null");
         if (existing && (existing.clusters || []).length > 0) {
-          const hist = (await loadUserData(selectedSite, 'strategy_history')) || [];
+          const histKey = `ra_strategy_history_${selectedSite}`;
+          const hist = JSON.parse(localStorage.getItem(histKey) || "[]");
           hist.push({
             topic: existing.topic,
             date: existing.createdAt?.slice(0, 10) || new Date().toISOString().slice(0, 10),
             clusters: (existing.clusters || []).map(c => c.keyword),
           });
-          await saveUserData(selectedSite, 'strategy_history', hist.slice(-20));
+          localStorage.setItem(histKey, JSON.stringify(hist.slice(-20)));
         }
       } catch {}
 
@@ -7399,7 +7253,7 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
 
       // Save the strategy and mark wizard complete
       try {
-        await saveUserData(selectedSite, 'strategy', newStrategy);
+        localStorage.setItem(`ra_strategy_${selectedSite}`, JSON.stringify(newStrategy));
       } catch {}
 
       setState(s => ({
