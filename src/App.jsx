@@ -3348,7 +3348,7 @@ IMPORTANT — The keyword "${kw.trim()}" MUST appear verbatim in the title, meta
           <div className="upgrade-wall-sub">
             Pick a keyword from your dashboard, generate a fully SEO-optimised blog post in 30 seconds. Ready to publish, complete with meta tags, structured headings and a call to action.
           </div>
-          <button className="upgrade-wall-btn" onClick={()=>setShowUpgrade(true)}>Upgrade to Pro — £50/month</button>
+          <button className="upgrade-wall-btn" onClick={()=>setShowUpgrade(true)}>Upgrade to Pro — £39/month</button>
         </div>
       </div>
     );
@@ -4657,6 +4657,26 @@ Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource
       setEnrichError(null);
       setEnrichQuota(null);
     }, [selectedSite]);
+
+    // Gate for non-Pro users — placed after hooks so the hook count stays
+    // stable across renders if the user upgrades mid-session. Mirrors the
+    // ContentGenerator pattern.
+    if (!isPro) return (
+      <div className="content">
+        <div className="cg-header">
+          <div className="cg-title">Strategy Planner</div>
+          <div className="cg-sub">AI-powered pillar content strategy for your target keywords</div>
+        </div>
+        <div className="upgrade-wall" style={{maxWidth:480,margin:"3rem auto",textAlign:"center"}}>
+          <div className="upgrade-wall-icon">🗺</div>
+          <div className="upgrade-wall-h">Strategy Planner is a Pro feature</div>
+          <div className="upgrade-wall-sub">
+            Build a complete pillar content strategy in 60 seconds. AI analyses your keyword data, groups related terms into topic clusters, and creates a roadmap of one authority page plus 6–8 supporting blog posts.
+          </div>
+          <button className="upgrade-wall-btn" onClick={()=>setShowUpgrade(true)}>Upgrade to Pro — £39/month</button>
+        </div>
+      </div>
+    );
 
     const normaliseKw = (s) => String(s || "").toLowerCase().trim().replace(/\s+/g, " ");
 
@@ -6067,6 +6087,15 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
         {auditLoading && <div style={{textAlign:"center",padding:"3rem",color:"var(--text3)"}}><div className="spinner-sm" style={{margin:"0 auto .75rem"}}/>Scanning SEO and performance — this may take 10-15 seconds...</div>}
         {auditData?.error && <div style={{padding:"1rem",background:"rgba(240,62,95,.08)",border:"1px solid rgba(240,62,95,.2)",borderRadius:10,color:"#f03e5f",fontSize:".85rem"}}>Could not audit: {auditData.error}</div>}
         {auditData?.audited && <>
+          {/* ── Indexability banner — only when page won't appear in Google.
+              Renders above everything else because nothing matters until
+              indexability is fixed. ── */}
+          {auditData.indexability && !auditData.indexability.indexable && (
+            <div style={{padding:"1rem 1.25rem",background:"rgba(240,62,95,.12)",border:"1px solid rgba(240,62,95,.35)",borderRadius:10,marginBottom:"1rem"}}>
+              <div style={{fontWeight:700,fontSize:".95rem",marginBottom:".35rem",color:"#f03e5f"}}>⚠ This page cannot appear in Google — fix this before anything else</div>
+              <div style={{fontSize:".8rem",color:"var(--text2)"}}>Blocked by: {auditData.indexability.reasons.join(' · ')}. See the Indexability issues below for the exact fix.</div>
+            </div>
+          )}
           {/* ── Download PDF button ── */}
           <div style={{display:"flex",justifyContent:"flex-end",marginBottom:".75rem"}}>
             <button
@@ -6343,6 +6372,26 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
     const [newDomain, setNewDomain] = useState("");
     const [newType,   setNewType]   = useState("Guest Post");
     const [copiedEmail, setCopiedEmail] = useState(false);
+
+    // Gate for non-Pro users — placed after hooks so the hook count stays
+    // stable across renders if the user upgrades mid-session. Mirrors the
+    // ContentGenerator pattern.
+    if (!isPro) return (
+      <div className="content">
+        <div className="cg-header">
+          <div className="cg-title">Link Building</div>
+          <div className="cg-sub">AI-generated link opportunities and outreach templates</div>
+        </div>
+        <div className="upgrade-wall" style={{maxWidth:480,margin:"3rem auto",textAlign:"center"}}>
+          <div className="upgrade-wall-icon">🔗</div>
+          <div className="upgrade-wall-h">Link Building is a Pro feature</div>
+          <div className="upgrade-wall-sub">
+            Get AI-generated link opportunities specific to your site, plus personalised outreach emails for guest posts, resource pages, broken-link campaigns and more. Track every prospect from identified to secured.
+          </div>
+          <button className="upgrade-wall-btn" onClick={()=>setShowUpgrade(true)}>Upgrade to Pro — £39/month</button>
+        </div>
+      </div>
+    );
 
     const cols = [
       { id:"identified", label:"Identified",   color:"var(--blue)"  },
@@ -9021,11 +9070,15 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
         <Sidebar/>
         <div className="main-area">
           <TopBar/>
-          {/* TEMP — wizard test entry point. Remove before production launch. */}
-          <button onClick={()=>setScreen("startingOut")}
-            style={{position:"fixed",bottom:20,right:20,zIndex:9999,background:"#0fdb8a",color:"#000",border:"none",borderRadius:8,padding:".6rem 1rem",fontSize:".8rem",fontWeight:700,cursor:"pointer",boxShadow:"0 4px 12px rgba(0,0,0,.4)",fontFamily:"inherit"}}>
-            🧪 Test wizard
-          </button>
+          {/* Test wizard entry point — only shown when site has no meaningful
+              GSC data (fewer than 3 keywords). Mirrors the dashboard wizard
+              CTA visibility so the two appear and disappear together. */}
+          {(siteData?.keywords?.length || 0) < 3 && (
+            <button onClick={()=>setScreen("startingOut")}
+              style={{position:"fixed",bottom:20,right:20,zIndex:9999,background:"#0fdb8a",color:"#000",border:"none",borderRadius:8,padding:".6rem 1rem",fontSize:".8rem",fontWeight:700,cursor:"pointer",boxShadow:"0 4px 12px rgba(0,0,0,.4)",fontFamily:"inherit"}}>
+              🧪 Test wizard
+            </button>
+          )}
           {screen==="dashboard"  && <DashboardContent/>}
           {screen==="siteDetail" && <SiteDetailContent/>}
           {screen==="content"    && <ContentGenerator/>}
