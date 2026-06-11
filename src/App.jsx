@@ -5902,10 +5902,11 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
           }
           return;
         }
-        setTrackedKeywords(data.keywords || []);
-        setLimit(data.limit ?? null);
         setAddInput("");
         setShowAddForm(false);
+        // Re-fetch with full enrichment (latest/delta/sparkline) — the POST
+        // response only includes raw keyword records without history fields.
+        await refreshList();
       } catch (e) {
         setAddError(e.message || "Network error");
       } finally {
@@ -5927,8 +5928,9 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
           alert(data.error || `Remove failed (${res.status})`);
           return;
         }
-        setTrackedKeywords(data.keywords || []);
-        setLimit(data.limit ?? null);
+        // Re-fetch with full enrichment (latest/delta/sparkline) — the DELETE
+        // response only includes raw keyword records without history fields.
+        await refreshList();
       } catch (e) {
         alert(e.message || "Network error");
       } finally {
