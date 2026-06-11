@@ -6068,19 +6068,83 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
     }
     return (
       <div>
-        {/* Header bar — count, limit, filter toggle, add-button placeholder for 12d */}
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:".75rem",fontSize:".82rem"}}>
+        {/* Header bar — count, limit, filter toggle, add button */}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:".75rem",fontSize:".82rem",flexWrap:"wrap",gap:".5rem"}}>
           <div style={{color:"var(--text3)"}}>
             {visibleKeywords.length} of {trackedKeywords.length} keyword{trackedKeywords.length===1?"":"s"} · limit {limit ?? "—"}
             {usage && <span> · on-demand checks: {usage.used}/{usage.limit}</span>}
           </div>
-          <div style={{display:"flex",gap:".5rem",alignItems:"center"}}>
+          <div style={{display:"flex",gap:".75rem",alignItems:"center"}}>
             <label style={{display:"flex",gap:".35rem",alignItems:"center",cursor:"pointer",fontSize:".78rem",color:"var(--text2)"}}>
               <input type="checkbox" checked={filterStriking} onChange={e=>setFilterStriking(e.target.checked)} style={{cursor:"pointer"}}/>
               <span title="Show only keywords currently ranking on page 2 (positions 11-30)">Striking distance only</span>
             </label>
+            <button onClick={()=>{ setShowAddForm(!showAddForm); setAddError(null); }}
+              style={{
+                background: showAddForm ? "transparent" : "var(--green)",
+                color: showAddForm ? "var(--text2)" : "#fff",
+                border: showAddForm ? "1px solid var(--border)" : "1px solid var(--green)",
+                borderRadius:6, padding:".4rem .85rem", fontSize:".78rem", fontWeight:600,
+                cursor:"pointer", whiteSpace:"nowrap",
+              }}>
+              {showAddForm ? "Cancel" : "+ Add keywords"}
+            </button>
           </div>
         </div>
+
+        {/* Add-keyword form — slides below the header when toggled open */}
+        {showAddForm && (
+          <div style={{background:"var(--s1)",border:"1px solid var(--border)",borderRadius:10,padding:"1rem 1.25rem",marginBottom:"1rem"}}>
+            <div style={{fontSize:".82rem",fontWeight:600,marginBottom:".4rem"}}>Add keywords</div>
+            <div style={{fontSize:".72rem",color:"var(--text3)",marginBottom:".6rem"}}>
+              Enter one keyword per line. Each one gets a real Google SERP check every Sunday night.
+              {limit != null && (
+                <span> You can add up to {Math.max(0, limit - trackedKeywords.length)} more keyword{Math.max(0, limit - trackedKeywords.length)===1?"":"s"} on your plan.</span>
+              )}
+            </div>
+            <textarea
+              value={addInput}
+              onChange={e=>setAddInput(e.target.value)}
+              placeholder={"data protection consultancy\noutsourced DPO services\ngdpr compliance audit"}
+              disabled={adding}
+              rows={6}
+              style={{
+                width:"100%", boxSizing:"border-box",
+                background:"var(--s2)", color:"var(--text1)",
+                border:"1px solid var(--border)", borderRadius:6,
+                padding:".55rem .7rem", fontSize:".82rem", fontFamily:"inherit",
+                resize:"vertical", outline:"none",
+              }}
+            />
+            {addError && (
+              <div style={{marginTop:".5rem",padding:".5rem .65rem",background:"rgba(240,62,95,.12)",border:"1px solid rgba(240,62,95,.35)",borderRadius:6,color:"#f03e5f",fontSize:".75rem"}}>
+                {addError}
+              </div>
+            )}
+            <div style={{display:"flex",gap:".5rem",justifyContent:"flex-end",marginTop:".75rem"}}>
+              <button onClick={()=>{ setShowAddForm(false); setAddInput(""); setAddError(null); }}
+                disabled={adding}
+                style={{
+                  background:"transparent", color:"var(--text2)",
+                  border:"1px solid var(--border)", borderRadius:6,
+                  padding:".4rem .85rem", fontSize:".78rem", cursor: adding ? "not-allowed" : "pointer", opacity: adding ? 0.5 : 1,
+                }}>
+                Cancel
+              </button>
+              <button onClick={handleAdd}
+                disabled={adding || !addInput.trim()}
+                style={{
+                  background:"var(--green)", color:"#fff",
+                  border:"1px solid var(--green)", borderRadius:6,
+                  padding:".4rem .85rem", fontSize:".78rem", fontWeight:600,
+                  cursor: (adding || !addInput.trim()) ? "not-allowed" : "pointer",
+                  opacity: (adding || !addInput.trim()) ? 0.6 : 1,
+                }}>
+                {adding ? "Adding..." : "Add keywords"}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Table */}
         <div style={{background:"var(--s1)",borderRadius:12,border:"1px solid var(--border)",overflow:"hidden"}}>
