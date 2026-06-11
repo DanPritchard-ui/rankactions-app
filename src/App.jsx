@@ -5820,6 +5820,7 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [filterStriking, setFilterStriking] = useState(false);
+    const [showHelp, setShowHelp] = useState(false);
     const [showAddForm, setShowAddForm] = useState(false);
     const [addInput, setAddInput] = useState("");
     const [adding, setAdding] = useState(false);
@@ -6037,9 +6038,9 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
       const f = kw.latest?.features;
       const cited = kw.latest?.aiOverviewCited;
       const badges = [];
-      if (f?.aiOverview)       badges.push(<Badge key="aio" color={cited ? "green" : "amber"} text="AIO" title={cited ? "AI Overview present — your site is cited" : "AI Overview present — your site is NOT cited"}/>);
-      if (f?.featuredSnippet)  badges.push(<Badge key="fs"  color="purple" text="Snippet" title="Featured snippet present"/>);
-      if (f?.localPack)        badges.push(<Badge key="lp"  color="blue"   text="Local" title="Local pack present"/>);
+      if (f?.aiOverview)       badges.push(<Badge key="aio" color={cited ? "green" : "amber"} text="AI Overview" title={cited ? "Google's AI Overview appeared and cited your site" : "Google's AI Overview appeared but did NOT cite your site — an opportunity to optimise content"}/>);
+      if (f?.featuredSnippet)  badges.push(<Badge key="fs"  color="purple" text="Featured Snippet" title="Google's answer box appeared above the regular results"/>);
+      if (f?.localPack)        badges.push(<Badge key="lp"  color="blue"   text="Local Pack" title="Google's map + nearby business listings appeared (typically for 'near me' queries)"/>);
       if (badges.length === 0) return <span style={{color:"var(--text3)",fontSize:".7rem"}}>—</span>;
       return <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{badges}</div>;
     };
@@ -6124,6 +6125,51 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
           )}
         </div>
 
+        {/* Help toggle — subtle text link, expands the column key below */}
+        {trackedKeywords.length > 0 && (
+          <button onClick={()=>setShowHelp(!showHelp)}
+            style={{
+              background:"transparent", border:"none", cursor:"pointer",
+              color:"var(--text3)", fontSize:".74rem", padding:".2rem 0",
+              marginBottom:".5rem", textAlign:"left",
+              textDecoration:"underline", textDecorationStyle:"dotted", textUnderlineOffset:"3px",
+            }}>
+            {showHelp ? "✕ Hide column key" : "ⓘ What do these columns mean?"}
+          </button>
+        )}
+        {showHelp && (
+          <div style={{background:"var(--s1)",border:"1px solid var(--border)",borderRadius:8,padding:".9rem 1.1rem",marginBottom:".75rem",fontSize:".78rem",lineHeight:1.55}}>
+            <div style={{fontWeight:600,marginBottom:".55rem",fontSize:".82rem"}}>Column reference</div>
+            <div style={{color:"var(--text2)",display:"grid",gridTemplateColumns:"auto 1fr",gap:".4rem .85rem"}}>
+              <div style={{fontWeight:600,color:"var(--text1)"}}>Position</div>
+              <div>Where your site ranks in Google's <i>live</i> search results (not Search Console averages). <span style={{color:"#0fdb8a",fontWeight:600}}>Green</span> ≤ 10 (page 1) · <span style={{color:"#e08a3c",fontWeight:600}}>amber</span> 11-20 (page 2) · <span style={{color:"#f03e5f",fontWeight:600}}>red</span> below.</div>
+
+              <div style={{fontWeight:600,color:"var(--text1)"}}>Change</div>
+              <div>Position movement since the previous check. <span style={{color:"#0fdb8a",fontWeight:600}}>↑ green</span> = climbed (good); <span style={{color:"#f03e5f",fontWeight:600}}>↓ red</span> = dropped.</div>
+
+              <div style={{fontWeight:600,color:"var(--text1)"}}>Trend</div>
+              <div>Mini chart of the last 12 checks. Useful for spotting gradual climbs or sudden drops.</div>
+
+              <div style={{fontWeight:600,color:"var(--text1)"}}>Features</div>
+              <div>
+                Special elements Google shows alongside the regular blue links — these affect how visible your site really is:
+                <div style={{paddingLeft:".5rem",marginTop:".35rem",lineHeight:1.7}}>
+                  • <b style={{color:"#0fdb8a"}}>AI Overview (green)</b> — Google's AI-generated summary appeared at the top, and your site was one of the sources it cited.<br/>
+                  • <b style={{color:"#e08a3c"}}>AI Overview (amber)</b> — AI summary appeared but did <i>not</i> cite your site. Opportunity: optimise content to get cited.<br/>
+                  • <b style={{color:"#b08ee0"}}>Featured Snippet</b> — Google's "answer box" appeared above the regular results.<br/>
+                  • <b style={{color:"#6aa3e8"}}>Local Pack</b> — Map + nearby business listings (usually shown for "near me" or location-based queries).
+                </div>
+              </div>
+
+              <div style={{fontWeight:600,color:"var(--text1)"}}>Last checked</div>
+              <div>When this keyword was last refreshed. Cron runs every Sunday night automatically.</div>
+
+              <div style={{fontWeight:600,color:"var(--text1)"}}>↻ Check (Pro+)</div>
+              <div>Refresh this keyword's position immediately — uses one of your monthly on-demand checks.</div>
+            </div>
+          </div>
+        )}
+
         {/* Add-keyword form — slides below the header when toggled open */}
         {showAddForm && (
           <div style={{background:"var(--s1)",border:"1px solid var(--border)",borderRadius:10,padding:"1rem 1.25rem",marginBottom:"1rem"}}>
@@ -6185,11 +6231,16 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
               <thead>
                 <tr style={{borderBottom:"1px solid var(--border)",background:"var(--s2)"}}>
                   <th style={{padding:".55rem .85rem",textAlign:"left",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>Keyword</th>
-                  <th style={{padding:".55rem .65rem",textAlign:"center",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>Pos</th>
-                  <th style={{padding:".55rem .65rem",textAlign:"center",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>Δ</th>
-                  <th style={{padding:".55rem .65rem",textAlign:"center",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>Trend</th>
-                  <th style={{padding:".55rem .65rem",textAlign:"left",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>SERP</th>
-                  <th style={{padding:".55rem .65rem",textAlign:"left",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>Last</th>
+                  <th title="Where your site ranks in Google's live search results"
+                      style={{padding:".55rem .65rem",textAlign:"center",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>Position</th>
+                  <th title="Position movement since the previous check"
+                      style={{padding:".55rem .65rem",textAlign:"center",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>Change</th>
+                  <th title="Mini chart of the last 12 checks"
+                      style={{padding:".55rem .65rem",textAlign:"center",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>Trend</th>
+                  <th title="Special Google features (AI Overview, Featured Snippet, Local Pack) that appeared alongside the regular results"
+                      style={{padding:".55rem .65rem",textAlign:"left",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>Features</th>
+                  <th title="When this keyword was last checked"
+                      style={{padding:".55rem .65rem",textAlign:"left",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>Last checked</th>
                   <th style={{padding:".55rem .65rem",textAlign:"right",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>Actions</th>
                 </tr>
               </thead>
