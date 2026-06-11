@@ -6058,40 +6058,70 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
     if (error) {
       return <div style={{padding:"1rem 1.25rem",background:"rgba(240,62,95,.12)",border:"1px solid rgba(240,62,95,.35)",borderRadius:10,color:"#f03e5f",fontSize:".85rem"}}>Error: {error}</div>;
     }
-    if (trackedKeywords.length === 0) {
-      return <div style={{textAlign:"center",padding:"3rem",background:"var(--s1)",borderRadius:12,border:"1px solid var(--border)"}}>
+
+    // Plan-state derivations
+    const planLimit  = limit ?? 0;
+    const canAdd     = planLimit > 0;
+    const atLimit    = planLimit > 0 && trackedKeywords.length >= planLimit;
+    const remaining  = Math.max(0, planLimit - trackedKeywords.length);
+
+    // Empty-state copy varies by plan tier
+    const EmptyState = () => (
+      <div style={{textAlign:"center",padding:"3rem 1.5rem",background:"var(--s1)",borderRadius:12,border:"1px solid var(--border)"}}>
         <div style={{fontSize:"2rem",marginBottom:".5rem"}}>📌</div>
         <div style={{fontWeight:600,marginBottom:".4rem"}}>No keywords tracked yet</div>
-        <div style={{fontSize:".82rem",color:"var(--text3)",maxWidth:420,margin:"0 auto .25rem"}}>
-          Pin keywords you care about and we'll check their real position in Google every Sunday night.
-          {limit > 0 ? ` You can track up to ${limit} keywords on your plan.` : " Upgrade to Starter or higher to start tracking."}
+        <div style={{fontSize:".82rem",color:"var(--text3)",maxWidth:440,margin:"0 auto 1rem",lineHeight:1.5}}>
+          {canAdd
+            ? <>Pin keywords you care about and we'll check their real position in Google every Sunday night. You can track up to <b>{planLimit}</b> keywords on your plan.</>
+            : <>Your plan doesn't include tracked keywords. Upgrade to <b>Starter</b> (25 keywords) or <b>Pro</b> (100 keywords) to start tracking. Meanwhile, browse the <b>Discovered</b> tab for your existing rankings from Search Console.</>
+          }
         </div>
-      </div>;
-    }
+        {canAdd && (
+          <button onClick={()=>setShowAddForm(true)}
+            style={{
+              background:"var(--green)", color:"#fff",
+              border:"1px solid var(--green)", borderRadius:6,
+              padding:".55rem 1.1rem", fontSize:".85rem", fontWeight:600,
+              cursor:"pointer",
+            }}>
+            + Add your first keyword
+          </button>
+        )}
+      </div>
+    );
+
     return (
       <div>
         {/* Header bar — count, limit, filter toggle, add button */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:".75rem",fontSize:".82rem",flexWrap:"wrap",gap:".5rem"}}>
           <div style={{color:"var(--text3)"}}>
-            {visibleKeywords.length} of {trackedKeywords.length} keyword{trackedKeywords.length===1?"":"s"} · limit {limit ?? "—"}
+            {trackedKeywords.length === 0
+              ? <>0 keywords · limit {planLimit}</>
+              : <>{visibleKeywords.length} of {trackedKeywords.length} keyword{trackedKeywords.length===1?"":"s"} · limit {planLimit}</>
+            }
             {usage && <span> · on-demand checks: {usage.used}/{usage.limit}</span>}
           </div>
-          <div style={{display:"flex",gap:".75rem",alignItems:"center"}}>
-            <label style={{display:"flex",gap:".35rem",alignItems:"center",cursor:"pointer",fontSize:".78rem",color:"var(--text2)"}}>
-              <input type="checkbox" checked={filterStriking} onChange={e=>setFilterStriking(e.target.checked)} style={{cursor:"pointer"}}/>
-              <span title="Show only keywords currently ranking on page 2 (positions 11-30)">Striking distance only</span>
-            </label>
-            <button onClick={()=>{ setShowAddForm(!showAddForm); setAddError(null); }}
-              style={{
-                background: showAddForm ? "transparent" : "var(--green)",
-                color: showAddForm ? "var(--text2)" : "#fff",
-                border: showAddForm ? "1px solid var(--border)" : "1px solid var(--green)",
-                borderRadius:6, padding:".4rem .85rem", fontSize:".78rem", fontWeight:600,
-                cursor:"pointer", whiteSpace:"nowrap",
-              }}>
-              {showAddForm ? "Cancel" : "+ Add keywords"}
-            </button>
-          </div>
+          {canAdd && trackedKeywords.length > 0 && (
+            <div style={{display:"flex",gap:".75rem",alignItems:"center"}}>
+              <label style={{display:"flex",gap:".35rem",alignItems:"center",cursor:"pointer",fontSize:".78rem",color:"var(--text2)"}}>
+                <input type="checkbox" checked={filterStriking} onChange={e=>setFilterStriking(e.target.checked)} style={{cursor:"pointer"}}/>
+                <span title="Show only keywords currently ranking on page 2 (positions 11-30)">Striking distance only</span>
+              </label>
+              <button onClick={()=>{ if (!atLimit) { setShowAddForm(!showAddForm); setAddError(null); } }}
+                disabled={atLimit && !showAddForm}
+                title={atLimit ? `At plan limit (${planLimit}). Remove a keyword or upgrade to add more.` : undefined}
+                style={{
+                  background: showAddForm ? "transparent" : atLimit ? "var(--s2)" : "var(--green)",
+                  color: showAddForm ? "var(--text2)" : atLimit ? "var(--text3)" : "#fff",
+                  border: showAddForm ? "1px solid var(--border)" : atLimit ? "1px solid var(--border)" : "1px solid var(--green)",
+                  borderRadius:6, padding:".4rem .85rem", fontSize:".78rem", fontWeight:600,
+                  cursor: (atLimit && !showAddForm) ? "not-allowed" : "pointer", whiteSpace:"nowrap",
+                  opacity: (atLimit && !showAddForm) ? 0.6 : 1,
+                }}>
+                {showAddForm ? "Cancel" : atLimit ? `At limit (${planLimit})` : "+ Add keywords"}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Add-keyword form — slides below the header when toggled open */}
@@ -6100,8 +6130,8 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
             <div style={{fontSize:".82rem",fontWeight:600,marginBottom:".4rem"}}>Add keywords</div>
             <div style={{fontSize:".72rem",color:"var(--text3)",marginBottom:".6rem"}}>
               Enter one keyword per line. Each one gets a real Google SERP check every Sunday night.
-              {limit != null && (
-                <span> You can add up to {Math.max(0, limit - trackedKeywords.length)} more keyword{Math.max(0, limit - trackedKeywords.length)===1?"":"s"} on your plan.</span>
+              {planLimit > 0 && (
+                <span> You can add up to {remaining} more keyword{remaining===1?"":"s"} on your plan.</span>
               )}
             </div>
             <textarea
@@ -6148,71 +6178,73 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
           </div>
         )}
 
-        {/* Table */}
-        <div style={{background:"var(--s1)",borderRadius:12,border:"1px solid var(--border)",overflow:"hidden"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:".82rem"}}>
-            <thead>
-              <tr style={{borderBottom:"1px solid var(--border)",background:"var(--s2)"}}>
-                <th style={{padding:".55rem .85rem",textAlign:"left",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>Keyword</th>
-                <th style={{padding:".55rem .65rem",textAlign:"center",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>Pos</th>
-                <th style={{padding:".55rem .65rem",textAlign:"center",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>Δ</th>
-                <th style={{padding:".55rem .65rem",textAlign:"center",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>Trend</th>
-                <th style={{padding:".55rem .65rem",textAlign:"left",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>SERP</th>
-                <th style={{padding:".55rem .65rem",textAlign:"left",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>Last</th>
-                <th style={{padding:".55rem .65rem",textAlign:"right",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleKeywords.length === 0 ? (
-                <tr><td colSpan={7} style={{padding:"1.5rem",textAlign:"center",color:"var(--text3)",fontSize:".82rem"}}>
-                  No keywords match the striking-distance filter. Untick to see all.
-                </td></tr>
-              ) : visibleKeywords.map(kw => (
-                <tr key={kw.id} style={{borderBottom:"1px solid var(--b2)"}}>
-                  <td style={{padding:".6rem .85rem"}}>
-                    <div style={{fontWeight:600,fontSize:".82rem"}}>{kw.keyword}</div>
-                    {kw.latest?.url && <a href={kw.latest.url} target="_blank" rel="noopener" style={{fontSize:".68rem",color:"var(--text3)",textDecoration:"none",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:280}}>{kw.latest.url}</a>}
-                  </td>
-                  <td style={{padding:".6rem .65rem",textAlign:"center"}}>{renderPosition(kw.latest?.position)}</td>
-                  <td style={{padding:".6rem .65rem",textAlign:"center"}}>{renderDelta(kw.delta)}</td>
-                  <td style={{padding:".6rem .65rem",textAlign:"center",width:110}}>{renderSparkline(kw.sparkline)}</td>
-                  <td style={{padding:".6rem .65rem"}}>{renderFeatures(kw)}</td>
-                  <td style={{padding:".6rem .65rem"}}>{renderLastChecked(kw)}</td>
-                  <td style={{padding:".6rem .65rem",textAlign:"right",whiteSpace:"nowrap"}}>
-                    <div style={{display:"inline-flex",gap:".35rem",justifyContent:"flex-end",alignItems:"center"}}>
-                      {isPro && (
-                        <button onClick={()=>handleCheckNow(kw.id)}
+        {/* Body — either empty state or keyword table */}
+        {trackedKeywords.length === 0 ? <EmptyState/> : (
+          <div style={{background:"var(--s1)",borderRadius:12,border:"1px solid var(--border)",overflow:"hidden"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:".82rem"}}>
+              <thead>
+                <tr style={{borderBottom:"1px solid var(--border)",background:"var(--s2)"}}>
+                  <th style={{padding:".55rem .85rem",textAlign:"left",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>Keyword</th>
+                  <th style={{padding:".55rem .65rem",textAlign:"center",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>Pos</th>
+                  <th style={{padding:".55rem .65rem",textAlign:"center",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>Δ</th>
+                  <th style={{padding:".55rem .65rem",textAlign:"center",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>Trend</th>
+                  <th style={{padding:".55rem .65rem",textAlign:"left",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>SERP</th>
+                  <th style={{padding:".55rem .65rem",textAlign:"left",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>Last</th>
+                  <th style={{padding:".55rem .65rem",textAlign:"right",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleKeywords.length === 0 ? (
+                  <tr><td colSpan={7} style={{padding:"1.5rem",textAlign:"center",color:"var(--text3)",fontSize:".82rem"}}>
+                    No keywords match the striking-distance filter. Untick to see all.
+                  </td></tr>
+                ) : visibleKeywords.map(kw => (
+                  <tr key={kw.id} style={{borderBottom:"1px solid var(--b2)"}}>
+                    <td style={{padding:".6rem .85rem"}}>
+                      <div style={{fontWeight:600,fontSize:".82rem"}}>{kw.keyword}</div>
+                      {kw.latest?.url && <a href={kw.latest.url} target="_blank" rel="noopener" style={{fontSize:".68rem",color:"var(--text3)",textDecoration:"none",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:280}}>{kw.latest.url}</a>}
+                    </td>
+                    <td style={{padding:".6rem .65rem",textAlign:"center"}}>{renderPosition(kw.latest?.position)}</td>
+                    <td style={{padding:".6rem .65rem",textAlign:"center"}}>{renderDelta(kw.delta)}</td>
+                    <td style={{padding:".6rem .65rem",textAlign:"center",width:110}}>{renderSparkline(kw.sparkline)}</td>
+                    <td style={{padding:".6rem .65rem"}}>{renderFeatures(kw)}</td>
+                    <td style={{padding:".6rem .65rem"}}>{renderLastChecked(kw)}</td>
+                    <td style={{padding:".6rem .65rem",textAlign:"right",whiteSpace:"nowrap"}}>
+                      <div style={{display:"inline-flex",gap:".35rem",justifyContent:"flex-end",alignItems:"center"}}>
+                        {isPro && (
+                          <button onClick={()=>handleCheckNow(kw.id)}
+                            disabled={checkingId === kw.id || deletingId === kw.id}
+                            title="Refresh this keyword's position now (uses one on-demand check from your monthly quota)"
+                            style={{
+                              background:"transparent", color: checkingId===kw.id ? "var(--text3)" : "var(--text2)",
+                              border:"1px solid var(--border)", borderRadius:5,
+                              padding:".22rem .55rem", fontSize:".7rem", fontWeight:500,
+                              cursor: (checkingId===kw.id || deletingId===kw.id) ? "wait" : "pointer",
+                              opacity: (checkingId===kw.id || deletingId===kw.id) ? 0.6 : 1,
+                            }}>
+                            {checkingId === kw.id ? "Checking…" : "↻ Check"}
+                          </button>
+                        )}
+                        <button onClick={()=>handleRemove(kw.id, kw.keyword)}
                           disabled={checkingId === kw.id || deletingId === kw.id}
-                          title="Refresh this keyword's position now (uses one on-demand check from your monthly quota)"
+                          title="Stop tracking this keyword and delete its history"
                           style={{
-                            background:"transparent", color: checkingId===kw.id ? "var(--text3)" : "var(--text2)",
-                            border:"1px solid var(--border)", borderRadius:5,
+                            background:"transparent", color: deletingId===kw.id ? "var(--text3)" : "#f03e5f",
+                            border:"1px solid rgba(240,62,95,.3)", borderRadius:5,
                             padding:".22rem .55rem", fontSize:".7rem", fontWeight:500,
                             cursor: (checkingId===kw.id || deletingId===kw.id) ? "wait" : "pointer",
                             opacity: (checkingId===kw.id || deletingId===kw.id) ? 0.6 : 1,
                           }}>
-                          {checkingId === kw.id ? "Checking…" : "↻ Check"}
+                          {deletingId === kw.id ? "Removing…" : "Remove"}
                         </button>
-                      )}
-                      <button onClick={()=>handleRemove(kw.id, kw.keyword)}
-                        disabled={checkingId === kw.id || deletingId === kw.id}
-                        title="Stop tracking this keyword and delete its history"
-                        style={{
-                          background:"transparent", color: deletingId===kw.id ? "var(--text3)" : "#f03e5f",
-                          border:"1px solid rgba(240,62,95,.3)", borderRadius:5,
-                          padding:".22rem .55rem", fontSize:".7rem", fontWeight:500,
-                          cursor: (checkingId===kw.id || deletingId===kw.id) ? "wait" : "pointer",
-                          opacity: (checkingId===kw.id || deletingId===kw.id) ? 0.6 : 1,
-                        }}>
-                        {deletingId === kw.id ? "Removing…" : "Remove"}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     );
   };
