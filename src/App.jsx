@@ -6176,7 +6176,36 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
                   <td style={{padding:".6rem .65rem",textAlign:"center",width:110}}>{renderSparkline(kw.sparkline)}</td>
                   <td style={{padding:".6rem .65rem"}}>{renderFeatures(kw)}</td>
                   <td style={{padding:".6rem .65rem"}}>{renderLastChecked(kw)}</td>
-                  <td style={{padding:".6rem .65rem",textAlign:"right",color:"var(--text3)",fontSize:".75rem"}}>—</td>
+                  <td style={{padding:".6rem .65rem",textAlign:"right",whiteSpace:"nowrap"}}>
+                    <div style={{display:"inline-flex",gap:".35rem",justifyContent:"flex-end",alignItems:"center"}}>
+                      {isPro && (
+                        <button onClick={()=>handleCheckNow(kw.id)}
+                          disabled={checkingId === kw.id || deletingId === kw.id}
+                          title="Refresh this keyword's position now (uses one on-demand check from your monthly quota)"
+                          style={{
+                            background:"transparent", color: checkingId===kw.id ? "var(--text3)" : "var(--text2)",
+                            border:"1px solid var(--border)", borderRadius:5,
+                            padding:".22rem .55rem", fontSize:".7rem", fontWeight:500,
+                            cursor: (checkingId===kw.id || deletingId===kw.id) ? "wait" : "pointer",
+                            opacity: (checkingId===kw.id || deletingId===kw.id) ? 0.6 : 1,
+                          }}>
+                          {checkingId === kw.id ? "Checking…" : "↻ Check"}
+                        </button>
+                      )}
+                      <button onClick={()=>handleRemove(kw.id, kw.keyword)}
+                        disabled={checkingId === kw.id || deletingId === kw.id}
+                        title="Stop tracking this keyword and delete its history"
+                        style={{
+                          background:"transparent", color: deletingId===kw.id ? "var(--text3)" : "#f03e5f",
+                          border:"1px solid rgba(240,62,95,.3)", borderRadius:5,
+                          padding:".22rem .55rem", fontSize:".7rem", fontWeight:500,
+                          cursor: (checkingId===kw.id || deletingId===kw.id) ? "wait" : "pointer",
+                          opacity: (checkingId===kw.id || deletingId===kw.id) ? 0.6 : 1,
+                        }}>
+                        {deletingId === kw.id ? "Removing…" : "Remove"}
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
