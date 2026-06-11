@@ -5806,7 +5806,192 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
   // ─────────────────────────────────────────────────────────────
   // RANK TRACKER
   // ─────────────────────────────────────────────────────────────
-  const RankTracker = () => {
+  // ─────────────────────────────────────────────────────────────
+  // RANK TRACKER (Phase 2)
+  // Parent component manages tab state. Two sub-components:
+  // - RankTrackerTrackedTab: pinned keywords via DataForSEO (Phase 2)
+  // - RankTrackerDiscoveredTab: GSC snapshot view (existing system)
+  // ─────────────────────────────────────────────────────────────
+
+  // Pinned-keyword tab (Phase 2). Data layer here; visuals come in
+  // subsequent steps (12c–f). Uses /api/tracker/* endpoints we built.
+  const RankTrackerTrackedTab = () => {
+    const [trackedKeywords, setTrackedKeywords] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [filterStriking, setFilterStriking] = useState(false);
+    const [showAddForm, setShowAddForm] = useState(false);
+    const [addInput, setAddInput] = useState("");
+    const [adding, setAdding] = useState(false);
+    const [addError, setAddError] = useState(null);
+    const [checkingId, setCheckingId] = useState(null);
+    const [deletingId, setDeletingId] = useState(null);
+    const [usage, setUsage] = useState(null);  // { used, limit, remaining }
+    const [limit, setLimit] = useState(null);  // tracked-keywords limit from server
+
+    const loadedSite = useRef(null);
+
+    // Resolve siteUrl in the same shape the API expects (matches existing tracker pattern)
+    const siteUrl = (() => {
+      if (!selectedSite) return "";
+      if (selectedSite.startsWith("sc-domain:")) return `https://${selectedSite.replace("sc-domain:","")}`;
+      if (selectedSite.startsWith("http")) return selectedSite;
+      return `https://${selectedSite}`;
+    })();
+
+    useEffect(() => {
+      if (loadedSite.current === selectedSite) return;
+      loadedSite.current = selectedSite;
+      const load = async () => {
+        setLoading(true);
+        setError(null);
+        try {
+          const res = await authFetch(`${WORKER_URL}/api/tracker/keywords?siteUrl=${encodeURIComponent(siteUrl)}`);
+          const data = await res.json();
+          if (!res.ok) {
+            setError(data.error || `Failed to load (${res.status})`);
+            setTrackedKeywords([]);
+            return;
+          }
+          setTrackedKeywords(data.keywords || []);
+          setLimit(data.limit ?? null);
+        } catch (e) {
+          setError(e.message || "Network error");
+          setTrackedKeywords([]);
+        } finally {
+          setLoading(false);
+        }
+      };
+      load();
+    }, [selectedSite]);
+
+    // Refresh just the keyword list (after add / remove / check-now)
+    const refreshList = async () => {
+      try {
+        const res = await authFetch(`${WORKER_URL}/api/tracker/keywords?siteUrl=${encodeURIComponent(siteUrl)}`);
+        const data = await res.json();
+        if (res.ok) {
+          setTrackedKeywords(data.keywords || []);
+          setLimit(data.limit ?? null);
+        }
+      } catch {}
+    };
+
+    const handleAdd = async () => {
+      const lines = addInput.split("\n").map(l => l.trim()).filter(l => l);
+      if (lines.length === 0) {
+        setAddError("Enter at least one keyword.");
+        return;
+      }
+      setAdding(true);
+      setAddError(null);
+      try {
+        const res = await authFetch(`${WORKER_URL}/api/tracker/keywords`, {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ siteUrl, keywords: lines }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          if (res.status === 403 && data.upgrade) {
+            setAddError(`${data.error} — upgrade for more.`);
+          } else if (res.status === 409) {
+            setAddError("All those keywords are already tracked for this site.");
+          } else {
+            setAddError(data.error || `Add failed (${res.status})`);
+          }
+          return;
+        }
+        setTrackedKeywords(data.keywords || []);
+        setLimit(data.limit ?? null);
+        setAddInput("");
+        setShowAddForm(false);
+      } catch (e) {
+        setAddError(e.message || "Network error");
+      } finally {
+        setAdding(false);
+      }
+    };
+
+    const handleRemove = async (kwId, keywordLabel) => {
+      if (!confirm(`Remove "${keywordLabel}" and its rank history?`)) return;
+      setDeletingId(kwId);
+      try {
+        const res = await authFetch(`${WORKER_URL}/api/tracker/keywords`, {
+          method: "DELETE",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ ids: [kwId] }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          alert(data.error || `Remove failed (${res.status})`);
+          return;
+        }
+        setTrackedKeywords(data.keywords || []);
+        setLimit(data.limit ?? null);
+      } catch (e) {
+        alert(e.message || "Network error");
+      } finally {
+        setDeletingId(null);
+      }
+    };
+
+    const handleCheckNow = async (kwId) => {
+      setCheckingId(kwId);
+      try {
+        const res = await authFetch(`${WORKER_URL}/api/tracker/check-now`, {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ kwId }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          if (res.status === 429 && data.limit !== undefined) {
+            alert(`Out of on-demand checks this month (${data.currentUsage}/${data.limit} used).`);
+          } else if (res.status === 403 && data.upgrade) {
+            alert("On-demand checks require Pro or Agency plan.");
+          } else {
+            alert(data.error || `Check failed (${res.status})`);
+          }
+          return;
+        }
+        setUsage({ used: data.usage, limit: data.limit, remaining: data.remaining });
+        await refreshList();  // pick up new latest point in the list
+      } catch (e) {
+        alert(e.message || "Network error");
+      } finally {
+        setCheckingId(null);
+      }
+    };
+
+    // Striking distance = positions 11-30 (page 2 territory — focused effort can move these)
+    const visibleKeywords = filterStriking
+      ? trackedKeywords.filter(kw => kw.latest?.position != null && kw.latest.position >= 11 && kw.latest.position <= 30)
+      : trackedKeywords;
+
+    // Placeholder UI — real layout lands in 12c
+    return (
+      <div style={{padding:"2rem", textAlign:"center", color:"var(--text3)", background:"var(--s1)", border:"1px dashed var(--border)", borderRadius:10}}>
+        <div style={{fontSize:".9rem", marginBottom:".5rem", fontWeight:600, color:"var(--text2)"}}>TrackedTab — data layer wired up (visuals next)</div>
+        <div style={{fontSize:".78rem"}}>{trackedKeywords.length} keyword{trackedKeywords.length===1?"":"s"} loaded · limit {limit ?? "—"}</div>
+        {loading && <div style={{marginTop:".5rem"}}>Loading...</div>}
+        {error && <div style={{color:"#f03e5f", marginTop:".5rem"}}>Error: {error}</div>}
+        {!loading && !error && trackedKeywords.length > 0 && (
+          <div style={{marginTop:"1rem", textAlign:"left", maxWidth:600, margin:"1rem auto", background:"var(--s2)", padding:".75rem", borderRadius:8, fontSize:".75rem", fontFamily:"monospace"}}>
+            {trackedKeywords.map(kw => (
+              <div key={kw.id} style={{padding:".25rem 0", borderBottom:"1px solid var(--b2)"}}>
+                {kw.keyword} · pos={kw.latest?.position ?? "—"} · Δ={kw.delta ?? "—"} · history={kw.historyCount}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // GSC-snapshot tab — existing implementation lifted verbatim, just
+  // unwrapped from its outer container (page header moved to parent).
+  const RankTrackerDiscoveredTab = () => {
     const [trackedKws, setTrackedKws] = useState([]);
     const [selectedKw, setSelectedKw] = useState(null);
     const [localSnapshots, setLocalSnapshots] = useState([]);
@@ -5864,14 +6049,7 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
       const positions = history.map(d=>d.position);
       const maxP = Math.max(...positions,30), minP = Math.min(...positions,1), range = Math.max(maxP-minP,5);
       const cW=w-pL-pR, cH=h-pT-pB;
-      const pts = history.map((d,i)=>({ x:pL+(i/(history.length-1))*cW, y:pT+cH-((d.position-minP)/range)*cH }));
-      // Position 1 = top of chart (y inverted already since lower position = higher)
-      // Actually need to invert: lower position number should be higher on chart
       const invertPts = history.map((d,i)=>({ x:pL+(i/(history.length-1))*cW, y:pT+((d.position-minP)/range)*cH }));
-      // So position 1 is at top (small y), position 30 at bottom (large y) — that's wrong. Let me fix:
-      // We want: position 1 → y near pT (top), position 30 → y near pT+cH (bottom)
-      // y = pT + ((position - minP) / range) * cH — this puts minP at top, maxP at bottom. That's correct!
-      // Because lower position number is better and should be at the top.
       const line = invertPts.map((p,i)=>`${i===0?"M":"L"}${p.x},${p.y}`).join(" ");
       const area = `${line} L${invertPts[invertPts.length-1].x},${pT+cH} L${invertPts[0].x},${pT+cH} Z`;
       return (
@@ -5892,19 +6070,16 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
     };
 
     return (
-      <div className="content" style={{padding:"1.5rem 2rem",maxWidth:1100}}>
-        <div style={{marginBottom:"1.5rem"}}>
-          <div style={{fontSize:"1.3rem",fontWeight:700}}><Tip term="rankTracker">Rank Tracker</Tip></div>
-          <div style={{fontSize:".82rem",color:"var(--text3)"}}>{displaySite(selectedSite)} · {localSnapshots.length} snapshots · {trackedKws.length} keywords tracked</div>
-        </div>
+      <div>
+        <div style={{fontSize:".78rem",color:"var(--text3)",marginBottom:"1rem"}}>{localSnapshots.length} snapshots · {trackedKws.length} keywords discovered from Search Console</div>
         {loading ? (
           <div style={{textAlign:"center",padding:"3rem",color:"var(--text3)"}}><div className="spinner-sm" style={{margin:"0 auto .75rem"}}/>Loading rank history...</div>
         ) : trackedKws.length === 0 ? (
           <div style={{textAlign:"center",padding:"3rem",background:"var(--s1)",borderRadius:12,border:"1px solid var(--border)"}}>
-            <div style={{fontSize:"2rem",marginBottom:".5rem"}}>📈</div>
+            <div style={{fontSize:"2rem",marginBottom:".5rem"}}>🔍</div>
             <div style={{fontWeight:600,marginBottom:".4rem"}}>No rank data yet</div>
             <div style={{fontSize:".82rem",color:"var(--text3)",maxWidth:400,margin:"0 auto"}}>
-              RankActions captures your keyword positions automatically. Your first snapshot will appear after your next Monday digest, or reload this page to capture one now.
+              RankActions captures keywords from Search Console automatically. Your first snapshot will appear after your next Monday digest, or reload this page to capture one now.
             </div>
           </div>
         ) : (
@@ -5971,6 +6146,39 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
       </div>
     );
   };
+
+  // Parent — owns tab state, renders page header and tab switcher
+  const RankTracker = () => {
+    const [activeTab, setActiveTab] = useState('tracked');
+    return (
+      <div className="content" style={{padding:"1.5rem 2rem",maxWidth:1100}}>
+        <div style={{marginBottom:"1rem"}}>
+          <div style={{fontSize:"1.3rem",fontWeight:700}}><Tip term="rankTracker">Rank Tracker</Tip></div>
+          <div style={{fontSize:".82rem",color:"var(--text3)"}}>{displaySite(selectedSite)}</div>
+        </div>
+        <div style={{display:"flex",gap:0,borderBottom:"1px solid var(--border)",marginBottom:"1.5rem"}}>
+          {[
+            {id:'tracked',    label:'📌 Tracked keywords'},
+            {id:'discovered', label:'🔍 Discovered from Search Console'},
+          ].map(tab => (
+            <button key={tab.id} onClick={()=>setActiveTab(tab.id)}
+              style={{
+                background:"transparent",border:"none",cursor:"pointer",
+                padding:".65rem 1rem",fontSize:".85rem",
+                color: activeTab===tab.id ? "var(--text1)" : "var(--text3)",
+                fontWeight: activeTab===tab.id ? 700 : 500,
+                borderBottom: activeTab===tab.id ? "2px solid var(--green)" : "2px solid transparent",
+                marginBottom:"-1px",
+              }}>
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        {activeTab === 'tracked' ? <RankTrackerTrackedTab/> : <RankTrackerDiscoveredTab/>}
+      </div>
+    );
+  };
+
 
   // ─────────────────────────────────────────────────────────────
   // PAGE AUDIT
