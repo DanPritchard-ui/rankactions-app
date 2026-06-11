@@ -4166,7 +4166,8 @@ ${stratHtml}${contentHtml}
             <div style={{fontSize:".78rem",color:"var(--text2)",marginBottom:".75rem"}}>These keywords are close to page 1 — small improvements could unlock significant traffic</div>
             {kwStriking.length > 0 ? kwStriking.slice(0,8).map((k,i) => (
               <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:".4rem 0",borderBottom:"1px solid var(--b2)"}}>
-                <div style={{fontSize:".8rem",color:"var(--text)",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.keyword}</div>
+                <div style={{fontSize:".8rem",color:"var(--text)",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}
+                  title={k.keyword}>{k.keyword.replace(/^["']+|["']+$/g, '')}</div>
                 <div style={{display:"flex",alignItems:"center",gap:".75rem",flexShrink:0}}>
                   <span style={{fontSize:".75rem",fontWeight:700,fontFamily:"var(--mono)",color:"#f5a623"}}>#{k.position}</span>
                   <span style={{fontSize:".7rem",color:"var(--text3)"}}>{k.impressions} imp</span>
@@ -4186,12 +4187,38 @@ ${stratHtml}${contentHtml}
               <>
                 <div style={{fontSize:"1.4rem",fontWeight:800,fontFamily:"var(--mono)",color:"var(--green)",marginBottom:".5rem"}}>{completedFixes.length}</div>
                 <div style={{fontSize:".78rem",color:"var(--text2)",marginBottom:".75rem"}}>actions completed for {selectedSite}</div>
-                {completedFixes.slice(0,6).map((id,i) => (
-                  <div key={i} style={{display:"flex",alignItems:"center",gap:".5rem",padding:".3rem 0",fontSize:".78rem"}}>
-                    <span style={{color:"var(--green)"}}>✓</span>
-                    <span style={{color:"var(--text2)"}}>{id.replace("live-","Action #").replace("demo-","Fix: ")}</span>
-                  </div>
-                ))}
+                {completedFixes.slice(0,6).map((id,i) => {
+                  // Resolve the action ID to a human-readable label by looking
+                  // up the underlying keyword from the source data.
+                  // Format: live-N → topOpportunities[N], seo-N → keywords[N].
+                  // Note: this lookup is index-based, so if the source data
+                  // has reshuffled since the action was completed, the label
+                  // may point at a different keyword. A future fix would key
+                  // actions by stable identifier (e.g. slugified keyword)
+                  // rather than position-in-list.
+                  const stripQuotes = (s) => (s || "").replace(/^["']+|["']+$/g, '');
+                  let label = id;
+                  if (id.startsWith("live-ext-")) {
+                    label = "Ranking improvement (extended list)";
+                  } else if (id.startsWith("live-")) {
+                    const idx = parseInt(id.slice(5), 10);
+                    const opp = siteData?.topOpportunities?.[idx];
+                    label = opp?.keyword ? `Improve "${stripQuotes(opp.keyword)}"` : `Ranking improvement #${idx + 1}`;
+                  } else if (id.startsWith("seo-")) {
+                    const idx = parseInt(id.slice(4), 10);
+                    const kw = siteData?.keywords?.[idx];
+                    label = kw?.keyword ? `Improve "${stripQuotes(kw.keyword)}"` : `SEO opportunity #${idx + 1}`;
+                  } else if (id.startsWith("demo-")) {
+                    label = `Fix: ${id.slice(5)}`;
+                  }
+                  return (
+                    <div key={i} style={{display:"flex",alignItems:"center",gap:".5rem",padding:".3rem 0",fontSize:".78rem"}}>
+                      <span style={{color:"var(--green)",flexShrink:0}}>✓</span>
+                      <span style={{color:"var(--text2)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}
+                        title={id}>{label}</span>
+                    </div>
+                  );
+                })}
               </>
             ) : (
               <div style={{textAlign:"center",padding:"1.5rem 0"}}>
