@@ -5969,22 +5969,155 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
       ? trackedKeywords.filter(kw => kw.latest?.position != null && kw.latest.position >= 11 && kw.latest.position <= 30)
       : trackedKeywords;
 
-    // Placeholder UI — real layout lands in 12c
+    // ── Cell renderers ──────────────────────────────────────
+    const renderPosition = (pos) => {
+      if (pos == null) return <span style={{color:"var(--text3)",fontSize:".78rem"}}>100+</span>;
+      const color = pos <= 10 ? "var(--green)" : pos <= 20 ? "#b85c00" : "#f03e5f";
+      return <span style={{color,fontWeight:700,fontFamily:"monospace",fontSize:".85rem"}}>#{pos}</span>;
+    };
+
+    const renderDelta = (delta) => {
+      if (delta == null) return <span style={{color:"var(--text3)",fontSize:".78rem"}}>—</span>;
+      if (delta > 0)  return <span style={{color:"var(--green)",fontWeight:600,fontSize:".78rem"}}>↑{delta}</span>;
+      if (delta < 0)  return <span style={{color:"#f03e5f",fontWeight:600,fontSize:".78rem"}}>↓{Math.abs(delta)}</span>;
+      return <span style={{color:"var(--text3)",fontSize:".78rem"}}>→</span>;
+    };
+
+    // Compact 100×30 SVG sparkline of the last ~12 history points.
+    // Null positions ("not in top 100") are skipped — line connects only ranked checks.
+    const renderSparkline = (points) => {
+      const valid = (points || []).filter(p => p.position != null);
+      if (valid.length < 2) {
+        return <div style={{color:"var(--text3)",fontSize:".7rem",lineHeight:"30px"}}>—</div>;
+      }
+      const w = 100, h = 30;
+      const positions = valid.map(p => p.position);
+      const maxP = Math.max(...positions, 30);
+      const minP = Math.min(...positions, 1);
+      const range = Math.max(maxP - minP, 5);
+      const pts = valid.map((p, i) => ({
+        x: (i / (valid.length - 1)) * w,
+        y: ((p.position - minP) / range) * (h - 4) + 2,  // 2px padding top/bottom
+      }));
+      const line = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+      const last = pts[pts.length - 1];
+      // Last point color matches the position-band convention (green/amber/red)
+      const lastPos = valid[valid.length - 1].position;
+      const dotColor = lastPos <= 10 ? "var(--green)" : lastPos <= 20 ? "#b85c00" : "#f03e5f";
+      return (
+        <svg viewBox={`0 0 ${w} ${h}`} style={{width:w,height:h,display:"block"}} preserveAspectRatio="none">
+          <path d={line} fill="none" stroke="var(--green)" strokeWidth={1.4} strokeLinejoin="round"/>
+          <circle cx={last.x} cy={last.y} r={2.2} fill={dotColor}/>
+        </svg>
+      );
+    };
+
+    // Small badge for SERP-feature flags. The AI Overview badge is the
+    // only one with two states: amber if present-but-not-cited, green if cited.
+    const Badge = ({color, text, title}) => {
+      const colors = {
+        green: { bg: "rgba(15,219,138,.15)", fg: "#0fdb8a", brd: "rgba(15,219,138,.3)" },
+        amber: { bg: "rgba(184,92,0,.15)",   fg: "#e08a3c", brd: "rgba(184,92,0,.35)" },
+        blue:  { bg: "rgba(60,120,200,.15)", fg: "#6aa3e8", brd: "rgba(60,120,200,.35)" },
+        purple:{ bg: "rgba(140,90,200,.15)", fg: "#b08ee0", brd: "rgba(140,90,200,.35)" },
+      }[color] || { bg: "var(--s2)", fg: "var(--text2)", brd: "var(--border)" };
+      return (
+        <span title={title}
+          style={{display:"inline-block",fontSize:".65rem",padding:"1px 6px",
+            borderRadius:4,background:colors.bg,color:colors.fg,border:`1px solid ${colors.brd}`,
+            fontWeight:600,whiteSpace:"nowrap"}}>
+          {text}
+        </span>
+      );
+    };
+
+    const renderFeatures = (kw) => {
+      const f = kw.latest?.features;
+      const cited = kw.latest?.aiOverviewCited;
+      const badges = [];
+      if (f?.aiOverview)       badges.push(<Badge key="aio" color={cited ? "green" : "amber"} text="AIO" title={cited ? "AI Overview present — your site is cited" : "AI Overview present — your site is NOT cited"}/>);
+      if (f?.featuredSnippet)  badges.push(<Badge key="fs"  color="purple" text="Snippet" title="Featured snippet present"/>);
+      if (f?.localPack)        badges.push(<Badge key="lp"  color="blue"   text="Local" title="Local pack present"/>);
+      if (badges.length === 0) return <span style={{color:"var(--text3)",fontSize:".7rem"}}>—</span>;
+      return <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{badges}</div>;
+    };
+
+    const renderLastChecked = (kw) => {
+      const d = kw.latest?.date;
+      if (!d) return <span style={{color:"var(--text3)",fontSize:".7rem"}}>Never</span>;
+      const dt = new Date(d);
+      return <span style={{color:"var(--text3)",fontSize:".72rem"}}>{dt.toLocaleDateString("en-GB",{day:"numeric",month:"short"})}</span>;
+    };
+
+    // ── Render ──────────────────────────────────────────────
+    if (loading) {
+      return <div style={{textAlign:"center",padding:"3rem",color:"var(--text3)"}}><div className="spinner-sm" style={{margin:"0 auto .75rem"}}/>Loading tracked keywords...</div>;
+    }
+    if (error) {
+      return <div style={{padding:"1rem 1.25rem",background:"rgba(240,62,95,.12)",border:"1px solid rgba(240,62,95,.35)",borderRadius:10,color:"#f03e5f",fontSize:".85rem"}}>Error: {error}</div>;
+    }
+    if (trackedKeywords.length === 0) {
+      return <div style={{textAlign:"center",padding:"3rem",background:"var(--s1)",borderRadius:12,border:"1px solid var(--border)"}}>
+        <div style={{fontSize:"2rem",marginBottom:".5rem"}}>📌</div>
+        <div style={{fontWeight:600,marginBottom:".4rem"}}>No keywords tracked yet</div>
+        <div style={{fontSize:".82rem",color:"var(--text3)",maxWidth:420,margin:"0 auto .25rem"}}>
+          Pin keywords you care about and we'll check their real position in Google every Sunday night.
+          {limit > 0 ? ` You can track up to ${limit} keywords on your plan.` : " Upgrade to Starter or higher to start tracking."}
+        </div>
+      </div>;
+    }
     return (
-      <div style={{padding:"2rem", textAlign:"center", color:"var(--text3)", background:"var(--s1)", border:"1px dashed var(--border)", borderRadius:10}}>
-        <div style={{fontSize:".9rem", marginBottom:".5rem", fontWeight:600, color:"var(--text2)"}}>TrackedTab — data layer wired up (visuals next)</div>
-        <div style={{fontSize:".78rem"}}>{trackedKeywords.length} keyword{trackedKeywords.length===1?"":"s"} loaded · limit {limit ?? "—"}</div>
-        {loading && <div style={{marginTop:".5rem"}}>Loading...</div>}
-        {error && <div style={{color:"#f03e5f", marginTop:".5rem"}}>Error: {error}</div>}
-        {!loading && !error && trackedKeywords.length > 0 && (
-          <div style={{marginTop:"1rem", textAlign:"left", maxWidth:600, margin:"1rem auto", background:"var(--s2)", padding:".75rem", borderRadius:8, fontSize:".75rem", fontFamily:"monospace"}}>
-            {trackedKeywords.map(kw => (
-              <div key={kw.id} style={{padding:".25rem 0", borderBottom:"1px solid var(--b2)"}}>
-                {kw.keyword} · pos={kw.latest?.position ?? "—"} · Δ={kw.delta ?? "—"} · history={kw.historyCount}
-              </div>
-            ))}
+      <div>
+        {/* Header bar — count, limit, filter toggle, add-button placeholder for 12d */}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:".75rem",fontSize:".82rem"}}>
+          <div style={{color:"var(--text3)"}}>
+            {visibleKeywords.length} of {trackedKeywords.length} keyword{trackedKeywords.length===1?"":"s"} · limit {limit ?? "—"}
+            {usage && <span> · on-demand checks: {usage.used}/{usage.limit}</span>}
           </div>
-        )}
+          <div style={{display:"flex",gap:".5rem",alignItems:"center"}}>
+            <label style={{display:"flex",gap:".35rem",alignItems:"center",cursor:"pointer",fontSize:".78rem",color:"var(--text2)"}}>
+              <input type="checkbox" checked={filterStriking} onChange={e=>setFilterStriking(e.target.checked)} style={{cursor:"pointer"}}/>
+              <span title="Show only keywords currently ranking on page 2 (positions 11-30)">Striking distance only</span>
+            </label>
+          </div>
+        </div>
+
+        {/* Table */}
+        <div style={{background:"var(--s1)",borderRadius:12,border:"1px solid var(--border)",overflow:"hidden"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:".82rem"}}>
+            <thead>
+              <tr style={{borderBottom:"1px solid var(--border)",background:"var(--s2)"}}>
+                <th style={{padding:".55rem .85rem",textAlign:"left",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>Keyword</th>
+                <th style={{padding:".55rem .65rem",textAlign:"center",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>Pos</th>
+                <th style={{padding:".55rem .65rem",textAlign:"center",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>Δ</th>
+                <th style={{padding:".55rem .65rem",textAlign:"center",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>Trend</th>
+                <th style={{padding:".55rem .65rem",textAlign:"left",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>SERP</th>
+                <th style={{padding:".55rem .65rem",textAlign:"left",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>Last</th>
+                <th style={{padding:".55rem .65rem",textAlign:"right",fontWeight:600,color:"var(--text3)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".03em"}}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleKeywords.length === 0 ? (
+                <tr><td colSpan={7} style={{padding:"1.5rem",textAlign:"center",color:"var(--text3)",fontSize:".82rem"}}>
+                  No keywords match the striking-distance filter. Untick to see all.
+                </td></tr>
+              ) : visibleKeywords.map(kw => (
+                <tr key={kw.id} style={{borderBottom:"1px solid var(--b2)"}}>
+                  <td style={{padding:".6rem .85rem"}}>
+                    <div style={{fontWeight:600,fontSize:".82rem"}}>{kw.keyword}</div>
+                    {kw.latest?.url && <a href={kw.latest.url} target="_blank" rel="noopener" style={{fontSize:".68rem",color:"var(--text3)",textDecoration:"none",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:280}}>{kw.latest.url}</a>}
+                  </td>
+                  <td style={{padding:".6rem .65rem",textAlign:"center"}}>{renderPosition(kw.latest?.position)}</td>
+                  <td style={{padding:".6rem .65rem",textAlign:"center"}}>{renderDelta(kw.delta)}</td>
+                  <td style={{padding:".6rem .65rem",textAlign:"center",width:110}}>{renderSparkline(kw.sparkline)}</td>
+                  <td style={{padding:".6rem .65rem"}}>{renderFeatures(kw)}</td>
+                  <td style={{padding:".6rem .65rem"}}>{renderLastChecked(kw)}</td>
+                  <td style={{padding:".6rem .65rem",textAlign:"right",color:"var(--text3)",fontSize:".75rem"}}>—</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     );
   };
