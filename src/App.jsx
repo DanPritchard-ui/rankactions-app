@@ -6251,12 +6251,23 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
 
   // GSC-snapshot tab — existing implementation lifted verbatim, just
   // unwrapped from its outer container (page header moved to parent).
-  const RankTrackerDiscoveredTab = () => {
+  // Phase 2 step 13 adds a per-row "+ Track" button that pins the keyword
+  // into the new tracker system. Free users get the upgrade modal.
+  const RankTrackerDiscoveredTab = ({ setActiveTab }) => {
     const [trackedKws, setTrackedKws] = useState([]);
     const [selectedKw, setSelectedKw] = useState(null);
     const [localSnapshots, setLocalSnapshots] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [tracking, setTracking] = useState({});  // { [keyword]: true } — in-flight
+    const [tracked, setTracked]   = useState({});  // { [keyword]: true } — already pinned (this session or before)
     const loadedSite = useRef(null);
+
+    const siteUrl = (() => {
+      if (!selectedSite) return "";
+      if (selectedSite.startsWith("sc-domain:")) return `https://${selectedSite.replace("sc-domain:","")}`;
+      if (selectedSite.startsWith("http")) return selectedSite;
+      return `https://${selectedSite}`;
+    })();
 
     useEffect(() => {
       if (loadedSite.current === selectedSite) return;
@@ -6264,16 +6275,16 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
       const load = async () => {
         setLoading(true);
         try {
-          const siteUrl = selectedSite.startsWith("http") || selectedSite.startsWith("sc-domain:") ? selectedSite : `https://${selectedSite}`;
+          const siteUrlLocal = selectedSite.startsWith("http") || selectedSite.startsWith("sc-domain:") ? selectedSite : `https://${selectedSite}`;
           // Auto-save a snapshot for today
           if (userId) {
             await authFetch(`${WORKER_URL}/api/rank-snapshot/save`, {
               method: "POST", headers: {"Content-Type":"application/json"},
-              body: JSON.stringify({ siteUrl })
+              body: JSON.stringify({ siteUrl: siteUrlLocal })
             }).catch(()=>{});
           }
           // Fetch snapshots
-          const res = await authFetch(`${WORKER_URL}/api/rank-snapshots?siteUrl=${encodeURIComponent(siteUrl)}`);
+          const res = await authFetch(`${WORKER_URL}/api/rank-snapshots?siteUrl=${encodeURIComponent(siteUrlLocal)}`);
           const data = await res.json();
           if (data.snapshots) {
             setLocalSnapshots(data.snapshots);
@@ -6288,11 +6299,53 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
             setTrackedKws(sorted);
             if (sorted.length > 0) setSelectedKw(sorted[0].keyword);
           }
+          // Also fetch the user's pinned keywords so we can mark already-tracked ones
+          const pinnedRes = await authFetch(`${WORKER_URL}/api/tracker/keywords?siteUrl=${encodeURIComponent(siteUrl)}`).catch(()=>null);
+          if (pinnedRes && pinnedRes.ok) {
+            const pinnedData = await pinnedRes.json();
+            const map = {};
+            (pinnedData.keywords || []).forEach(kw => { map[kw.keyword.toLowerCase()] = true; });
+            setTracked(map);
+          }
         } catch {}
         setLoading(false);
       };
       load();
     }, [selectedSite]);
+
+    const trackKeyword = async (keyword) => {
+      // Free tier (no tracked-keyword allowance) → upgrade modal, not API call
+      if (!isStarter) {
+        setShowUpgrade(true);
+        return;
+      }
+      const lookup = keyword.toLowerCase();
+      if (tracked[lookup] || tracking[lookup]) return;
+      setTracking(prev => ({...prev, [lookup]: true}));
+      try {
+        const res = await authFetch(`${WORKER_URL}/api/tracker/keywords`, {
+          method: "POST", headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ siteUrl, keywords: [keyword] }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          setTracked(prev => ({...prev, [lookup]: true}));
+          // Switch to Tracked tab after a brief delay so user sees the success state
+          setTimeout(() => setActiveTab('tracked'), 600);
+        } else if (res.status === 403 && data.upgrade) {
+          setShowUpgrade(true);
+        } else if (res.status === 409) {
+          // Already tracked — treat as success
+          setTracked(prev => ({...prev, [lookup]: true}));
+        } else {
+          alert(data.error || `Track failed (${res.status})`);
+        }
+      } catch (e) {
+        alert(e.message || "Network error");
+      } finally {
+        setTracking(prev => { const next = {...prev}; delete next[lookup]; return next; });
+      }
+    };
 
     const getChange = (kw) => {
       const h = trackedKws.find(t => t.keyword === kw)?.history || [];
@@ -6343,24 +6396,44 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
             </div>
           </div>
         ) : (
-          <div style={{display:"grid",gridTemplateColumns:"260px 1fr",gap:"1.5rem",alignItems:"start"}}>
+          <div style={{display:"grid",gridTemplateColumns:"320px 1fr",gap:"1.5rem",alignItems:"start"}}>
             <div style={{background:"var(--s1)",borderRadius:12,border:"1px solid var(--border)",overflow:"hidden"}}>
               <div style={{padding:".65rem 1rem",borderBottom:"1px solid var(--border)",fontWeight:600,fontSize:".78rem",color:"var(--text3)"}}>Keywords ({trackedKws.length})</div>
               <div style={{maxHeight:480,overflow:"auto"}}>
                 {trackedKws.map(kw=>{
                   const ch = getChange(kw.keyword);
                   const latest = kw.history[kw.history.length-1];
+                  const lookup = kw.keyword.toLowerCase();
+                  const isTracked  = !!tracked[lookup];
+                  const isTracking = !!tracking[lookup];
                   return (
                     <div key={kw.keyword} onClick={()=>setSelectedKw(kw.keyword)}
                       style={{padding:".5rem .85rem",cursor:"pointer",borderBottom:"1px solid var(--b2)",
                         background:selectedKw===kw.keyword?"var(--s2)":"transparent",
-                        borderLeft:selectedKw===kw.keyword?"3px solid var(--green)":"3px solid transparent"}}>
-                      <div style={{fontSize:".78rem",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{kw.keyword}</div>
-                      <div style={{display:"flex",gap:".6rem",fontSize:".68rem",color:"var(--text3)"}}>
-                        <span>#{latest.position}</span>
-                        {ch!==null && <span style={{color:ch>0?"var(--green)":ch<0?"#f03e5f":"var(--text3)",fontWeight:600}}>{ch>0?`↑${ch}`:ch<0?`↓${Math.abs(ch)}`:"→"}</span>}
-                        <span>{kw.history.length}wk</span>
+                        borderLeft:selectedKw===kw.keyword?"3px solid var(--green)":"3px solid transparent",
+                        display:"flex",alignItems:"center",gap:".5rem"}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:".78rem",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{kw.keyword}</div>
+                        <div style={{display:"flex",gap:".6rem",fontSize:".68rem",color:"var(--text3)"}}>
+                          <span>#{latest.position}</span>
+                          {ch!==null && <span style={{color:ch>0?"var(--green)":ch<0?"#f03e5f":"var(--text3)",fontWeight:600}}>{ch>0?`↑${ch}`:ch<0?`↓${Math.abs(ch)}`:"→"}</span>}
+                          <span>{kw.history.length}wk</span>
+                        </div>
                       </div>
+                      <button onClick={(e)=>{ e.stopPropagation(); trackKeyword(kw.keyword); }}
+                        disabled={isTracked || isTracking}
+                        title={isTracked ? "Already tracked — view in Tracked tab" : isStarter ? "Pin this keyword to track its real position weekly" : "Upgrade to Starter or higher to track keywords"}
+                        style={{
+                          background: isTracked ? "transparent" : "transparent",
+                          color: isTracked ? "var(--green)" : isTracking ? "var(--text3)" : isStarter ? "var(--green)" : "var(--text3)",
+                          border: `1px solid ${isTracked ? "rgba(15,219,138,.35)" : "var(--border)"}`,
+                          borderRadius:5, padding:".2rem .5rem", fontSize:".66rem", fontWeight:600,
+                          cursor: isTracked ? "default" : isTracking ? "wait" : "pointer",
+                          whiteSpace:"nowrap", flexShrink:0,
+                          opacity: isTracking ? 0.6 : 1,
+                        }}>
+                        {isTracked ? "✓ Tracked" : isTracking ? "..." : "+ Track"}
+                      </button>
                     </div>
                   );
                 })}
@@ -6434,7 +6507,7 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
             </button>
           ))}
         </div>
-        {activeTab === 'tracked' ? <RankTrackerTrackedTab/> : <RankTrackerDiscoveredTab/>}
+        {activeTab === 'tracked' ? <RankTrackerTrackedTab/> : <RankTrackerDiscoveredTab setActiveTab={setActiveTab}/>}
       </div>
     );
   };
