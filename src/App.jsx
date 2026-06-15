@@ -959,6 +959,13 @@ export default function RankActions() {
   const [newSiteInput, setNewSiteInput] = useState("");
   const [siteOpen,     setSiteOpen]     = useState(false);
   const [activeTab,    setActiveTab]    = useState("Overview");
+  // currentView toggles between the portfolio dashboard (Agency+ feature) and
+  // the single-site experience. The default is set in a separate effect once
+  // plan + sites are known. `arrivedFromPortfolio` tracks whether the user
+  // drilled into the current site from the portfolio (vs picking it directly
+  // via the dropdown) so we can show the "← Back to Portfolio" breadcrumb.
+  const [currentView, setCurrentView] = useState("site");
+  const [arrivedFromPortfolio, setArrivedFromPortfolio] = useState(false);
   const [expandedFix,  setExpandedFix]  = useState(null);
   const [doneFixes,    setDoneFixes]    = useState(() => {
     try { const site = localStorage.getItem("rankactions_selectedSite") || "mywebsite.com"; return new Set(JSON.parse(localStorage.getItem(`ra_done_${site}`) || "[]")); } catch { return new Set(); }
@@ -972,6 +979,19 @@ export default function RankActions() {
   const [modalApplied, setModalApplied] = useState(new Set());
   const [indexingStatus, setIndexingStatus] = useState(null); // null | 'loading' | 'success' | 'error'
   const [indexingMsg, setIndexingMsg] = useState("");
+
+  // Default landing for Agency + Enterprise users with 2+ sites: portfolio view.
+  // Fires once per browser session (sessionStorage flag) so we don't fight the
+  // user if they manually navigate to a single-site view. The session flag
+  // resets on tab close, giving each new session the portfolio-first default.
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) return;
+    if (sessionStorage.getItem("rankactions_landing_decided") === "1") return;
+    if ((plan === "agency" || plan === "enterprise") && sites.length >= 2) {
+      setCurrentView("portfolio");
+    }
+    sessionStorage.setItem("rankactions_landing_decided", "1");
+  }, [isLoaded, isSignedIn, plan, sites.length]);
 
   const requestIndexing = async (pageUrl) => {
     setIndexingStatus("loading");
@@ -2121,11 +2141,14 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
   // ─────────────────────────────────────────────────────────────
   // Reusable sub-components
   // ─────────────────────────────────────────────────────────────
-  const Sidebar = () => (
+  const Sidebar = () => {
+    const isAgencyOrEnterprise = plan === "agency" || plan === "enterprise";
+    return (
     <div className="sidebar">
       <div className="sidebar-logo">Rank<em>Actions</em></div>
       <div className="sidebar-nav">
         {[
+          ...(isAgencyOrEnterprise ? [{id:"portfolio", icon:"⊞", label:"Portfolio"}] : []),
           {id:"dashboard",  icon:"⬡", label:"Dashboard"},
           {id:"siteDetail", icon:"◎", label:"Site Detail"},
           {id:"strategy",   icon:"🗺", label:"Strategy"},
@@ -2136,11 +2159,30 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
           {id:"reports",    icon:"📄", label:"Reports"},
           {id:"settings",   icon:"⚙", label:"Settings"},
           ...(isAdmin ? [{id:"admin", icon:"🔐", label:"Admin"}] : []),
-        ].map(n=>(
-          <div key={n.id} className={`nav-item ${screen===n.id?"active":""}`}
+        ].map(n=>{
+          // Portfolio is a meta-view — active when currentView === "portfolio".
+          // Everything else is "active" only when its screen matches AND we're
+          // not in portfolio view (otherwise the visual selection lies).
+          const isActive = n.id === "portfolio"
+            ? currentView === "portfolio"
+            : currentView === "site" && screen === n.id;
+          return (
+          <div key={n.id} className={`nav-item ${isActive?"active":""}`}
             data-tour={`nav-${n.id}`}
             onClick={()=>{
-              if(["dashboard","siteDetail","content","admin","reports","links","settings","strategy","tracker","audit"].includes(n.id)) setScreen(n.id);
+              if (n.id === "portfolio") {
+                setCurrentView("portfolio");
+                setArrivedFromPortfolio(false);
+                return;
+              }
+              if(["dashboard","siteDetail","content","admin","reports","links","settings","strategy","tracker","audit"].includes(n.id)) {
+                // Clicking any non-portfolio item exits portfolio view to single-site mode.
+                // We deliberately keep arrivedFromPortfolio as-is here: if the user came
+                // from Portfolio originally, they should still see the back breadcrumb
+                // while they navigate between screens within that site's experience.
+                setCurrentView("site");
+                setScreen(n.id);
+              }
             }}>
             <span style={{fontSize:"0.9rem"}}>{n.icon}</span>
             {n.label}
@@ -2149,10 +2191,10 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
             {n.id==="links" && !isPro && <span style={{fontSize:".6rem",marginLeft:"auto",color:"var(--text3)"}}>Pro</span>}
             {n.id==="tracker" && !isStarter && <span style={{fontSize:".6rem",marginLeft:"auto",color:"var(--text3)"}}>Starter</span>}
           </div>
-        ))}
+        );})}
       </div>
     </div>
-  );
+  );};
 
   const TopBar = () => (
     <div className="topbar">
@@ -2167,6 +2209,12 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
                 onClick={()=>{
                   setSelectedSite(s);
                   localStorage.setItem("rankactions_selectedSite", s);
+                  // If user is in Portfolio view and uses dropdown to jump to
+                  // a site, drop them into that site's full experience.
+                  if (currentView === "portfolio") {
+                    setCurrentView("site");
+                    setArrivedFromPortfolio(true);
+                  }
                   setSiteOpen(false);setSiteData(null);setAiSummary(null);
                 }}>
                 {displaySite(s)}
@@ -3068,6 +3116,237 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
               </div>
             </> : null}
           </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ─────────────────────────────────────────────────────────────
+  // PORTFOLIO — Agency + Enterprise multi-site overview
+  // ─────────────────────────────────────────────────────────────
+  // Triage view for users managing multiple sites. Shows 28-day clicks,
+  // delta vs prior 28d, and a health indicator per site. Default sort
+  // surfaces declining sites first. Click a row to drop into that site's
+  // full single-site experience.
+
+  const Portfolio = () => {
+    const [data, setData] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [showOnlyAttention, setShowOnlyAttention] = useState(false);
+
+    useEffect(() => {
+      let cancelled = false;
+      (async () => {
+        setLoading(true);
+        setError(null);
+        try {
+          const res = await authFetch(`${WORKER_URL}/api/portfolio`);
+          const json = await res.json();
+          if (cancelled) return;
+          if (!res.ok) {
+            setError(json.error || 'load_failed');
+            return;
+          }
+          setData(json);
+        } catch (err) {
+          if (!cancelled) setError(err.message || 'network_error');
+        } finally {
+          if (!cancelled) setLoading(false);
+        }
+      })();
+      return () => { cancelled = true; };
+    }, []);
+
+    const goToSite = (siteUrl) => {
+      setSelectedSite(siteUrl);
+      localStorage.setItem("rankactions_selectedSite", siteUrl);
+      setArrivedFromPortfolio(true);
+      setCurrentView("site");
+      setActiveTab("Overview");
+    };
+
+    const healthColor = {
+      red:   "var(--red)",
+      amber: "var(--amber)",
+      green: "var(--green)",
+      grey:  "var(--text3)",
+    };
+    const healthLabel = {
+      red:   "Needs attention",
+      amber: "Declining",
+      green: "Stable",
+      grey:  "No data yet",
+    };
+
+    // Loading
+    if (loading) {
+      return (
+        <div style={{padding:"3rem 2rem",textAlign:"center"}}>
+          <div className="spinner" style={{width:28,height:28,margin:"0 auto 1rem"}}/>
+          <div style={{color:"var(--text2)",fontSize:".9rem"}}>Loading your portfolio...</div>
+        </div>
+      );
+    }
+
+    // Tier error
+    if (error === 'tier_required') {
+      return (
+        <div style={{maxWidth:520,margin:"4rem auto",padding:"2.5rem 2rem",background:"var(--s1)",border:"1px solid var(--border)",borderRadius:14,textAlign:"center"}}>
+          <div style={{fontSize:".7rem",color:"var(--text3)",letterSpacing:".1em",textTransform:"uppercase",marginBottom:".5rem"}}>Agency Feature</div>
+          <h2 style={{fontSize:"1.4rem",fontWeight:700,marginBottom:".75rem"}}>Portfolio is an Agency feature</h2>
+          <p style={{color:"var(--text2)",fontSize:".92rem",lineHeight:1.55,marginBottom:"1.5rem"}}>
+            Get a single overview of every site you manage — health status, traffic trends, what needs attention this week.
+          </p>
+          <button onClick={()=>setShowUpgrade(true)}
+            style={{background:"var(--blue)",color:"#fff",border:"none",borderRadius:8,padding:".7rem 1.4rem",fontSize:".9rem",fontWeight:600,cursor:"pointer"}}>
+            Upgrade to Agency — £149/month
+          </button>
+        </div>
+      );
+    }
+
+    // Other errors
+    if (error) {
+      return (
+        <div style={{maxWidth:520,margin:"3rem auto",padding:"1.25rem 1.5rem",background:"var(--rdim)",border:"1px solid var(--red)",borderRadius:10,color:"var(--red)",fontSize:".9rem"}}>
+          Couldn't load portfolio: {error}. Try refreshing in a minute.
+        </div>
+      );
+    }
+
+    // Empty / sub-2 site states
+    if (!data || !data.sites || data.sites.length === 0) {
+      const hint = data?.hint;
+      return (
+        <div style={{maxWidth:520,margin:"4rem auto",padding:"2.5rem 2rem",background:"var(--s1)",border:"1px solid var(--border)",borderRadius:14,textAlign:"center"}}>
+          <h2 style={{fontSize:"1.3rem",fontWeight:700,marginBottom:".75rem"}}>
+            {hint === 'single_site' ? "Add more sites to use Portfolio" : "Connect a site to get started"}
+          </h2>
+          <p style={{color:"var(--text2)",fontSize:".92rem",lineHeight:1.55,marginBottom:"1.5rem"}}>
+            {hint === 'single_site'
+              ? "Portfolio is designed for managing 2+ sites at once. Once you've connected your second site, this view will fill in."
+              : "Connect Google Search Console to start tracking your sites."}
+          </p>
+          <button onClick={()=>{ setCurrentView("site"); }}
+            style={{background:"var(--blue)",color:"#fff",border:"none",borderRadius:8,padding:".65rem 1.25rem",fontSize:".88rem",fontWeight:600,cursor:"pointer"}}>
+            {hint === 'single_site' ? "Go to my site" : "Connect a site"}
+          </button>
+        </div>
+      );
+    }
+
+    // Filtered list
+    const visibleSites = showOnlyAttention
+      ? data.sites.filter(s => s.health === 'red' || s.health === 'amber')
+      : data.sites;
+
+    const counts = data.sites.reduce((acc, s) => { acc[s.health] = (acc[s.health]||0)+1; return acc; }, {});
+    const ageMs = Date.now() - (data.generatedAt || Date.now());
+    const ageDays = Math.floor(ageMs / 86_400_000);
+    const ageStr = ageDays === 0 ? "today" : ageDays === 1 ? "yesterday" : `${ageDays} days ago`;
+
+    return (
+      <div style={{maxWidth:1200,margin:"0 auto",padding:"2rem 1.5rem"}}>
+        {/* Header */}
+        <div style={{marginBottom:"1.5rem"}}>
+          <div style={{fontSize:".7rem",color:"var(--text3)",letterSpacing:".1em",textTransform:"uppercase",marginBottom:".35rem"}}>Portfolio</div>
+          <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",flexWrap:"wrap",gap:"1rem"}}>
+            <h1 style={{fontSize:"1.65rem",fontWeight:700,letterSpacing:"-.02em"}}>
+              {data.sites.length} {data.sites.length === 1 ? "site" : "sites"} under management
+            </h1>
+            <div style={{fontSize:".78rem",color:"var(--text3)"}}>
+              Last updated {ageStr} {data.cached === false && <span style={{color:"var(--green)"}}>· just refreshed</span>}
+            </div>
+          </div>
+        </div>
+
+        {/* Summary chips */}
+        <div style={{display:"flex",gap:".5rem",marginBottom:"1.25rem",flexWrap:"wrap"}}>
+          {counts.red > 0 && (
+            <div style={{background:"var(--rdim)",color:"var(--red)",padding:".4rem .75rem",borderRadius:999,fontSize:".78rem",fontWeight:600}}>
+              ● {counts.red} need attention
+            </div>
+          )}
+          {counts.amber > 0 && (
+            <div style={{background:"var(--adim)",color:"var(--amber)",padding:".4rem .75rem",borderRadius:999,fontSize:".78rem",fontWeight:600}}>
+              ● {counts.amber} declining
+            </div>
+          )}
+          {counts.green > 0 && (
+            <div style={{background:"var(--gdim)",color:"var(--green)",padding:".4rem .75rem",borderRadius:999,fontSize:".78rem",fontWeight:600}}>
+              ● {counts.green} stable
+            </div>
+          )}
+          {counts.grey > 0 && (
+            <div style={{background:"var(--s2)",color:"var(--text3)",padding:".4rem .75rem",borderRadius:999,fontSize:".78rem",fontWeight:600}}>
+              ● {counts.grey} no data
+            </div>
+          )}
+        </div>
+
+        {/* Filter toggle */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",marginBottom:".75rem"}}>
+          <label style={{display:"flex",alignItems:"center",gap:".55rem",cursor:"pointer",fontSize:".82rem",color:"var(--text2)"}}>
+            <input type="checkbox" checked={showOnlyAttention} onChange={e=>setShowOnlyAttention(e.target.checked)}
+              style={{width:16,height:16,cursor:"pointer",accentColor:"var(--blue)"}}/>
+            Only show sites needing attention
+          </label>
+        </div>
+
+        {/* Table */}
+        <div style={{background:"var(--s1)",border:"1px solid var(--border)",borderRadius:12,overflow:"hidden"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:".88rem"}}>
+            <thead>
+              <tr style={{background:"var(--s2)",textAlign:"left",fontSize:".72rem",letterSpacing:".05em",textTransform:"uppercase",color:"var(--text3)"}}>
+                <th style={{padding:".75rem 1rem",width:"40%"}}>Site</th>
+                <th style={{padding:".75rem 1rem",textAlign:"right"}}>28-day clicks</th>
+                <th style={{padding:".75rem 1rem",textAlign:"right"}}>Δ vs prior 28d</th>
+                <th style={{padding:".75rem 1rem"}}>Health</th>
+                <th style={{padding:".75rem 1rem",width:"1%"}}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleSites.length === 0 ? (
+                <tr><td colSpan={5} style={{padding:"2rem 1rem",textAlign:"center",color:"var(--text3)",fontSize:".88rem"}}>
+                  No sites match the current filter.
+                </td></tr>
+              ) : visibleSites.map((s) => {
+                const deltaPositive = s.delta > 0;
+                const deltaSign = deltaPositive ? "+" : (s.delta < 0 ? "" : "");
+                const deltaColor = s.delta > 0 ? "var(--green)" : (s.delta < 0 ? "var(--red)" : "var(--text3)");
+                return (
+                  <tr key={s.site} onClick={()=>goToSite(s.site)}
+                    style={{borderTop:"1px solid var(--b2)",cursor:"pointer",transition:"background .12s"}}
+                    onMouseEnter={e=>e.currentTarget.style.background="var(--s2)"}
+                    onMouseLeave={e=>e.currentTarget.style.background=""}>
+                    <td style={{padding:".85rem 1rem",fontWeight:600,color:"var(--text)"}}>
+                      {displaySite(s.site)}
+                      {s.error && <span style={{fontSize:".72rem",color:"var(--red)",marginLeft:".5rem",fontWeight:400}}>· error: {s.error}</span>}
+                    </td>
+                    <td style={{padding:".85rem 1rem",textAlign:"right",fontFamily:"var(--mono)",color:"var(--text)"}}>
+                      {s.clicks28d.toLocaleString()}
+                    </td>
+                    <td style={{padding:".85rem 1rem",textAlign:"right",fontFamily:"var(--mono)",color:deltaColor,fontWeight:600}}>
+                      {deltaSign}{s.delta.toLocaleString()} ({deltaSign}{s.deltaPct}%)
+                    </td>
+                    <td style={{padding:".85rem 1rem"}}>
+                      <div style={{display:"inline-flex",alignItems:"center",gap:".4rem"}}>
+                        <span style={{width:9,height:9,borderRadius:"50%",background:healthColor[s.health]}}/>
+                        <span style={{color:"var(--text2)",fontSize:".82rem"}}>{healthLabel[s.health]}</span>
+                      </div>
+                    </td>
+                    <td style={{padding:".85rem 1rem",color:"var(--text3)",fontSize:"1rem"}}>→</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Footer note */}
+        <div style={{marginTop:"1rem",fontSize:".75rem",color:"var(--text3)",textAlign:"center"}}>
+          Click any site to open its full RankActions view · Data refreshes weekly
         </div>
       </div>
     );
@@ -9766,24 +10045,38 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
           {/* Test wizard entry point — only shown when site has no meaningful
               GSC data (fewer than 3 keywords). Mirrors the dashboard wizard
               CTA visibility so the two appear and disappear together. */}
-          {(siteData?.keywords?.length || 0) < 3 && (
+          {currentView !== "portfolio" && (siteData?.keywords?.length || 0) < 3 && (
             <button onClick={()=>setScreen("startingOut")}
               style={{position:"fixed",bottom:20,right:20,zIndex:9999,background:"#0fdb8a",color:"#000",border:"none",borderRadius:8,padding:".6rem 1rem",fontSize:".8rem",fontWeight:700,cursor:"pointer",boxShadow:"0 4px 12px rgba(0,0,0,.4)",fontFamily:"inherit"}}>
               🧪 Test wizard
             </button>
           )}
-          {screen==="dashboard"  && <DashboardContent/>}
-          {screen==="siteDetail" && <SiteDetailContent/>}
-          {screen==="content"    && <ContentGenerator/>}
-          {screen==="strategy"   && <StrategyPlanner/>}
-          {screen==="links"      && <LinkBuildingScreen/>}
-          {screen==="tracker"    && <RankTracker/>}
-          {screen==="audit"      && <PageAudit/>}
-          {screen==="startingOut" && <StartingOutWizard/>}
-          {screen==="settings"   && <SettingsScreen/>}
-          {screen==="reports"    && <ReportsTab/>}
-          {screen==="admin"      && isAdmin && <AdminPanel/>}
-          {screen==="admin"      && !isAdmin && <div className="content" style={{textAlign:"center",paddingTop:"4rem",color:"var(--text3)"}}>Access denied.</div>}
+          {/* Portfolio view (Agency + Enterprise) replaces the per-site screens entirely.
+              A meta-level "where am I in the app" toggle. */}
+          {currentView === "portfolio" ? <Portfolio/> : <>
+            {/* Back-to-portfolio breadcrumb — shown when the user drilled into a site
+                from the portfolio, gives them a one-click way back to the overview. */}
+            {arrivedFromPortfolio && (
+              <div style={{padding:".6rem 1.5rem .25rem",fontSize:".82rem"}}>
+                <button onClick={()=>{ setCurrentView("portfolio"); setArrivedFromPortfolio(false); }}
+                  style={{background:"none",border:"none",color:"var(--text2)",cursor:"pointer",fontFamily:"inherit",fontSize:".82rem",padding:0,display:"inline-flex",alignItems:"center",gap:".35rem"}}>
+                  ← Back to Portfolio
+                </button>
+              </div>
+            )}
+            {screen==="dashboard"  && <DashboardContent/>}
+            {screen==="siteDetail" && <SiteDetailContent/>}
+            {screen==="content"    && <ContentGenerator/>}
+            {screen==="strategy"   && <StrategyPlanner/>}
+            {screen==="links"      && <LinkBuildingScreen/>}
+            {screen==="tracker"    && <RankTracker/>}
+            {screen==="audit"      && <PageAudit/>}
+            {screen==="startingOut" && <StartingOutWizard/>}
+            {screen==="settings"   && <SettingsScreen/>}
+            {screen==="reports"    && <ReportsTab/>}
+            {screen==="admin"      && isAdmin && <AdminPanel/>}
+            {screen==="admin"      && !isAdmin && <div className="content" style={{textAlign:"center",paddingTop:"4rem",color:"var(--text3)"}}>Access denied.</div>}
+          </>}
           
           {/* Disclaimer footer */}
           <div style={{padding:"1rem 2rem",borderTop:"1px solid var(--border)",fontSize:".68rem",color:"var(--text3)",lineHeight:1.6,textAlign:"center"}}>
