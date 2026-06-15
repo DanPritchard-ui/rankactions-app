@@ -3124,10 +3124,13 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
   // ─────────────────────────────────────────────────────────────
   // PORTFOLIO — Agency + Enterprise multi-site overview
   // ─────────────────────────────────────────────────────────────
-  // Triage view for users managing multiple sites. Shows 28-day clicks,
-  // delta vs prior 28d, and a health indicator per site. Default sort
-  // surfaces declining sites first. Click a row to drop into that site's
-  // full single-site experience.
+  // Triage view for users managing multiple sites. Shows:
+  //   - 4 KPI cards (clicks, delta, sites needing attention, stable count)
+  //   - 12-week portfolio clicks trend line chart
+  //   - Health donut + top risers/fallers
+  //   - Per-site table with 6-week sparklines
+  // Default sort surfaces declining sites first. Click any site row, riser,
+  // or faller to drop into that site's full single-site experience.
 
   const Portfolio = () => {
     const [data, setData] = useState(null);
@@ -3179,7 +3182,32 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
       grey:  "No data yet",
     };
 
-    // Loading
+    // Small inline sparkline component — renders a 60×18 polyline given an
+    // array of weekly click totals. Falls back to a dashed line for no-data.
+    const Sparkline = ({ data: spk, color }) => {
+      if (!spk || spk.length === 0 || spk.every(v => v === 0)) {
+        return (
+          <svg viewBox="0 0 60 18" style={{width:60,height:18,display:"block"}} aria-hidden="true">
+            <line x1="1" y1="9" x2="59" y2="9" stroke="var(--text3)" strokeWidth="1" strokeDasharray="2 2"/>
+          </svg>
+        );
+      }
+      const mn = Math.min(...spk), mx = Math.max(...spk);
+      const range = mx - mn || 1;
+      const xStep = 58 / (spk.length - 1);
+      const points = spk.map((v, i) => {
+        const x = 1 + i * xStep;
+        const y = 17 - ((v - mn) / range) * 16;
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      }).join(' ');
+      return (
+        <svg viewBox="0 0 60 18" style={{width:60,height:18,display:"block"}} aria-hidden="true">
+          <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round"/>
+        </svg>
+      );
+    };
+
+    // ──── Loading state ────
     if (loading) {
       return (
         <div style={{padding:"3rem 2rem",textAlign:"center"}}>
@@ -3189,7 +3217,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
       );
     }
 
-    // Tier error
+    // ──── Tier-locked state ────
     if (error === 'tier_required') {
       return (
         <div style={{maxWidth:520,margin:"4rem auto",padding:"2.5rem 2rem",background:"var(--s1)",border:"1px solid var(--border)",borderRadius:14,textAlign:"center"}}>
@@ -3206,7 +3234,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
       );
     }
 
-    // Other errors
+    // ──── Other error state ────
     if (error) {
       return (
         <div style={{maxWidth:520,margin:"3rem auto",padding:"1.25rem 1.5rem",background:"var(--rdim)",border:"1px solid var(--red)",borderRadius:10,color:"var(--red)",fontSize:".9rem"}}>
@@ -3215,7 +3243,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
       );
     }
 
-    // Empty / sub-2 site states
+    // ──── Empty / sub-2 site states ────
     if (!data || !data.sites || data.sites.length === 0) {
       const hint = data?.hint;
       return (
@@ -3236,15 +3264,97 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
       );
     }
 
-    // Filtered list
+    // ──── Main render ────
     const visibleSites = showOnlyAttention
       ? data.sites.filter(s => s.health === 'red' || s.health === 'amber')
       : data.sites;
 
-    const counts = data.sites.reduce((acc, s) => { acc[s.health] = (acc[s.health]||0)+1; return acc; }, {});
+    const counts  = data.healthCounts || { red:0, amber:0, green:0, grey:0 };
+    const totals  = data.totals       || {};
+    const trend   = data.portfolioTrend || [];
+    const risers  = data.topRisers     || [];
+    const fallers = data.topFallers    || [];
+    const donutTotal = (counts.red||0) + (counts.amber||0) + (counts.green||0) + (counts.grey||0);
+
     const ageMs = Date.now() - (data.generatedAt || Date.now());
     const ageDays = Math.floor(ageMs / 86_400_000);
     const ageStr = ageDays === 0 ? "today" : ageDays === 1 ? "yesterday" : `${ageDays} days ago`;
+
+    // ── Build the line chart geometry (12-week portfolio trend) ──
+    const CW = 660, CH = 200, padL = 40, padR = 20, padT = 30, padB = 30;
+    const plotW = CW - padL - padR;
+    const plotH = CH - padT - padB;
+    let chartPolyline = "", chartArea = "", chartLast = null;
+    let chartMin = 0, chartMax = 0, chartLineColor = "var(--text2)";
+    if (trend.length > 0 && trend.some(v => v > 0)) {
+      chartMax = Math.max(...trend);
+      chartMin = Math.min(...trend);
+      const range = chartMax - chartMin || 1;
+      const yMin = Math.max(0, chartMin - range * 0.1);
+      const yMax = chartMax + range * 0.1;
+      const yRange = yMax - yMin || 1;
+      const xStep = plotW / (trend.length - 1);
+      const pts = trend.map((v, i) => {
+        const x = padL + i * xStep;
+        const y = padT + ((yMax - v) / yRange) * plotH;
+        return [+x.toFixed(1), +y.toFixed(1)];
+      });
+      chartPolyline = pts.map(p => p.join(',')).join(' ');
+      const baselineY = padT + plotH;
+      chartArea = `M ${pts[0][0]},${pts[0][1]} ` +
+                  pts.slice(1).map(p => `L ${p[0]},${p[1]}`).join(' ') +
+                  ` L ${pts[pts.length-1][0]},${baselineY} L ${pts[0][0]},${baselineY} Z`;
+      chartLast = pts[pts.length - 1];
+      const direction = trend[trend.length - 1] - trend[0];
+      const pctChange = trend[0] === 0 ? 0 : (direction / trend[0]);
+      chartLineColor = pctChange < -0.05 ? "var(--amber)"
+                     : pctChange > 0.05  ? "var(--green)"
+                     : "var(--text2)";
+    }
+
+    // ── Build the donut chart segments ──
+    const donutSegments = [];
+    if (donutTotal > 0) {
+      const order = [
+        { key: 'red',   color: 'var(--red)',    count: counts.red   || 0 },
+        { key: 'amber', color: 'var(--amber)',  count: counts.amber || 0 },
+        { key: 'green', color: 'var(--green)',  count: counts.green || 0 },
+        { key: 'grey',  color: 'var(--text3)',  count: counts.grey  || 0 },
+      ];
+      const cx = 90, cy = 90, R = 73, r = 48;
+      let cum = 0;
+      let segs = order.filter(o => o.count > 0).map(o => {
+        const span = (o.count / donutTotal) * 2 * Math.PI;
+        const seg = { ...o, startAngle: cum, endAngle: cum + span };
+        cum += span;
+        return seg;
+      });
+      // If only one segment fills the whole circle, split it so the arc renders
+      if (segs.length === 1) {
+        const only = segs[0];
+        segs = [
+          { ...only, startAngle: 0,       endAngle: Math.PI },
+          { ...only, startAngle: Math.PI, endAngle: 2 * Math.PI },
+        ];
+      }
+      for (const seg of segs) {
+        const sXo = cx + R * Math.sin(seg.startAngle);
+        const sYo = cy - R * Math.cos(seg.startAngle);
+        const eXo = cx + R * Math.sin(seg.endAngle);
+        const eYo = cy - R * Math.cos(seg.endAngle);
+        const sXi = cx + r * Math.sin(seg.startAngle);
+        const sYi = cy - r * Math.cos(seg.startAngle);
+        const eXi = cx + r * Math.sin(seg.endAngle);
+        const eYi = cy - r * Math.cos(seg.endAngle);
+        const largeArc = (seg.endAngle - seg.startAngle) > Math.PI ? 1 : 0;
+        seg.path = `M ${sXo.toFixed(2)} ${sYo.toFixed(2)} A ${R} ${R} 0 ${largeArc} 1 ${eXo.toFixed(2)} ${eYo.toFixed(2)} L ${eXi.toFixed(2)} ${eYi.toFixed(2)} A ${r} ${r} 0 ${largeArc} 0 ${sXi.toFixed(2)} ${sYi.toFixed(2)} Z`;
+        donutSegments.push(seg);
+      }
+    }
+
+    const portfolioDelta    = totals.delta || 0;
+    const portfolioDeltaPct = totals.deltaPct || 0;
+    const portfolioDeltaColor = portfolioDelta < 0 ? "var(--amber)" : portfolioDelta > 0 ? "var(--green)" : "var(--text2)";
 
     return (
       <div style={{maxWidth:1200,margin:"0 auto",padding:"2rem 1.5rem"}}>
@@ -3256,87 +3366,209 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
               {data.sites.length} {data.sites.length === 1 ? "site" : "sites"} under management
             </h1>
             <div style={{fontSize:".78rem",color:"var(--text3)"}}>
-              Last updated {ageStr} {data.cached === false && <span style={{color:"var(--green)"}}>· just refreshed</span>}
+              Last updated {ageStr}
+              {data.cached === false && <span style={{color:"var(--green)",marginLeft:".25rem"}}>· just refreshed</span>}
             </div>
           </div>
         </div>
 
-        {/* Summary chips */}
-        <div style={{display:"flex",gap:".5rem",marginBottom:"1.25rem",flexWrap:"wrap"}}>
-          {counts.red > 0 && (
-            <div style={{background:"var(--rdim)",color:"var(--red)",padding:".4rem .75rem",borderRadius:999,fontSize:".78rem",fontWeight:600}}>
-              ● {counts.red} need attention
+        {/* KPI grid */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4, 1fr)",gap:12,marginBottom:"1.5rem"}}>
+          <div style={{background:"var(--s1)",border:"1px solid var(--border)",borderRadius:10,padding:"14px 16px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
+              <span style={{fontSize:14,opacity:.8}}>↗</span>
+              <div style={{fontSize:11,color:"var(--text3)",letterSpacing:".04em",textTransform:"uppercase"}}>28-day clicks</div>
             </div>
-          )}
-          {counts.amber > 0 && (
-            <div style={{background:"var(--adim)",color:"var(--amber)",padding:".4rem .75rem",borderRadius:999,fontSize:".78rem",fontWeight:600}}>
-              ● {counts.amber} declining
+            <div style={{fontSize:24,fontWeight:700,lineHeight:1.1}}>{(totals.clicks28d || 0).toLocaleString()}</div>
+            <div style={{fontSize:11,color:"var(--text3)",marginTop:4}}>across all sites</div>
+          </div>
+          <div style={{background:"var(--s1)",border:"1px solid var(--border)",borderRadius:10,padding:"14px 16px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
+              <span style={{fontSize:14,color:portfolioDeltaColor}}>{portfolioDelta < 0 ? "↘" : "↗"}</span>
+              <div style={{fontSize:11,color:"var(--text3)",letterSpacing:".04em",textTransform:"uppercase"}}>Δ vs prior 28d</div>
             </div>
-          )}
-          {counts.green > 0 && (
-            <div style={{background:"var(--gdim)",color:"var(--green)",padding:".4rem .75rem",borderRadius:999,fontSize:".78rem",fontWeight:600}}>
-              ● {counts.green} stable
+            <div style={{fontSize:24,fontWeight:700,lineHeight:1.1,color:portfolioDeltaColor}}>
+              {portfolioDelta > 0 ? "+" : ""}{portfolioDelta.toLocaleString()}
             </div>
-          )}
-          {counts.grey > 0 && (
-            <div style={{background:"var(--s2)",color:"var(--text3)",padding:".4rem .75rem",borderRadius:999,fontSize:".78rem",fontWeight:600}}>
-              ● {counts.grey} no data
+            <div style={{fontSize:11,color:portfolioDeltaColor,marginTop:4}}>
+              {portfolioDeltaPct > 0 ? "+" : ""}{portfolioDeltaPct}% portfolio
             </div>
-          )}
+          </div>
+          <div style={{background:"var(--s1)",border:"1px solid var(--border)",borderRadius:10,padding:"14px 16px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
+              <span style={{fontSize:14,color:"var(--red)"}}>⚠</span>
+              <div style={{fontSize:11,color:"var(--text3)",letterSpacing:".04em",textTransform:"uppercase"}}>Need attention</div>
+            </div>
+            <div style={{fontSize:24,fontWeight:700,lineHeight:1.1}}>{counts.red || 0}<span style={{fontSize:14,color:"var(--text3)",fontWeight:400}}> / {donutTotal}</span></div>
+            <div style={{fontSize:11,color:"var(--text3)",marginTop:4}}>declining over 25%</div>
+          </div>
+          <div style={{background:"var(--s1)",border:"1px solid var(--border)",borderRadius:10,padding:"14px 16px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
+              <span style={{fontSize:14,color:"var(--green)"}}>✓</span>
+              <div style={{fontSize:11,color:"var(--text3)",letterSpacing:".04em",textTransform:"uppercase"}}>Stable</div>
+            </div>
+            <div style={{fontSize:24,fontWeight:700,lineHeight:1.1}}>{counts.green || 0}<span style={{fontSize:14,color:"var(--text3)",fontWeight:400}}> / {donutTotal}</span></div>
+            <div style={{fontSize:11,color:"var(--text3)",marginTop:4}}>growing or flat</div>
+          </div>
         </div>
 
-        {/* Filter toggle */}
-        <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",marginBottom:".75rem"}}>
-          <label style={{display:"flex",alignItems:"center",gap:".55rem",cursor:"pointer",fontSize:".82rem",color:"var(--text2)"}}>
+        {/* Line chart — only if we have trend data */}
+        {chartPolyline && (
+          <div style={{background:"var(--s1)",border:"1px solid var(--border)",borderRadius:12,padding:"16px 20px",marginBottom:"1.5rem"}}>
+            <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:12}}>
+              <div>
+                <div style={{fontSize:14,fontWeight:600}}>Portfolio clicks · last 12 weeks</div>
+                <div style={{fontSize:11,color:"var(--text3)",marginTop:2}}>Weekly totals across all connected sites</div>
+              </div>
+            </div>
+            <svg viewBox={`0 0 ${CW} ${CH}`} style={{width:"100%",height:"auto",display:"block"}} role="img" aria-label="Portfolio clicks trend over 12 weeks">
+              <line x1={padL} y1={padT} x2={CW-padR} y2={padT} stroke="var(--border)" strokeWidth="0.5" strokeDasharray="2 4"/>
+              <line x1={padL} y1={padT + plotH/2} x2={CW-padR} y2={padT + plotH/2} stroke="var(--border)" strokeWidth="0.5" strokeDasharray="2 4"/>
+              <line x1={padL} y1={padT + plotH} x2={CW-padR} y2={padT + plotH} stroke="var(--border)" strokeWidth="0.5" strokeDasharray="2 4"/>
+              <text x={padL - 8} y={padT + 4} textAnchor="end" fontSize="10" fill="var(--text3)">{(chartMax/1000).toFixed(1)}k</text>
+              <text x={padL - 8} y={padT + plotH + 4} textAnchor="end" fontSize="10" fill="var(--text3)">{(chartMin/1000).toFixed(1)}k</text>
+              <path d={chartArea} fill={chartLineColor} fillOpacity="0.08"/>
+              <polyline points={chartPolyline} fill="none" stroke={chartLineColor} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>
+              {chartLast && (
+                <>
+                  <circle cx={chartLast[0]} cy={chartLast[1]} r="3.5" fill={chartLineColor}/>
+                  <text x={chartLast[0] - 8} y={chartLast[1] - 7} textAnchor="end" fontSize="11" fontWeight="600" fill={chartLineColor}>
+                    {(trend[trend.length-1] || 0).toLocaleString()}
+                  </text>
+                </>
+              )}
+              <text x={padL} y={CH - 8} fontSize="10" fill="var(--text3)">12 weeks ago</text>
+              <text x={CW - padR} y={CH - 8} textAnchor="end" fontSize="10" fill="var(--text3)">this week</text>
+            </svg>
+          </div>
+        )}
+
+        {/* Donut + movers row */}
+        <div style={{display:"grid",gridTemplateColumns:"260px 1fr",gap:16,marginBottom:"1.5rem"}}>
+          <div style={{background:"var(--s1)",border:"1px solid var(--border)",borderRadius:12,padding:16}}>
+            <div style={{fontSize:14,fontWeight:600,marginBottom:12}}>Health mix</div>
+            <svg viewBox="0 0 180 180" style={{width:"100%",height:"auto",display:"block",marginBottom:12}} role="img" aria-label="Donut chart of portfolio health">
+              {donutSegments.map((seg, i) => (
+                <path key={i} d={seg.path} fill={seg.color}/>
+              ))}
+              <text x="90" y="95" textAnchor="middle" fontSize="26" fontWeight="700" fill="var(--text)">{donutTotal}</text>
+              <text x="90" y="113" textAnchor="middle" fontSize="11" fill="var(--text3)">sites</text>
+            </svg>
+            <div style={{display:"flex",flexDirection:"column",gap:6,fontSize:12}}>
+              {['red','amber','green','grey'].map(k => (
+                <div key={k} style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                  <span style={{display:"inline-flex",alignItems:"center",gap:6}}>
+                    <span style={{width:8,height:8,borderRadius:"50%",background:healthColor[k]}}/>
+                    {healthLabel[k]}
+                  </span>
+                  <span style={{color:"var(--text2)",fontFamily:"var(--mono)"}}>{counts[k] || 0}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div style={{display:"grid",gridTemplateRows:"1fr 1fr",gap:12}}>
+            <div style={{background:"var(--s1)",border:"1px solid var(--border)",borderRadius:12,padding:"12px 16px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10,fontSize:13,fontWeight:600}}>
+                <span style={{color:"var(--green)"}}>↗</span>
+                <span>Biggest risers this period</span>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:4,fontSize:13}}>
+                {risers.length === 0 ? (
+                  <div style={{color:"var(--text3)",fontSize:12}}>No sites improving this period.</div>
+                ) : risers.map(s => (
+                  <div key={s.site} onClick={()=>goToSite(s.site)}
+                    style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:".25rem 0",cursor:"pointer"}}>
+                    <span>{displaySite(s.site)}</span>
+                    <span style={{fontFamily:"var(--mono)",color:"var(--green)",fontWeight:600,fontSize:12}}>
+                      +{s.delta.toLocaleString()} <span style={{opacity:.7}}>(+{s.deltaPct}%)</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{background:"var(--s1)",border:"1px solid var(--border)",borderRadius:12,padding:"12px 16px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10,fontSize:13,fontWeight:600}}>
+                <span style={{color:"var(--red)"}}>↘</span>
+                <span>Biggest fallers this period</span>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:4,fontSize:13}}>
+                {fallers.length === 0 ? (
+                  <div style={{color:"var(--text3)",fontSize:12}}>No sites declining this period.</div>
+                ) : fallers.map(s => (
+                  <div key={s.site} onClick={()=>goToSite(s.site)}
+                    style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:".25rem 0",cursor:"pointer"}}>
+                    <span>{displaySite(s.site)}</span>
+                    <span style={{fontFamily:"var(--mono)",color:"var(--red)",fontWeight:600,fontSize:12}}>
+                      {s.delta.toLocaleString()} <span style={{opacity:.7}}>({s.deltaPct}%)</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Filter row */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+          <div style={{fontSize:14,fontWeight:600}}>All sites</div>
+          <label style={{display:"inline-flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:12,color:"var(--text2)"}}>
             <input type="checkbox" checked={showOnlyAttention} onChange={e=>setShowOnlyAttention(e.target.checked)}
-              style={{width:16,height:16,cursor:"pointer",accentColor:"var(--blue)"}}/>
+              style={{cursor:"pointer",accentColor:"var(--blue)"}}/>
             Only show sites needing attention
           </label>
         </div>
 
         {/* Table */}
         <div style={{background:"var(--s1)",border:"1px solid var(--border)",borderRadius:12,overflow:"hidden"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:".88rem"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
             <thead>
-              <tr style={{background:"var(--s2)",textAlign:"left",fontSize:".72rem",letterSpacing:".05em",textTransform:"uppercase",color:"var(--text3)"}}>
-                <th style={{padding:".75rem 1rem",width:"40%"}}>Site</th>
-                <th style={{padding:".75rem 1rem",textAlign:"right"}}>28-day clicks</th>
-                <th style={{padding:".75rem 1rem",textAlign:"right"}}>Δ vs prior 28d</th>
-                <th style={{padding:".75rem 1rem"}}>Health</th>
-                <th style={{padding:".75rem 1rem",width:"1%"}}></th>
+              <tr style={{background:"var(--s2)",textAlign:"left"}}>
+                <th style={{padding:"11px 16px",fontSize:11,letterSpacing:".05em",textTransform:"uppercase",color:"var(--text3)",fontWeight:600,width:"32%"}}>Site</th>
+                <th style={{padding:"11px 16px",fontSize:11,letterSpacing:".05em",textTransform:"uppercase",color:"var(--text3)",fontWeight:600,textAlign:"right",width:"13%"}}>Clicks</th>
+                <th style={{padding:"11px 16px",fontSize:11,letterSpacing:".05em",textTransform:"uppercase",color:"var(--text3)",fontWeight:600,textAlign:"right",width:"18%"}}>Δ vs prior</th>
+                <th style={{padding:"11px 16px",fontSize:11,letterSpacing:".05em",textTransform:"uppercase",color:"var(--text3)",fontWeight:600,width:"13%"}}>6w trend</th>
+                <th style={{padding:"11px 16px",fontSize:11,letterSpacing:".05em",textTransform:"uppercase",color:"var(--text3)",fontWeight:600,width:"20%"}}>Health</th>
+                <th style={{padding:"11px 16px",width:"4%"}}></th>
               </tr>
             </thead>
             <tbody>
               {visibleSites.length === 0 ? (
-                <tr><td colSpan={5} style={{padding:"2rem 1rem",textAlign:"center",color:"var(--text3)",fontSize:".88rem"}}>
+                <tr><td colSpan={6} style={{padding:"2rem 1rem",textAlign:"center",color:"var(--text3)",fontSize:13}}>
                   No sites match the current filter.
                 </td></tr>
               ) : visibleSites.map((s) => {
-                const deltaPositive = s.delta > 0;
-                const deltaSign = deltaPositive ? "+" : (s.delta < 0 ? "" : "");
-                const deltaColor = s.delta > 0 ? "var(--green)" : (s.delta < 0 ? "var(--red)" : "var(--text3)");
+                const dSign = s.delta > 0 ? "+" : "";
+                const dColor = s.delta > 0
+                  ? "var(--green)"
+                  : s.delta < 0
+                    ? (s.health === 'red' ? "var(--red)" : "var(--amber)")
+                    : "var(--text3)";
+                const sparkData = s.weeklyClicks ? s.weeklyClicks.slice(-6) : [];
                 return (
                   <tr key={s.site} onClick={()=>goToSite(s.site)}
                     style={{borderTop:"1px solid var(--b2)",cursor:"pointer",transition:"background .12s"}}
                     onMouseEnter={e=>e.currentTarget.style.background="var(--s2)"}
                     onMouseLeave={e=>e.currentTarget.style.background=""}>
-                    <td style={{padding:".85rem 1rem",fontWeight:600,color:"var(--text)"}}>
+                    <td style={{padding:"12px 16px",fontWeight:600,color:"var(--text)"}}>
                       {displaySite(s.site)}
-                      {s.error && <span style={{fontSize:".72rem",color:"var(--red)",marginLeft:".5rem",fontWeight:400}}>· error: {s.error}</span>}
+                      {s.error && <span style={{fontSize:11,color:"var(--red)",marginLeft:".5rem",fontWeight:400}}>· error</span>}
                     </td>
-                    <td style={{padding:".85rem 1rem",textAlign:"right",fontFamily:"var(--mono)",color:"var(--text)"}}>
+                    <td style={{padding:"12px 16px",textAlign:"right",fontFamily:"var(--mono)",color:"var(--text)"}}>
                       {s.clicks28d.toLocaleString()}
                     </td>
-                    <td style={{padding:".85rem 1rem",textAlign:"right",fontFamily:"var(--mono)",color:deltaColor,fontWeight:600}}>
-                      {deltaSign}{s.delta.toLocaleString()} ({deltaSign}{s.deltaPct}%)
+                    <td style={{padding:"12px 16px",textAlign:"right",fontFamily:"var(--mono)",color:dColor,fontWeight:600}}>
+                      {s.health === 'grey' ? "—" : `${dSign}${s.delta.toLocaleString()} (${dSign}${s.deltaPct}%)`}
                     </td>
-                    <td style={{padding:".85rem 1rem"}}>
+                    <td style={{padding:"12px 16px"}}>
+                      <Sparkline data={sparkData} color={healthColor[s.health]}/>
+                    </td>
+                    <td style={{padding:"12px 16px"}}>
                       <div style={{display:"inline-flex",alignItems:"center",gap:".4rem"}}>
                         <span style={{width:9,height:9,borderRadius:"50%",background:healthColor[s.health]}}/>
-                        <span style={{color:"var(--text2)",fontSize:".82rem"}}>{healthLabel[s.health]}</span>
+                        <span style={{color:"var(--text2)",fontSize:12}}>{healthLabel[s.health]}</span>
                       </div>
                     </td>
-                    <td style={{padding:".85rem 1rem",color:"var(--text3)",fontSize:"1rem"}}>→</td>
+                    <td style={{padding:"12px 16px",color:"var(--text3)",fontSize:"1rem",textAlign:"center"}}>→</td>
                   </tr>
                 );
               })}
