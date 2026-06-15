@@ -3414,42 +3414,45 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
           </div>
         </div>
 
-        {/* Line chart — only if we have trend data */}
-        {chartPolyline && (
-          <div style={{background:"var(--s1)",border:"1px solid var(--border)",borderRadius:12,padding:"16px 20px",marginBottom:"1.5rem"}}>
+        {/* Charts row: line chart (2/3) + donut (1/3) — fills horizontal
+            space efficiently instead of stacking full-width sections. */}
+        <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:16,marginBottom:"1.5rem"}}>
+          <div style={{background:"var(--s1)",border:"1px solid var(--border)",borderRadius:12,padding:"16px 20px"}}>
             <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:12}}>
               <div>
                 <div style={{fontSize:14,fontWeight:600}}>Portfolio clicks · last 12 weeks</div>
                 <div style={{fontSize:11,color:"var(--text3)",marginTop:2}}>Weekly totals across all connected sites</div>
               </div>
             </div>
-            <svg viewBox={`0 0 ${CW} ${CH}`} style={{width:"100%",height:"auto",display:"block"}} role="img" aria-label="Portfolio clicks trend over 12 weeks">
-              <line x1={padL} y1={padT} x2={CW-padR} y2={padT} stroke="var(--border)" strokeWidth="0.5" strokeDasharray="2 4"/>
-              <line x1={padL} y1={padT + plotH/2} x2={CW-padR} y2={padT + plotH/2} stroke="var(--border)" strokeWidth="0.5" strokeDasharray="2 4"/>
-              <line x1={padL} y1={padT + plotH} x2={CW-padR} y2={padT + plotH} stroke="var(--border)" strokeWidth="0.5" strokeDasharray="2 4"/>
-              <text x={padL - 8} y={padT + 4} textAnchor="end" fontSize="10" fill="var(--text3)">{(chartMax/1000).toFixed(1)}k</text>
-              <text x={padL - 8} y={padT + plotH + 4} textAnchor="end" fontSize="10" fill="var(--text3)">{(chartMin/1000).toFixed(1)}k</text>
-              <path d={chartArea} fill={chartLineColor} fillOpacity="0.08"/>
-              <polyline points={chartPolyline} fill="none" stroke={chartLineColor} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>
-              {chartLast && (
-                <>
-                  <circle cx={chartLast[0]} cy={chartLast[1]} r="3.5" fill={chartLineColor}/>
-                  <text x={chartLast[0] - 8} y={chartLast[1] - 7} textAnchor="end" fontSize="11" fontWeight="600" fill={chartLineColor}>
-                    {(trend[trend.length-1] || 0).toLocaleString()}
-                  </text>
-                </>
-              )}
-              <text x={padL} y={CH - 8} fontSize="10" fill="var(--text3)">12 weeks ago</text>
-              <text x={CW - padR} y={CH - 8} textAnchor="end" fontSize="10" fill="var(--text3)">this week</text>
-            </svg>
+            {chartPolyline ? (
+              <svg viewBox={`0 0 ${CW} ${CH}`} style={{width:"100%",height:"auto",display:"block"}} role="img" aria-label="Portfolio clicks trend over 12 weeks">
+                <line x1={padL} y1={padT} x2={CW-padR} y2={padT} stroke="var(--border)" strokeWidth="0.5" strokeDasharray="2 4"/>
+                <line x1={padL} y1={padT + plotH/2} x2={CW-padR} y2={padT + plotH/2} stroke="var(--border)" strokeWidth="0.5" strokeDasharray="2 4"/>
+                <line x1={padL} y1={padT + plotH} x2={CW-padR} y2={padT + plotH} stroke="var(--border)" strokeWidth="0.5" strokeDasharray="2 4"/>
+                <text x={padL - 8} y={padT + 4} textAnchor="end" fontSize="10" fill="var(--text3)">{(chartMax/1000).toFixed(1)}k</text>
+                <text x={padL - 8} y={padT + plotH + 4} textAnchor="end" fontSize="10" fill="var(--text3)">{(chartMin/1000).toFixed(1)}k</text>
+                <path d={chartArea} fill={chartLineColor} fillOpacity="0.08"/>
+                <polyline points={chartPolyline} fill="none" stroke={chartLineColor} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>
+                {chartLast && (
+                  <>
+                    <circle cx={chartLast[0]} cy={chartLast[1]} r="3.5" fill={chartLineColor}/>
+                    <text x={chartLast[0] - 8} y={chartLast[1] - 7} textAnchor="end" fontSize="11" fontWeight="600" fill={chartLineColor}>
+                      {(trend[trend.length-1] || 0).toLocaleString()}
+                    </text>
+                  </>
+                )}
+                <text x={padL} y={CH - 8} fontSize="10" fill="var(--text3)">12 weeks ago</text>
+                <text x={CW - padR} y={CH - 8} textAnchor="end" fontSize="10" fill="var(--text3)">this week</text>
+              </svg>
+            ) : (
+              <div style={{padding:"3rem 1rem",textAlign:"center",color:"var(--text3)",fontSize:13}}>
+                Not enough data yet for trend chart. Check back next week.
+              </div>
+            )}
           </div>
-        )}
-
-        {/* Donut + movers row */}
-        <div style={{display:"grid",gridTemplateColumns:"260px 1fr",gap:16,marginBottom:"1.5rem"}}>
           <div style={{background:"var(--s1)",border:"1px solid var(--border)",borderRadius:12,padding:16}}>
             <div style={{fontSize:14,fontWeight:600,marginBottom:12}}>Health mix</div>
-            <svg viewBox="0 0 180 180" style={{width:"100%",height:"auto",display:"block",marginBottom:12}} role="img" aria-label="Donut chart of portfolio health">
+            <svg viewBox="0 0 180 180" style={{width:"100%",maxWidth:200,height:"auto",display:"block",margin:"0 auto 12px"}} role="img" aria-label="Donut chart of portfolio health">
               {donutSegments.map((seg, i) => (
                 <path key={i} d={seg.path} fill={seg.color}/>
               ))}
@@ -3468,44 +3471,46 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
               ))}
             </div>
           </div>
-          <div style={{display:"grid",gridTemplateRows:"1fr 1fr",gap:12}}>
-            <div style={{background:"var(--s1)",border:"1px solid var(--border)",borderRadius:12,padding:"12px 16px"}}>
-              <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10,fontSize:13,fontWeight:600}}>
-                <span style={{color:"var(--green)"}}>↗</span>
-                <span>Biggest risers this period</span>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:4,fontSize:13}}>
-                {risers.length === 0 ? (
-                  <div style={{color:"var(--text3)",fontSize:12}}>No sites improving this period.</div>
-                ) : risers.map(s => (
-                  <div key={s.site} onClick={()=>goToSite(s.site)}
-                    style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:".25rem 0",cursor:"pointer"}}>
-                    <span>{displaySite(s.site)}</span>
-                    <span style={{fontFamily:"var(--mono)",color:"var(--green)",fontWeight:600,fontSize:12}}>
-                      +{s.delta.toLocaleString()} <span style={{opacity:.7}}>(+{s.deltaPct}%)</span>
-                    </span>
-                  </div>
-                ))}
-              </div>
+        </div>
+
+        {/* Movers row: risers + fallers side by side */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:"1.5rem"}}>
+          <div style={{background:"var(--s1)",border:"1px solid var(--border)",borderRadius:12,padding:"12px 16px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10,fontSize:13,fontWeight:600}}>
+              <span style={{color:"var(--green)"}}>↗</span>
+              <span>Biggest risers this period</span>
             </div>
-            <div style={{background:"var(--s1)",border:"1px solid var(--border)",borderRadius:12,padding:"12px 16px"}}>
-              <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10,fontSize:13,fontWeight:600}}>
-                <span style={{color:"var(--red)"}}>↘</span>
-                <span>Biggest fallers this period</span>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:4,fontSize:13}}>
-                {fallers.length === 0 ? (
-                  <div style={{color:"var(--text3)",fontSize:12}}>No sites declining this period.</div>
-                ) : fallers.map(s => (
-                  <div key={s.site} onClick={()=>goToSite(s.site)}
-                    style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:".25rem 0",cursor:"pointer"}}>
-                    <span>{displaySite(s.site)}</span>
-                    <span style={{fontFamily:"var(--mono)",color:"var(--red)",fontWeight:600,fontSize:12}}>
-                      {s.delta.toLocaleString()} <span style={{opacity:.7}}>({s.deltaPct}%)</span>
-                    </span>
-                  </div>
-                ))}
-              </div>
+            <div style={{display:"flex",flexDirection:"column",gap:4,fontSize:13}}>
+              {risers.length === 0 ? (
+                <div style={{color:"var(--text3)",fontSize:12}}>No sites improving this period.</div>
+              ) : risers.map(s => (
+                <div key={s.site} onClick={()=>goToSite(s.site)}
+                  style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:".25rem 0",cursor:"pointer"}}>
+                  <span>{displaySite(s.site)}</span>
+                  <span style={{fontFamily:"var(--mono)",color:"var(--green)",fontWeight:600,fontSize:12}}>
+                    +{s.delta.toLocaleString()} <span style={{opacity:.7}}>(+{s.deltaPct}%)</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div style={{background:"var(--s1)",border:"1px solid var(--border)",borderRadius:12,padding:"12px 16px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10,fontSize:13,fontWeight:600}}>
+              <span style={{color:"var(--red)"}}>↘</span>
+              <span>Biggest fallers this period</span>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:4,fontSize:13}}>
+              {fallers.length === 0 ? (
+                <div style={{color:"var(--text3)",fontSize:12}}>No sites declining this period.</div>
+              ) : fallers.map(s => (
+                <div key={s.site} onClick={()=>goToSite(s.site)}
+                  style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:".25rem 0",cursor:"pointer"}}>
+                  <span>{displaySite(s.site)}</span>
+                  <span style={{fontFamily:"var(--mono)",color:"var(--red)",fontWeight:600,fontSize:12}}>
+                    {s.delta.toLocaleString()} <span style={{opacity:.7}}>({s.deltaPct}%)</span>
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
         </div>
