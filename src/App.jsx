@@ -25,7 +25,18 @@ const CSS = `
   --amber:#f5a623;--adim:rgba(245,166,35,.12);
   --red:#f03e5f;--rdim:rgba(240,62,95,.12);
   --blue:#4d7bff;--bdim:rgba(77,123,255,.12);
+  --card:#0c0e1a;--b2:#1e2440;
   --font:'Outfit',sans-serif;--mono:'JetBrains Mono',monospace;
+}
+/* ── Light theme — applied when document root has data-theme="light"
+   Triggered by OS-level prefers-color-scheme:light (see App component effect).
+   Only neutrals (background, text, borders) flip; saturated brand and status
+   colours (green/amber/red/blue) stay identical across themes for consistency. ── */
+[data-theme="light"]{
+  --bg:#fafaf7;--s1:#ffffff;--s2:#f5f1e8;--s3:#edeae3;
+  --border:#d9d5cc;--border2:#c4bfb3;
+  --text:#0d0d0d;--text2:#4a4a4a;--text3:#7a776e;
+  --card:#ffffff;--b2:#edeae3;
 }
 /* ── Tooltips ── */
 .tip-trigger{display:inline-flex;align-items:center;gap:.25rem;cursor:help;position:relative;}
@@ -627,7 +638,7 @@ const SEO_TIPS = {
   h1: "The main heading on a page — like the title of a newspaper article. Every page should have exactly one H1 that includes your target keyword.",
   h2: "Subheadings that break your content into sections. They help readers scan the page and help Google understand your content structure.",
   metaDesc: "A short summary (about 155 characters) that appears below your page title in Google results. A good meta description encourages people to click.",
-  titleTag: "The clickable blue headline that appears in Google search results. Should be 50-60 characters and include your main keyword near the front.",
+  titleTag: "The clickable blue headline that appears in Google search results. Put your main keyword near the front (in the first 50-60 characters). Titles can extend up to ~100 characters when the additional words add real value — Google indexes the full title; it just may not be visible in full on narrow screens.",
   canonical: "A tag that tells Google which version of a page is the 'official' one. Prevents duplicate content issues if you have similar pages.",
   schema: "Structured data (JSON-LD) that helps Google understand what your page is about. Can trigger rich results like star ratings, FAQs, and event details.",
   openGraph: "Tags that control how your page looks when shared on social media (Facebook, LinkedIn, Twitter). Includes the title, description, and image shown.",
@@ -865,6 +876,30 @@ export default function RankActions() {
       } catch { return null; }
     };
   }, [session]);
+
+  // ─── Theme: respect the user's OS-level light/dark preference ───────────────
+  // The app defaults to dark. We set data-theme="light" on the root element when
+  // the OS preference is light, which activates the [data-theme="light"] CSS
+  // overrides defined at the top of the stylesheet.
+  // No localStorage / no manual toggle yet — that's a future iteration.
+  // The runtime listener catches the case where the user switches their OS
+  // theme while the app is open.
+  useEffect(() => {
+    const applyTheme = () => {
+      const prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
+      document.documentElement.setAttribute('data-theme', prefersLight ? 'light' : 'dark');
+    };
+    applyTheme();
+    const mq = window.matchMedia('(prefers-color-scheme: light)');
+    // Some older browsers use addListener instead of addEventListener — handle both
+    if (mq.addEventListener) {
+      mq.addEventListener('change', applyTheme);
+      return () => mq.removeEventListener('change', applyTheme);
+    } else if (mq.addListener) {
+      mq.addListener(applyTheme);
+      return () => mq.removeListener(applyTheme);
+    }
+  }, []);
 
   // Auth UI state
   const [authView,  setAuthView]  = useState("signin"); // signin | signup
@@ -1557,8 +1592,8 @@ Page: ${pageUrl}
 Top ranking keywords for this site: ${topKwsShort}
 Return ONLY valid JSON — no markdown, no preamble:
 {
-  "option1": "ready-to-use title tag — 50-60 chars, keyword-rich, compelling",
-  "option2": "alternative title tag — different angle, still 50-60 chars",
+  "option1": "ready-to-use title tag — primary keyword in the first 50-60 chars, can extend to ~100 chars if accuracy and click appeal benefit; keyword-rich, compelling",
+  "option2": "alternative title tag — different angle, same length philosophy (primary keyword early, longer only if it earns the extra words)",
   "metaDesc": "ready-to-publish meta description — 145-155 chars, includes primary keyword, ends with a soft CTA",
   "tip": "one specific improvement to implement on this page, max 12 words"
 }`,
@@ -1617,7 +1652,7 @@ Fix type: ${fix.type} — ${fix.field}
 CRITICAL RULES:
 - Every suggestion MUST include the exact phrase "${keyword}"
 - No generic language — make it specific to "${keyword}"
-- Title tags: 50-60 characters maximum
+- Title tags: primary keyword in the first 50-60 characters for SERP visibility; total length can extend to ~100 characters where the extra words add accuracy or click appeal. Don't pad for length; don't force unnatural brevity. Accuracy beats arbitrary character limits.
 - Meta descriptions: 145-155 characters maximum
 - Return ONLY ready-to-use copy — no explanations, no preamble
 Return ONLY valid JSON — no markdown:
@@ -1749,8 +1784,8 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
     starter_annual:  'price_1TZ9dEPrI9axbg39h05zJZyI',
     pro_monthly:     'price_1TZ9g1PrI9axbg39uYLUU8BG',
     pro_annual:      'price_1TZ9gNPrI9axbg39hmEWGiwK',
-    agency_monthly:  'price_1TZ9hyPrI9axbg399EmmbZQK',
-    agency_annual:   'price_1TZ9hyPrI9axbg39zjjjw3UR',
+    agency_monthly:  'price_1TiXYyPrI9axbg39qSLW6jSx',
+    agency_annual:   'price_1TiXZIPrI9axbg39SB3suRHW',
   };
 
   const startCheckout = async (priceId) => {
@@ -1895,9 +1930,9 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
           <div className={`plan-card ${selPlan==="agency"?"selected":""}`} onClick={()=>setSelPlan("agency")}>
             {plan==="agency" && <div className="plan-badge" style={{background:"var(--blue)",color:"#fff"}}>Current plan</div>}
             <div className="plan-name">Agency</div>
-            <div className="plan-price">{isAnnual ? "£790" : "£79"}</div>
-            <div className="plan-period">{isAnnual ? "per year — £65.83/mo" : "per month"}</div>
-            {isAnnual && <div style={{fontSize:".78rem",color:"var(--green)",fontWeight:600,marginBottom:".5rem"}}>Save £158 vs monthly</div>}
+            <div className="plan-price">{isAnnual ? "£1,490" : "£149"}</div>
+            <div className="plan-period">{isAnnual ? "per year — £124.17/mo" : "per month"}</div>
+            {isAnnual && <div style={{fontSize:".78rem",color:"var(--green)",fontWeight:600,marginBottom:".5rem"}}>Save £298 vs monthly</div>}
             <ul className="plan-features">
               <li>Everything in Pro</li>
               <li>10 websites (+£5/site extra)</li>
@@ -3018,9 +3053,9 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
     const [loading, setLoading] = useState(false);
 
     const prices = {
-      starter:{ monthly: "£19",  annual: "£190", save: "£38",  monthlyEff: "£15.83" },
-      pro:    { monthly: "£39",  annual: "£390", save: "£78",  monthlyEff: "£32.50" },
-      agency: { monthly: "£79",  annual: "£790", save: "£158", monthlyEff: "£65.83" },
+      starter:{ monthly: "£19",  annual: "£190",   save: "£38",  monthlyEff: "£15.83" },
+      pro:    { monthly: "£39",  annual: "£390",   save: "£78",  monthlyEff: "£32.50" },
+      agency: { monthly: "£149", annual: "£1,490", save: "£298", monthlyEff: "£124.17" },
     };
     const p = prices[upgradePlan];
 
@@ -3105,6 +3140,15 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
         )}
         <div style={{fontSize:".7rem",color:"var(--text3)",textAlign:"center",marginTop:".5rem"}}>Secure payment via Stripe · Cancel any time</div>
         <div className="upgrade-modal-skip" onClick={()=>setShowUpgrade(false)}>Maybe later</div>
+        {/* Enterprise nudge — opens the landing-page contact form in a new tab.
+            Enterprise pricing is bespoke and managed manually, no Stripe flow. */}
+        <div style={{textAlign:"center",marginTop:"1rem",paddingTop:"1rem",borderTop:"1px solid var(--b2)"}}>
+          <div style={{fontSize:".72rem",color:"var(--text3)",marginBottom:".25rem"}}>Managing 20+ clients or need white-label?</div>
+          <a href="https://rankactions.com/#enterprise" target="_blank" rel="noopener"
+             style={{fontSize:".78rem",color:"var(--text2)",fontWeight:600,textDecoration:"underline",textDecorationStyle:"dotted",textUnderlineOffset:"3px"}}>
+            Contact us about Enterprise →
+          </a>
+        </div>
       </div>
     </div>
     );
@@ -3282,7 +3326,7 @@ KEYWORD PLACEMENT — MANDATORY (this is an SEO tool, the article must pass an S
 - Use the keyword EXACTLY as written above — same wording, same word order. Do not paraphrase, do not synonymise, do not abbreviate. If the keyword has an awkward word order, you must still use it verbatim.
 
 BUILD THIS STRUCTURE:
-1. HEAD: title tag (50-60 chars, MUST start with or contain "${kw.trim()}" in the first 30 chars), meta description (145-155 chars, MUST include "${kw.trim()}"), canonical URL (${siteBase}/[keyword-slug]/), robots, Open Graph tags (og:title MUST include "${kw.trim()}"), JSON-LD Article schema, datePublished today, the Google Fonts link, and a <style> block with the CSS above
+1. HEAD: title tag (primary keyword "${kw.trim()}" in the first 50-60 chars for SERP visibility, total title can extend up to ~100 chars if needed for clarity and click appeal), meta description (145-155 chars, MUST include "${kw.trim()}"), canonical URL (${siteBase}/[keyword-slug]/), robots, Open Graph tags (og:title MUST include "${kw.trim()}"), JSON-LD Article schema, datePublished today, the Google Fonts link, and a <style> block with the CSS above
 2. HEADER BAR: dark, with the two-tone "RankActions" wordmark on the left (white "Rank" + green "Actions", Barlow Condensed weight 500) and "Generated for ${displaySite(selectedSite)}" on the right in small cream text
 3. HERO SECTION: H1 containing the exact verbatim phrase "${kw.trim()}", followed by a subtitle, author byline, date, read time
 4. ARTICLE BODY:
