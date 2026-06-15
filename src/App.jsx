@@ -1393,7 +1393,13 @@ export default function RankActions() {
 
   const getSeoRows = () => {
     if (!siteData?.keywords?.length) return DEMO_SEO;
-    return siteData.keywords.slice(0,15).map(k => {
+    // Filter out GSC noise queries — embedded-quote exact-match searches and
+    // unusually long phrases are almost always document text leaking through
+    // (e.g. someone Googling a verbatim phrase from an indexed PDF). These
+    // aren't real SEO opportunities and clutter the actionable list.
+    const usable = siteData.keywords.filter(k => isUsableKeyword(k.keyword));
+    if (usable.length === 0) return DEMO_SEO;
+    return usable.slice(0,15).map(k => {
       let gap, action;
       if (k.position <= 10) {
         gap    = "Add keyword to title tag and H1";
@@ -1410,34 +1416,61 @@ export default function RankActions() {
   };
 
   // ─────────────────────────────────────────────────────────────
+  // Audit filter helpers — skip non-HTML resources (PDFs, images, etc)
+  // and low-signal GSC queries (verbatim document text, embedded quotes).
+  // Page audits, schema checks, page-speed recs and CTA suggestions are
+  // only meaningful for HTML pages; running them against a PDF produces
+  // nonsense like "move CTA above the fold" on a downloadable file.
+  // ─────────────────────────────────────────────────────────────
+  const isAuditablePage = (url) => {
+    if (!url || typeof url !== 'string') return false;
+    const path = url.toLowerCase().split('?')[0].split('#')[0];
+    // Match file extensions at end of path (optionally followed by trailing slash)
+    return !/\.(pdf|docx?|xlsx?|pptx?|zip|rar|gz|tar|jpe?g|png|gif|webp|svg|ico|mp[34]|mov|avi|webm|wav|ogg|xml|json|csv|txt|epub|rtf)\/?$/i.test(path);
+  };
+
+  const isUsableKeyword = (kw) => {
+    if (!kw || typeof kw !== 'string') return false;
+    if (kw.includes('"')) return false;                       // exact-match quoted searches — usually document text
+    if (kw.split(/\s+/).length > 12) return false;            // > 12-word phrases are document text, not SEO targets
+    if (/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/.test(kw)) return false; // contains a date — almost always document text
+    return true;
+  };
+
+  // ─────────────────────────────────────────────────────────────
   // Dynamic Issues data — site-specific, uses real GSC data where available
   // ─────────────────────────────────────────────────────────────
   const getIssuesData = (site, data) => {
+    // Only audit HTML pages. PDF/document/image URLs get excluded from
+    // schema, page-speed, broken-link and meta-description checks since
+    // none of those recommendations apply to non-HTML resources.
+    const pagesPool = (data?.pages || []).filter(p => isAuditablePage(p.page));
+
     // Use real low-CTR pages from GSC if available
-    const lowCtrPages = data?.pages
-      ?.filter(p => parseFloat(p.ctr) < 0.02 && p.clicks > 5)
-      ?.slice(0, 4)
-      ?.map(p => ({
+    const lowCtrPages = pagesPool
+      .filter(p => parseFloat(p.ctr) < 0.02 && p.clicks > 5)
+      .slice(0, 4)
+      .map(p => ({
         url:      p.page.replace(/^https?:\/\/[^/]+/,"") || "/",
         detail:   `No meta description set · CTR ${(p.ctr*100).toFixed(1)}% (avg ${(data.totals.avgCtr*100).toFixed(1)}%)`,
         priority: p.clicks > 50 ? "high" : "medium",
-      })) || [];
+      }));
 
-    const slowPages = data?.pages
-      ?.sort((a,b) => b.impressions - a.impressions)
-      ?.slice(0, 2)
-      ?.map(p => ({
+    const slowPages = [...pagesPool]
+      .sort((a,b) => b.impressions - a.impressions)
+      .slice(0, 2)
+      .map(p => ({
         url:    p.page.replace(/^https?:\/\/[^/]+/,"") || "/",
         detail: `High traffic page — run a Page Audit for Core Web Vitals and speed recommendations`,
         priority: "medium",
-      })) || [];
+      }));
 
     // Use real pages from GSC for schema and broken links if available
-    const realPages = data?.pages?.slice(0, 6)?.map(p => ({
+    const realPages = pagesPool.slice(0, 6).map(p => ({
       url:      p.page.replace(/^https?:\/\/[^/]+/, "") || "/",
       clicks:   p.clicks,
       impressions: p.impressions,
-    })) || [];
+    }));
 
     const metaPages = lowCtrPages.length > 0 ? lowCtrPages : (
       realPages.length > 0
@@ -1530,8 +1563,9 @@ export default function RankActions() {
   // Dynamic Conversion data — site-specific, uses GSC page data
   // ─────────────────────────────────────────────────────────────
   const getConvData = (site, data) => {
-    // Use real high-traffic pages from GSC where available
-    const topPages = data?.pages?.slice(0, 3) || [];
+    // Conversion analysis only applies to HTML pages — a PDF doesn't have a
+    // CTA to move above the fold or a form to simplify.
+    const topPages = (data?.pages || []).filter(p => isAuditablePage(p.page)).slice(0, 3);
 
     if (topPages.length > 0) {
       return topPages.map(p => {
