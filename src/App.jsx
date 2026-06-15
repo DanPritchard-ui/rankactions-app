@@ -30,13 +30,20 @@ const CSS = `
 }
 /* ── Light theme — applied when document root has data-theme="light"
    Triggered by OS-level prefers-color-scheme:light (see App component effect).
-   Only neutrals (background, text, borders) flip; saturated brand and status
-   colours (green/amber/red/blue) stay identical across themes for consistency. ── */
+   Both neutrals AND saturated brand colours adjust. The neutrals flip
+   (dark backgrounds → cream, light text → dark). The brand colours dull
+   slightly — fluorescent #0fdb8a is harsh on white, so we use a deeper
+   brand green that still reads as the same colour but doesn't strain the
+   eye. Status colours (amber/red) get a similar treatment. ── */
 [data-theme="light"]{
   --bg:#fafaf7;--s1:#ffffff;--s2:#f5f1e8;--s3:#edeae3;
   --border:#d9d5cc;--border2:#c4bfb3;
   --text:#0d0d0d;--text2:#4a4a4a;--text3:#7a776e;
   --card:#ffffff;--b2:#edeae3;
+  --green:#0e7a3c;--gdim:rgba(14,122,60,.10);
+  --amber:#b8780d;--adim:rgba(184,120,13,.10);
+  --red:#c0392b;--rdim:rgba(192,57,43,.10);
+  --blue:#2563eb;--bdim:rgba(37,99,235,.10);
 }
 /* ── Tooltips ── */
 .tip-trigger{display:inline-flex;align-items:center;gap:.25rem;cursor:help;position:relative;}
@@ -52,7 +59,10 @@ const CSS = `
 .ob{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem;background:radial-gradient(ellipse 900px 400px at 50% 0%,#0c1530 0%,var(--bg) 65%);}
 .ob-logo{font-size:1.4rem;font-weight:800;letter-spacing:-.04em;margin-bottom:2.5rem;}
 .ob-logo em{color:var(--green);font-style:normal;}
-.ob-card{width:100%;max-width:460px;background:#131729;border:1px solid #2a3560;border-radius:16px;padding:2.5rem;box-shadow:0 0 0 1px rgba(77,123,255,.08),0 8px 40px rgba(0,0,0,.5),0 0 80px rgba(77,123,255,.06);}
+.ob-card{width:100%;max-width:460px;background:var(--s2);border:1px solid var(--border);border-radius:16px;padding:2.5rem;box-shadow:0 0 0 1px rgba(77,123,255,.08),0 8px 40px rgba(0,0,0,.5),0 0 80px rgba(77,123,255,.06);}
+/* Onboarding light-mode overrides: softer gradient, softer shadow, no blue glow */
+[data-theme="light"] .ob{background:radial-gradient(ellipse 900px 400px at 50% 0%,#e8e2d4 0%,var(--bg) 65%);}
+[data-theme="light"] .ob-card{box-shadow:0 1px 2px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.06);}
 .ob-step-label{font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--text3);margin-bottom:1.5rem;}
 .ob-h{font-size:1.55rem;font-weight:700;letter-spacing:-.03em;margin-bottom:.4rem;line-height:1.25;}
 .ob-sub{color:var(--text2);font-size:.9rem;margin-bottom:2rem;line-height:1.6;}
@@ -279,6 +289,7 @@ const CSS = `
 
 /* ── Auth screens ── */
 .auth-wrap{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem;background:radial-gradient(ellipse 900px 400px at 50% 0%,#0c1530 0%,var(--bg) 65%);}
+[data-theme="light"] .auth-wrap{background:radial-gradient(ellipse 900px 400px at 50% 0%,#e8e2d4 0%,var(--bg) 65%);}
 .auth-logo{font-size:1.4rem;font-weight:800;letter-spacing:-.04em;margin-bottom:.5rem;}
 .auth-logo em{color:var(--green);font-style:normal;}
 .auth-tagline{font-size:.875rem;color:var(--text2);margin-bottom:2rem;}
@@ -881,13 +892,25 @@ export default function RankActions() {
   // The app defaults to dark. We set data-theme="light" on the root element when
   // the OS preference is light, which activates the [data-theme="light"] CSS
   // overrides defined at the top of the stylesheet.
+  //
+  // We ALSO track the current theme as React state — needed because the Clerk
+  // sign-in widget is a third-party component that doesn't read our CSS
+  // variables. It receives colours via an `appearance` prop, which we re-compute
+  // when the theme changes.
+  //
   // No localStorage / no manual toggle yet — that's a future iteration.
   // The runtime listener catches the case where the user switches their OS
   // theme while the app is open.
+  const [theme, setTheme] = useState(() => {
+    if (typeof window === 'undefined') return 'dark';
+    return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  });
   useEffect(() => {
     const applyTheme = () => {
       const prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
-      document.documentElement.setAttribute('data-theme', prefersLight ? 'light' : 'dark');
+      const next = prefersLight ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      setTheme(next);
     };
     applyTheme();
     const mq = window.matchMedia('(prefers-color-scheme: light)');
@@ -900,6 +923,13 @@ export default function RankActions() {
       return () => mq.removeListener(applyTheme);
     }
   }, []);
+
+  // Clerk widget appearance — re-built per theme so the sign-in/sign-up forms
+  // and UserButton dropdown match the current theme. Light-mode colours mirror
+  // the CSS variables in [data-theme="light"]{...}.
+  const clerkAppearance = theme === 'light'
+    ? { variables: { colorPrimary:"#2563eb", colorBackground:"#ffffff", colorInputBackground:"#fafaf7", colorText:"#0d0d0d", colorTextSecondary:"#4a4a4a", colorInputText:"#0d0d0d", borderRadius:"10px" } }
+    : { variables: { colorPrimary:"#4d7bff", colorBackground:"#0c0e1a", colorInputBackground:"#07080f", colorText:"#dde2f5", colorTextSecondary:"#8590b8", colorInputText:"#dde2f5", borderRadius:"10px" } };
 
   // Auth UI state
   const [authView,  setAuthView]  = useState("signin"); // signin | signup
@@ -1843,8 +1873,8 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
           <div className={`auth-tab ${authView==="signup"?"active":""}`} onClick={()=>setAuthView("signup")}>Create account</div>
         </div>
         {authView==="signin"
-          ? <SignIn routing="hash" afterSignInUrl="/" appearance={{variables:{colorPrimary:"#4d7bff",colorBackground:"#0c0e1a",colorInputBackground:"#07080f",colorText:"#dde2f5",colorTextSecondary:"#8590b8",colorInputText:"#dde2f5",borderRadius:"10px"}}}/>
-          : <SignUp routing="hash" afterSignUpUrl="/" appearance={{variables:{colorPrimary:"#4d7bff",colorBackground:"#0c0e1a",colorInputBackground:"#07080f",colorText:"#dde2f5",colorTextSecondary:"#8590b8",colorInputText:"#dde2f5",borderRadius:"10px"}}}/>
+          ? <SignIn routing="hash" afterSignInUrl="/" appearance={clerkAppearance}/>
+          : <SignUp routing="hash" afterSignUpUrl="/" appearance={clerkAppearance}/>
         }
       </div>
     </div></>
@@ -2205,7 +2235,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
             <option value="agency">Agency</option>
           </select>
         )}
-        <UserButton afterSignOutUrl="/" appearance={{variables:{colorPrimary:"#4d7bff"}}}/>
+        <UserButton afterSignOutUrl="/" appearance={clerkAppearance}/>
       </div>
     </div>
   );
