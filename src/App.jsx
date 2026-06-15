@@ -3277,7 +3277,9 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
     const donutTotal = (counts.red||0) + (counts.amber||0) + (counts.green||0) + (counts.grey||0);
 
     const ageMs = Date.now() - (data.generatedAt || Date.now());
-    const ageDays = Math.floor(ageMs / 86_400_000);
+    // Clamp to non-negative: if server clock is slightly ahead of client clock,
+    // ageMs would be negative and we'd render "-1 days ago" which is silly.
+    const ageDays = Math.max(0, Math.floor(ageMs / 86_400_000));
     const ageStr = ageDays === 0 ? "today" : ageDays === 1 ? "yesterday" : `${ageDays} days ago`;
 
     // ── Build the line chart geometry (12-week portfolio trend) ──
@@ -3357,7 +3359,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
     const portfolioDeltaColor = portfolioDelta < 0 ? "var(--amber)" : portfolioDelta > 0 ? "var(--green)" : "var(--text2)";
 
     return (
-      <div style={{maxWidth:1200,margin:"0 auto",padding:"2rem 1.5rem"}}>
+      <div style={{padding:"2rem 2rem"}}>
         {/* Header */}
         <div style={{marginBottom:"1.5rem"}}>
           <div style={{fontSize:".7rem",color:"var(--text3)",letterSpacing:".1em",textTransform:"uppercase",marginBottom:".35rem"}}>Portfolio</div>
