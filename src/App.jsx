@@ -1432,6 +1432,7 @@ export default function RankActions() {
   const isUsableKeyword = (kw) => {
     if (!kw || typeof kw !== 'string') return false;
     if (kw.includes('"')) return false;                       // exact-match quoted searches — usually document text
+    if (kw.includes(':')) return false;                       // colons rarely appear in real searches — system text like "rank: 2"
     if (kw.split(/\s+/).length > 12) return false;            // > 12-word phrases are document text, not SEO targets
     if (/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/.test(kw)) return false; // contains a date — almost always document text
     return true;
