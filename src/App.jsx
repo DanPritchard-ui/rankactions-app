@@ -6245,6 +6245,67 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
     }
   };
 
+    // ── localStorage backup / restore (data-loss safety net) ─────
+    // Downloads EVERY ra_* / rankactions_* key as a raw JSON file the user
+    // can re-import to restore their work after a browser-data wipe. Does NOT
+    // touch the server — purely a client-side backup. Belt-and-braces until
+    // server-side persistence is fully in place.
+    const backupLocalData = () => {
+      try {
+        const dump = {};
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && (k.startsWith("ra_") || k.startsWith("rankactions_"))) {
+            dump[k] = localStorage.getItem(k);
+          }
+        }
+        const payload = {
+          _format: "rankactions-localstorage-backup",
+          _version: 1,
+          _exportedAt: new Date().toISOString(),
+          keys: dump,
+        };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `rankactions-backup-${new Date().toISOString().slice(0,10)}.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        alert("Couldn't create backup. Please try again.");
+      }
+    };
+
+    const restoreLocalData = (file) => {
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const parsed = JSON.parse(ev.target.result);
+          if (!parsed || parsed._format !== "rankactions-localstorage-backup" || !parsed.keys) {
+            alert("That doesn't look like a RankActions backup file.");
+            return;
+          }
+          const keys = parsed.keys;
+          const count = Object.keys(keys).length;
+          if (!window.confirm(`Restore ${count} saved items from this backup? This will overwrite any matching data currently in this browser.`)) return;
+          Object.keys(keys).forEach(k => {
+            if (k && (k.startsWith("ra_") || k.startsWith("rankactions_"))) {
+              try { localStorage.setItem(k, keys[k]); } catch {}
+            }
+          });
+          alert("Backup restored. The app will now reload to apply it.");
+          window.location.reload();
+        } catch (err) {
+          alert("Couldn't read that backup file — it may be corrupted.");
+        }
+      };
+      reader.readAsText(file);
+    };
+
     const exportData = () => {
       const prospectData = {};
       const fixData = {};
@@ -6439,6 +6500,15 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
           <div style={rowStyle}>
             <div><div style={valStyle}>Export your data</div><div style={subStyle}>Printable summary of your sites, fixes, content and strategy</div></div>
             <button style={btnStyle} onClick={exportData}>Export</button>
+          </div>
+          <div style={rowStyle}>
+            <div><div style={valStyle}>Back up your work</div><div style={subStyle}>Download a JSON backup of your saved data. Keep it safe — you can restore it if you clear your browser or switch devices.</div></div>
+            <button style={btnStyle} onClick={backupLocalData}>Back up</button>
+          </div>
+          <div style={rowStyle}>
+            <div><div style={valStyle}>Restore from backup</div><div style={subStyle}>Import a previously downloaded backup file to restore your saved data in this browser.</div></div>
+            <button style={btnStyle} onClick={()=>document.getElementById("ra-restore-input").click()}>Restore</button>
+            <input id="ra-restore-input" type="file" accept="application/json,.json" style={{display:"none"}} onChange={(e)=>{ const f=e.target.files&&e.target.files[0]; restoreLocalData(f); e.target.value=""; }} />
           </div>
           <div style={rowStyle}>
             <div><div style={valStyle}>Download data archive (GDPR)</div><div style={subStyle}>Complete JSON of everything we hold about you — for your records or to take to another service</div></div>
