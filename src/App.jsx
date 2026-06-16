@@ -2040,7 +2040,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
             // Contact-form tiers (bespoke pricing, no Stripe) — same flow as Enterprise.
             localStorage.setItem("rankactions_plan_chosen", "1");
             setShowPlan(false);
-            window.open("https://rankactions.com/#enterprise", "_blank", "noopener");
+            window.open(`https://rankactions.com/#enterprise-${selPlan}`, "_blank", "noopener");
           } else {
             // Only Individual goes through Stripe checkout.
             const pm = { individual: isAnnual?STRIPE_PRICES.individual_annual:STRIPE_PRICES.individual_monthly };
@@ -3714,7 +3714,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
           )}
         </ul>
         {isContactTier ? (
-          <button className="upgrade-modal-cta" onClick={()=>window.open("https://rankactions.com/#enterprise","_blank","noopener")}>
+          <button className="upgrade-modal-cta" onClick={()=>window.open(`https://rankactions.com/#enterprise-${upgradePlan}`,"_blank","noopener")}>
             Contact us about {upgradePlan.charAt(0).toUpperCase()+upgradePlan.slice(1)} →
           </button>
         ) : (
