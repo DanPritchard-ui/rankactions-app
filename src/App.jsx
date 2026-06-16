@@ -1083,10 +1083,10 @@ export default function RankActions() {
 
   // ── Plan helpers ────────────────────────────────────────────
   const isAgency  = plan === "agency";
-  const isPro     = plan === "pro" || isAgency;
-  const isStarter = plan === "starter" || isPro;
+  const isPro     = plan === "pro" || plan === "business" || isAgency;   // business = Pro-level features
+  const isStarter = plan === "starter" || plan === "individual" || isPro; // individual = Starter-level paid
   const isPaid    = isStarter;
-  const AI_FIX_LIMIT = isPro ? Infinity : plan === "starter" ? 20 : 5;
+  const AI_FIX_LIMIT = isPro ? Infinity : (plan === "starter" || plan === "individual") ? 20 : 5;
   const aiFixesLeft = AI_FIX_LIMIT === Infinity ? Infinity : Math.max(0, AI_FIX_LIMIT - aiFixCount);
 
   const trackAiFixUsage = () => {
@@ -1871,6 +1871,8 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
     pro_annual:      'price_1TZ9gNPrI9axbg39hmEWGiwK',
     agency_monthly:  'price_1TiXYyPrI9axbg39qSLW6jSx',
     agency_annual:   'price_1TiXZIPrI9axbg39SB3suRHW',
+    individual_monthly: 'price_1Tix8iPrI9axbg39G1IXcm0G',
+    individual_annual:  'price_1Tix98PrI9axbg39Vh1xXTqq',
   };
 
   const startCheckout = async (priceId) => {
@@ -1980,14 +1982,13 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
               <li>Weekly email digest</li>
             </ul>
           </div>
-          <div className={`plan-card ${selPlan==="starter"?"selected":""}`} onClick={()=>setSelPlan("starter")}>
-            {plan==="starter" && <div className="plan-badge" style={{background:"var(--blue)",color:"#fff"}}>Current plan</div>}
-            <div className="plan-name">Starter</div>
-            <div className="plan-price">{isAnnual ? "£190" : "£19"}</div>
-            <div className="plan-period">{isAnnual ? "per year — £15.83/mo" : "per month"}</div>
-            {isAnnual && <div style={{fontSize:".78rem",color:"var(--green)",fontWeight:600,marginBottom:".5rem"}}>Save £38 vs monthly</div>}
+          <div className={`plan-card featured ${selPlan==="individual"?"selected":""}`} onClick={()=>setSelPlan("individual")}>
+            {plan==="individual" ? <div className="plan-badge" style={{background:"var(--blue)",color:"#fff"}}>Current plan</div> : <div className="plan-badge">Most popular</div>}
+            <div className="plan-name">Individual</div>
+            <div className="plan-price">{isAnnual ? "£1,200" : "£100"}</div>
+            <div className="plan-period">{isAnnual ? "per year — £100/mo" : "per month"}</div>
             <ul className="plan-features">
-              <li>3 websites</li>
+              <li>1 website</li>
               <li>Full action list</li>
               <li>20 AI fixes/month</li>
               <li>Rank Tracker</li>
@@ -1995,35 +1996,32 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
               <li>Weekly email digest</li>
             </ul>
           </div>
-          <div className={`plan-card featured ${selPlan==="pro"?"selected":""}`} onClick={()=>setSelPlan("pro")}>
-            {plan==="pro" ? <div className="plan-badge" style={{background:"var(--blue)",color:"#fff"}}>Current plan</div> : <div className="plan-badge">Most popular</div>}
-            <div className="plan-name">Pro</div>
-            <div className="plan-price">{isAnnual ? "£390" : "£39"}</div>
-            <div className="plan-period">{isAnnual ? "per year — £32.50/mo" : "per month"}</div>
-            {isAnnual && <div style={{fontSize:".78rem",color:"var(--green)",fontWeight:600,marginBottom:".5rem"}}>Save £78 vs monthly</div>}
+          <div className={`plan-card ${selPlan==="business"?"selected":""}`} onClick={()=>setSelPlan("business")}>
+            {plan==="business" && <div className="plan-badge" style={{background:"var(--blue)",color:"#fff"}}>Current plan</div>}
+            <div className="plan-name">Business</div>
+            <div className="plan-price" style={{fontSize:"1.4rem"}}>Let’s talk</div>
+            <div className="plan-period">tailored pricing</div>
             <ul className="plan-features">
-              <li>5 websites (+£5/site extra)</li>
+              <li>1 website</li>
               <li>Unlimited AI fixes</li>
               <li>AI Content Generator</li>
               <li>Strategy Planner</li>
               <li>Link Building tools</li>
-              <li>Rank Tracker</li>
-              <li>Page Audit</li>
-              <li>Weekly email digest</li>
+              <li>Competitor tracking (soon)</li>
+              <li>Priority support</li>
             </ul>
           </div>
           <div className={`plan-card ${selPlan==="agency"?"selected":""}`} onClick={()=>setSelPlan("agency")}>
             {plan==="agency" && <div className="plan-badge" style={{background:"var(--blue)",color:"#fff"}}>Current plan</div>}
             <div className="plan-name">Agency</div>
-            <div className="plan-price">{isAnnual ? "£1,490" : "£149"}</div>
-            <div className="plan-period">{isAnnual ? "per year — £124.17/mo" : "per month"}</div>
-            {isAnnual && <div style={{fontSize:".78rem",color:"var(--green)",fontWeight:600,marginBottom:".5rem"}}>Save £298 vs monthly</div>}
+            <div className="plan-price" style={{fontSize:"1.4rem"}}>Let’s talk</div>
+            <div className="plan-period">tailored pricing</div>
             <ul className="plan-features">
-              <li>Everything in Pro</li>
-              <li>10 websites (+£5/site extra)</li>
-              <li>DataForSEO data (soon)</li>
-              <li>Competitor tracking (soon)</li>
+              <li>Everything in Business</li>
+              <li>Multiple websites</li>
               <li>White-label reports (soon)</li>
+              <li>DataForSEO data (soon)</li>
+              <li>Dedicated account manager</li>
               <li>Priority support</li>
             </ul>
           </div>
@@ -2039,8 +2037,14 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
             localStorage.setItem("rankactions_plan", "free");
             localStorage.setItem("rankactions_plan_chosen", "1");
             setShowPlan(false);
+          } else if (selPlan === "business" || selPlan === "agency") {
+            // Contact-form tiers (bespoke pricing, no Stripe) — same flow as Enterprise.
+            localStorage.setItem("rankactions_plan_chosen", "1");
+            setShowPlan(false);
+            window.open("https://rankactions.com/#enterprise", "_blank", "noopener");
           } else {
-            const pm = { starter: isAnnual?STRIPE_PRICES.starter_annual:STRIPE_PRICES.starter_monthly, pro: isAnnual?STRIPE_PRICES.pro_annual:STRIPE_PRICES.pro_monthly, agency: isAnnual?STRIPE_PRICES.agency_annual:STRIPE_PRICES.agency_monthly };
+            // Only Individual goes through Stripe checkout.
+            const pm = { individual: isAnnual?STRIPE_PRICES.individual_annual:STRIPE_PRICES.individual_monthly };
             localStorage.setItem("rankactions_plan_chosen", "1");
             setShowPlan(false);
             await startCheckout(pm[selPlan]);
@@ -2049,6 +2053,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
           {selPlan === plan ? "← Back to dashboard"
             : selPlan === "free" && isPaid ? "Manage subscription →"
             : selPlan === "free" ? "Continue with Free →"
+            : (selPlan === "business" || selPlan === "agency") ? `Contact us about ${selPlan.charAt(0).toUpperCase()+selPlan.slice(1)} →`
             : isPaid ? `Switch to ${selPlan.charAt(0).toUpperCase()+selPlan.slice(1)} →`
             : `Subscribe to ${selPlan.charAt(0).toUpperCase()+selPlan.slice(1)} →`}
         </button>
@@ -3631,21 +3636,19 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
   // ─────────────────────────────────────────────────────────────
 
   const UpgradeModal = () => {
-    const [upgradePlan, setUpgradePlan] = useState(plan === "free" ? "starter" : "pro");
+    const [upgradePlan, setUpgradePlan] = useState("individual");
     const [billing, setBilling] = useState("monthly");
     const [loading, setLoading] = useState(false);
 
     const prices = {
-      starter:{ monthly: "£19",  annual: "£190",   save: "£38",  monthlyEff: "£15.83" },
-      pro:    { monthly: "£39",  annual: "£390",   save: "£78",  monthlyEff: "£32.50" },
-      agency: { monthly: "£149", annual: "£1,490", save: "£298", monthlyEff: "£124.17" },
+      individual:{ monthly: "£100", annual: "£1,200", save: "", monthlyEff: "£100" },
     };
-    const p = prices[upgradePlan];
+    // Business & Agency are contact-form tiers (bespoke pricing, no Stripe).
+    const isContactTier = upgradePlan === "business" || upgradePlan === "agency";
+    const p = prices[upgradePlan] || { monthly: "", annual: "", save: "", monthlyEff: "" };
 
     const priceMap = {
-      starter: billing==="annual" ? STRIPE_PRICES.starter_annual : STRIPE_PRICES.starter_monthly,
-      pro: billing==="annual" ? STRIPE_PRICES.pro_annual : STRIPE_PRICES.pro_monthly,
-      agency: billing==="annual" ? STRIPE_PRICES.agency_annual : STRIPE_PRICES.agency_monthly,
+      individual: billing==="annual" ? STRIPE_PRICES.individual_annual : STRIPE_PRICES.individual_monthly,
     };
     const priceId = priceMap[upgradePlan];
 
@@ -3654,13 +3657,13 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
       <div className="upgrade-modal">
         <div className="upgrade-modal-badge">Upgrade</div>
         <h2>Unlock RankActions {upgradePlan.charAt(0).toUpperCase()+upgradePlan.slice(1)}</h2>
-        <p>{upgradePlan === "starter" ? "More AI fixes, rank tracking, unlimited page audits, and weekly reports."
-          : upgradePlan === "pro" ? "Unlimited AI fixes, content generation, strategy planner, and link building."
-          : "Everything in Pro plus unlimited client sites and priority support."}</p>
+        <p>{upgradePlan === "individual" ? "More AI fixes, rank tracking, unlimited page audits, and weekly reports — for your one website."
+          : upgradePlan === "business" ? "Unlimited AI fixes, content generation, strategy planner, and link building — tailored to your business."
+          : "Everything in Business plus multiple sites, white-label reports and a dedicated account manager."}</p>
 
         {/* Plan toggle */}
         <div style={{display:"flex",background:"var(--s2)",borderRadius:999,padding:3,gap:3,marginBottom:".75rem"}}>
-          {[["starter","Starter"],["pro","Pro"],["agency","Agency"]].filter(([id])=> id !== plan).map(([id,label])=>(
+          {[["individual","Individual"],["business","Business"],["agency","Agency"]].filter(([id])=> id !== plan).map(([id,label])=>(
             <button key={id} onClick={()=>setUpgradePlan(id)}
               style={{flex:1,padding:".45rem",borderRadius:999,border:"none",fontFamily:"var(--font)",fontSize:".82rem",fontWeight:600,cursor:"pointer",background:upgradePlan===id?"var(--blue)":"none",color:upgradePlan===id?"#fff":"var(--text2)",transition:"all .15s"}}>
               {label}
@@ -3668,60 +3671,68 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
           ))}
         </div>
 
-        {/* Billing toggle */}
+        {/* Billing toggle — only for Individual (the Stripe tier) */}
+        {!isContactTier && (
         <div style={{display:"flex",background:"var(--s2)",borderRadius:999,padding:3,gap:3,marginBottom:"1.25rem"}}>
           {[["monthly",`${p.monthly}/month`],["annual",`${p.annual}/year`]].map(([b,label])=>(
             <button key={b} onClick={()=>setBilling(b)}
               style={{flex:1,padding:".45rem",borderRadius:999,border:"none",fontFamily:"var(--font)",fontSize:".82rem",fontWeight:600,cursor:"pointer",background:billing===b?"var(--green)":"none",color:billing===b?"#000":"var(--text2)",transition:"all .15s"}}>
               {label}
-              {b==="annual" && <span style={{display:"block",fontSize:".68rem",fontWeight:500,opacity:.8}}>save {p.save}</span>}
+              {b==="annual" && p.save && <span style={{display:"block",fontSize:".68rem",fontWeight:500,opacity:.8}}>save {p.save}</span>}
             </button>
           ))}
         </div>
+        )}
 
         <ul className="upgrade-modal-features">
-          {upgradePlan === "starter" ? (
+          {upgradePlan === "individual" ? (
             <>
-              <li>3 websites</li>
+              <li>1 website</li>
               <li>20 AI fixes per month</li>
               <li>Rank Tracker</li>
               <li>Unlimited page audits</li>
               <li>Weekly email digest</li>
               <li>Full action list</li>
             </>
-          ) : upgradePlan === "pro" ? (
+          ) : upgradePlan === "business" ? (
             <>
-              <li>5 websites (+£5/site extra)</li>
+              <li>1 website</li>
               <li>Unlimited AI fixes</li>
               <li>AI content generator</li>
               <li>Strategy planner</li>
               <li>Link building tools</li>
               <li>Rank Tracker + Page Audit</li>
-              <li>Weekly email digest</li>
+              <li>Priority support</li>
             </>
           ) : (
             <>
-              <li>Everything in Pro</li>
-              <li>10 websites (+£5/site extra)</li>
-              <li>Priority support</li>
+              <li>Everything in Business</li>
+              <li>Multiple websites</li>
+              <li>Dedicated account manager</li>
               <li>White-label reports (coming soon)</li>
               <li>Competitor tracking (coming soon)</li>
             </>
           )}
         </ul>
-        <button className="upgrade-modal-cta" disabled={loading} onClick={async ()=>{
-          setLoading(true);
-          await startCheckout(priceId);
-          setLoading(false);
-        }}>
-          {loading ? "Redirecting to checkout…" : billing==="annual" ? `Upgrade — ${p.annual}/year` : `Upgrade — ${p.monthly}/month`}
-        </button>
-        {billing==="monthly" && (
+        {isContactTier ? (
+          <button className="upgrade-modal-cta" onClick={()=>window.open("https://rankactions.com/#enterprise","_blank","noopener")}>
+            Contact us about {upgradePlan.charAt(0).toUpperCase()+upgradePlan.slice(1)} →
+          </button>
+        ) : (
+          <button className="upgrade-modal-cta" disabled={loading} onClick={async ()=>{
+            setLoading(true);
+            await startCheckout(priceId);
+            setLoading(false);
+          }}>
+            {loading ? "Redirecting to checkout…" : billing==="annual" ? `Upgrade — ${p.annual}/year` : `Upgrade — ${p.monthly}/month`}
+          </button>
+        )}
+        {!isContactTier && billing==="monthly" && p.save && (
           <div style={{fontSize:".75rem",color:"var(--green)",textAlign:"center",margin:".5rem 0",cursor:"pointer"}} onClick={()=>setBilling("annual")}>
             💡 Switch to annual and save {p.save}/year
           </div>
         )}
-        <div style={{fontSize:".7rem",color:"var(--text3)",textAlign:"center",marginTop:".5rem"}}>Secure payment via Stripe · Cancel any time</div>
+        {!isContactTier && <div style={{fontSize:".7rem",color:"var(--text3)",textAlign:"center",marginTop:".5rem"}}>Secure payment via Stripe · Cancel any time</div>}
         <div className="upgrade-modal-skip" onClick={()=>setShowUpgrade(false)}>Maybe later</div>
         {/* Enterprise nudge — opens the landing-page contact form in a new tab.
             Enterprise pricing is bespoke and managed manually, no Stripe flow. */}
