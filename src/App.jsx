@@ -1963,7 +1963,6 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
           </div>
           <span style={{fontSize:".875rem",fontWeight:isAnnual?700:400,color:isAnnual?"var(--text)":"var(--text3)"}}>
             Annual
-            <span style={{background:"var(--green)",color:"#000",fontSize:".65rem",fontWeight:700,padding:".15rem .45rem",borderRadius:999,marginLeft:".4rem"}}>2 months free</span>
           </span>
         </div>
 
