@@ -2320,7 +2320,6 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
             {n.id==="content" && !isPro && <span style={{fontSize:".6rem",marginLeft:"auto",color:"var(--text3)"}}>Paid</span>}
             {n.id==="strategy" && !isPro && <span style={{fontSize:".6rem",marginLeft:"auto",color:"var(--text3)"}}>Paid</span>}
             {n.id==="links" && !isPro && <span style={{fontSize:".6rem",marginLeft:"auto",color:"var(--text3)"}}>Paid</span>}
-            {n.id==="tracker" && !isStarter && <span style={{fontSize:".6rem",marginLeft:"auto",color:"var(--text3)"}}>Paid</span>}
           </div>
         );})}
       </div>
