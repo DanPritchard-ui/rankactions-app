@@ -4,6 +4,7 @@ import {
   useUser, useClerk, SignedIn, SignedOut
 } from "@clerk/clerk-react";
 import { sanitizeAiHtml, sanitizeAiPreview } from "./utils/sanitize";
+import { loadUserData, saveUserData, setUserDataTokenGetter } from "./utils/userData";
 import { exportAuditPdf } from "./utils/exportAuditPdf";
 
 // ─────────────────────────────────────────────────────────────
@@ -13,6 +14,52 @@ const WORKER_URL = import.meta.env.VITE_WORKER_URL || "https://api.rankactions.c
 
 // Module-level auth token — updated by the component, read by API helpers
 let _getToken = async () => null;
+
+// Stable, deterministic id-safe slug from a keyword string. Used to give
+// completed-action ("done") fixes IDs that are tied to the KEYWORD, not the
+// keyword's array index — so completions survive GSC data reshuffles.
+function raSlug(str) {
+  return String(str || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')   // non-alphanumerics → hyphen
+    .replace(/^-+|-+$/g, '')        // trim leading/trailing hyphens
+    .slice(0, 80);                  // cap length
+}
+
+// Option B migration: translate legacy index-based done IDs (live-<n> / seo-<n>)
+// to the new stable keyword-slug IDs, using the CURRENT opportunity/keyword
+// lists to resolve each index. IDs that already look slug-based, or that can't
+// be resolved against current data, are handled defensively:
+//   - already-slug IDs (no trailing pure number) are kept as-is
+//   - legacy numeric IDs that resolve → remapped to the slug
+//   - legacy numeric IDs that DON'T resolve (index out of range now) → dropped
+// This is best-effort: the legacy IDs were unreliable by nature (that's the bug
+// we're fixing), so unresolvable ones are discarded rather than mis-preserved.
+function migrateDoneIds(doneArr, topOpportunities, seoKeywords) {
+  if (!Array.isArray(doneArr)) return [];
+  const opps = Array.isArray(topOpportunities) ? topOpportunities : [];
+  const seo  = Array.isArray(seoKeywords) ? seoKeywords : [];
+  const out = new Set();
+  for (const id of doneArr) {
+    const liveNum = /^live-(\d+)$/.exec(id);
+    const seoNum  = /^seo-(\d+)$/.exec(id);
+    if (liveNum) {
+      const idx = Number(liveNum[1]);
+      const kw = opps[idx]?.keyword;
+      if (kw) out.add(`live-${raSlug(kw)}`);      // resolved → remap
+      // else: drop (index no longer valid)
+    } else if (seoNum) {
+      const idx = Number(seoNum[1]);
+      const kw = seo[idx]?.kw || seo[idx]?.keyword;
+      if (kw) out.add(`seo-${raSlug(kw)}`);
+      // else: drop
+    } else {
+      out.add(id);                                 // already slug-based / other → keep
+    }
+  }
+  return [...out];
+}
 
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -886,6 +933,8 @@ export default function RankActions() {
         return null;
       } catch { return null; }
     };
+    // Also wire the userData persistence layer to use this same session token.
+    setUserDataTokenGetter(_getToken);
   }, [session]);
 
   // ─── Theme: respect the user's OS-level light/dark preference ───────────────
@@ -1262,19 +1311,50 @@ export default function RankActions() {
   // ── Reload per-site state when site changes ─────────────────
   useEffect(() => {
     if (!selectedSite) return;
-    // Reload doneFixes for this site
-    try { setDoneFixes(new Set(JSON.parse(localStorage.getItem(`ra_done_${selectedSite}`) || "[]"))); } catch { setDoneFixes(new Set()); }
-    // Reload link prospects for this site
-    try { setLinkProspects(JSON.parse(localStorage.getItem(`ra_prospects_${selectedSite}`) || "[]")); } catch { setLinkProspects([]); }
+    let cancelled = false;
+    const site = selectedSite;
+    // Load done + prospects from the server (loadUserData falls back to
+    // localStorage automatically if the server is unreachable). The `cancelled`
+    // guard drops stale results if the site changes again before these resolve.
+    (async () => {
+      // doneFixes — load, then apply Option B legacy-id migration.
+      const rawDone = await loadUserData(site, 'done');
+      if (cancelled || site !== selectedSite) return;
+      const migrated = migrateDoneIds(
+        Array.isArray(rawDone) ? rawDone : [],
+        siteData?.topOpportunities,
+        siteData?.keywords
+      );
+      setDoneFixes(new Set(migrated));
+      // If migration changed anything, persist the cleaned set back.
+      const before = Array.isArray(rawDone) ? rawDone : [];
+      if (JSON.stringify([...migrated].sort()) !== JSON.stringify([...before].sort())) {
+        saveUserData(site, 'done', migrated);
+      }
+    })();
+    (async () => {
+      const rawProspects = await loadUserData(site, 'prospects');
+      if (cancelled || site !== selectedSite) return;
+      setLinkProspects(Array.isArray(rawProspects) ? rawProspects : []);
+    })();
+    // Hydrate the remaining types from the server into the localStorage cache.
+    // These are read synchronously elsewhere; loadUserData write-throughs to
+    // localStorage on a successful server read, so after a cache wipe the
+    // synchronous reads find server-backed data once hydration completes.
+    // Fire-and-forget — we don't hold dedicated React state for all of them.
+    ['strategy', 'strategy_history', 'content_history', 'link_history', 'starting_out', 'kw_enrich']
+      .forEach((t) => { loadUserData(site, t); });
     // Clear cached link opps and AI summary (they're site-specific)
     setLinkOpps([]);
     setAiSummary(null);
+    return () => { cancelled = true; };
   }, [selectedSite]);
 
   // ── Persist doneFixes whenever they change ──────────────────
   useEffect(() => {
     if (!selectedSite) return;
-    localStorage.setItem(`ra_done_${selectedSite}`, JSON.stringify([...doneFixes]));
+    // saveUserData writes localStorage immediately AND the server (debounced).
+    saveUserData(selectedSite, 'done', [...doneFixes]);
   }, [doneFixes, selectedSite]);
 
   // ── Show onboarding tour on first dashboard visit ──────────
@@ -1370,14 +1450,13 @@ export default function RankActions() {
     const levels = ["high","medium","low"];
     // Filter out completed fixes and show the next best opportunities
     const allOpps = siteData.topOpportunities || [];
-    const available = allOpps.filter((_opp, i) => !doneFixes.has(`live-${i}`));
+    const available = allOpps.filter((opp) => !doneFixes.has(`live-${raSlug(opp.keyword)}`));
     // If all top ones are done, pull from deeper in the list
     const opps = available.length > 0 ? available : allOpps.slice(3, 6);
     if (opps.length === 0) return DEMO_FIXES;
     return opps.slice(0,3).map((opp,i) => {
-      const origIdx = allOpps.indexOf(opp);
       return {
-        id: origIdx >= 0 ? `live-${origIdx}` : `live-ext-${i}`,
+        id: `live-${raSlug(opp.keyword)}`,
         level:levels[Math.min(i, 2)], color:colors[Math.min(i, 2)], label:labels[Math.min(i, 2)], type:"SEO",
         title:`Improve ranking for "${opp.keyword}"`,
         desc:`Currently at position #${opp.position}. ${opp.potential}.`,
@@ -2690,7 +2769,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
                           {row.action==="fix_title" ? (
                             // Title tag fix → opens AI fix modal
                             <span className="td-link" style={{color:btnColor}} onClick={()=>openModal({
-                              id:`seo-${i}`, level:"medium", color:"#f5a623", label:"OPPORTUNITY", type:"SEO",
+                              id:`seo-${raSlug(row.kw)}`, level:"medium", color:"#f5a623", label:"OPPORTUNITY", type:"SEO",
                               title:`Improve ranking for "${row.kw}"`,
                               desc:`Currently at position #${row.pos} with ${row.vol} impressions. ${row.gap}.`,
                               m1:`Position: #${row.pos}`, m2:row.vol,
@@ -3949,6 +4028,7 @@ IMPORTANT — The keyword "${kw.trim()}" MUST appear verbatim in the title, meta
           const hist = JSON.parse(localStorage.getItem(histKey) || "[]");
           hist.push({ keyword: kw.trim(), date: new Date().toISOString().slice(0,10) });
           localStorage.setItem(histKey, JSON.stringify(hist.slice(-50))); // keep last 50
+          saveUserData(selectedSite, 'content_history', hist.slice(-50));
         } catch {}
       } catch(e) {
         clearInterval(iv);
@@ -4825,26 +4905,24 @@ ${stratHtml}${contentHtml}
                 <div style={{fontSize:"1.4rem",fontWeight:800,fontFamily:"var(--mono)",color:"var(--green)",marginBottom:".5rem"}}>{completedFixes.length}</div>
                 <div style={{fontSize:".78rem",color:"var(--text2)",marginBottom:".75rem"}}>actions completed for {selectedSite}</div>
                 {completedFixes.slice(0,6).map((id,i) => {
-                  // Resolve the action ID to a human-readable label by looking
-                  // up the underlying keyword from the source data.
-                  // Format: live-N → topOpportunities[N], seo-N → keywords[N].
-                  // Note: this lookup is index-based, so if the source data
-                  // has reshuffled since the action was completed, the label
-                  // may point at a different keyword. A future fix would key
-                  // actions by stable identifier (e.g. slugified keyword)
-                  // rather than position-in-list.
+                  // Resolve the action ID to a human-readable label. IDs are now
+                  // stable keyword-slug based: live-<slug> / seo-<slug>. We match
+                  // the slug back against current source data for an exact label,
+                  // and fall back to un-slugifying the id if the keyword is no
+                  // longer in the current list.
                   const stripQuotes = (s) => (s || "").replace(/^["']+|["']+$/g, '');
+                  const unslug = (sl) => sl.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
                   let label = id;
                   if (id.startsWith("live-ext-")) {
                     label = "Ranking improvement (extended list)";
                   } else if (id.startsWith("live-")) {
-                    const idx = parseInt(id.slice(5), 10);
-                    const opp = siteData?.topOpportunities?.[idx];
-                    label = opp?.keyword ? `Improve "${stripQuotes(opp.keyword)}"` : `Ranking improvement #${idx + 1}`;
+                    const slug = id.slice(5);
+                    const opp = (siteData?.topOpportunities || []).find(o => raSlug(o.keyword) === slug);
+                    label = opp?.keyword ? `Improve "${stripQuotes(opp.keyword)}"` : `Improve "${unslug(slug)}"`;
                   } else if (id.startsWith("seo-")) {
-                    const idx = parseInt(id.slice(4), 10);
-                    const kw = siteData?.keywords?.[idx];
-                    label = kw?.keyword ? `Improve "${stripQuotes(kw.keyword)}"` : `SEO opportunity #${idx + 1}`;
+                    const slug = id.slice(4);
+                    const kw = (siteData?.keywords || []).find(k => raSlug(k.keyword || k.kw) === slug);
+                    label = kw ? `Improve "${stripQuotes(kw.keyword || kw.kw)}"` : `Improve "${unslug(slug)}"`;
                   } else if (id.startsWith("demo-")) {
                     label = `Fix: ${id.slice(5)}`;
                   }
@@ -5222,6 +5300,7 @@ Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource
         const hist = JSON.parse(localStorage.getItem(histKey) || "[]");
         parsed.forEach(o => hist.push({ title: o.title, type: o.type, target: o.targets?.[0]?.name || "", date: new Date().toISOString().slice(0,10) }));
         localStorage.setItem(histKey, JSON.stringify(hist.slice(-40))); // keep last 40
+        saveUserData(selectedSite, 'link_history', hist.slice(-40));
       } catch {}
     } catch {
       setLinkOpps([
@@ -5264,19 +5343,19 @@ Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource
     const prospect = { id: Date.now(), domain, type, status, date: new Date().toLocaleDateString("en-GB"), notes:"" };
     const updated = [prospect, ...linkProspects];
     setLinkProspects(updated);
-    localStorage.setItem(`ra_prospects_${selectedSite}`, JSON.stringify(updated));
+    saveUserData(selectedSite, 'prospects', updated);
   };
 
   const moveProspect = (id, newStatus) => {
     const updated = linkProspects.map(p => p.id===id ? {...p, status:newStatus} : p);
     setLinkProspects(updated);
-    localStorage.setItem(`ra_prospects_${selectedSite}`, JSON.stringify(updated));
+    saveUserData(selectedSite, 'prospects', updated);
   };
 
   const deleteProspect = (id) => {
     const updated = linkProspects.filter(p => p.id!==id);
     setLinkProspects(updated);
-    localStorage.setItem(`ra_prospects_${selectedSite}`, JSON.stringify(updated));
+    saveUserData(selectedSite, 'prospects', updated);
   };
 
   // ─────────────────────────────────────────────────────────────
@@ -5392,7 +5471,7 @@ Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource
           }
         }
         setKeywordEnrichment(merged);
-        localStorage.setItem(`ra_kw_enrich_${selectedSite}`, JSON.stringify(merged));
+        saveUserData(selectedSite, 'kw_enrich', merged);
         if (data.quotaLimit !== null && data.quotaLimit !== undefined) {
           setEnrichQuota({ used: data.quotaUsed, limit: data.quotaLimit });
         }
@@ -5428,7 +5507,7 @@ Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource
 
     const saveStrategy = (s) => {
       setStrategy(s);
-      localStorage.setItem(`ra_strategy_${selectedSite}`, JSON.stringify(s));
+      saveUserData(selectedSite, 'strategy', s);
     };
 
     // Generate cluster suggestions from GSC data
@@ -5561,7 +5640,9 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
           const histKey = `ra_strategy_history_${selectedSite}`;
           const hist = JSON.parse(localStorage.getItem(histKey) || "[]");
           hist.push({ topic: strategy.topic, date: strategy.createdAt?.slice(0,10) || new Date().toISOString().slice(0,10), clusters: strategy.clusters.map(c => c.keyword) });
-          localStorage.setItem(histKey, JSON.stringify(hist.slice(-20))); // keep last 20
+          localStorage.setItem(histKey, JSON.stringify(hist.slice(-20)));
+          saveUserData(selectedSite, 'strategy_history', hist.slice(-20)); // keep last 20
+          saveUserData(selectedSite, 'strategy_history', hist.slice(-20));
         } catch {}
       }
       const newStrategy = {
@@ -8065,6 +8146,7 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
     useEffect(() => {
       const toSave = { ...state, updatedAt: new Date().toISOString() };
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave)); } catch {}
+      saveUserData(selectedSite, 'starting_out', toSave);
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [state]);
 
@@ -8567,6 +8649,7 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
             clusters: (existing.clusters || []).map(c => c.keyword),
           });
           localStorage.setItem(histKey, JSON.stringify(hist.slice(-20)));
+          saveUserData(selectedSite, 'strategy_history', hist.slice(-20));
         }
       } catch {}
 
@@ -8628,7 +8711,7 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
 
       // Save the strategy and mark wizard complete
       try {
-        localStorage.setItem(`ra_strategy_${selectedSite}`, JSON.stringify(newStrategy));
+        saveUserData(selectedSite, 'strategy', newStrategy);
       } catch {}
 
       setState(s => ({
