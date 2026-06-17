@@ -4,6 +4,7 @@ import {
   useUser, useClerk, SignedIn, SignedOut
 } from "@clerk/clerk-react";
 import { sanitizeAiHtml, sanitizeAiPreview } from "./utils/sanitize";
+import { loadUserData, saveUserData, setUserDataTokenGetter } from "./utils/userData";
 import { exportAuditPdf } from "./utils/exportAuditPdf";
 
 // ─────────────────────────────────────────────────────────────
@@ -13,6 +14,52 @@ const WORKER_URL = import.meta.env.VITE_WORKER_URL || "https://api.rankactions.c
 
 // Module-level auth token — updated by the component, read by API helpers
 let _getToken = async () => null;
+
+// Stable, deterministic id-safe slug from a keyword string. Used to give
+// completed-action ("done") fixes IDs that are tied to the KEYWORD, not the
+// keyword's array index — so completions survive GSC data reshuffles.
+function raSlug(str) {
+  return String(str || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')   // non-alphanumerics → hyphen
+    .replace(/^-+|-+$/g, '')        // trim leading/trailing hyphens
+    .slice(0, 80);                  // cap length
+}
+
+// Option B migration: translate legacy index-based done IDs (live-<n> / seo-<n>)
+// to the new stable keyword-slug IDs, using the CURRENT opportunity/keyword
+// lists to resolve each index. IDs that already look slug-based, or that can't
+// be resolved against current data, are handled defensively:
+//   - already-slug IDs (no trailing pure number) are kept as-is
+//   - legacy numeric IDs that resolve → remapped to the slug
+//   - legacy numeric IDs that DON'T resolve (index out of range now) → dropped
+// This is best-effort: the legacy IDs were unreliable by nature (that's the bug
+// we're fixing), so unresolvable ones are discarded rather than mis-preserved.
+function migrateDoneIds(doneArr, topOpportunities, seoKeywords) {
+  if (!Array.isArray(doneArr)) return [];
+  const opps = Array.isArray(topOpportunities) ? topOpportunities : [];
+  const seo  = Array.isArray(seoKeywords) ? seoKeywords : [];
+  const out = new Set();
+  for (const id of doneArr) {
+    const liveNum = /^live-(\d+)$/.exec(id);
+    const seoNum  = /^seo-(\d+)$/.exec(id);
+    if (liveNum) {
+      const idx = Number(liveNum[1]);
+      const kw = opps[idx]?.keyword;
+      if (kw) out.add(`live-${raSlug(kw)}`);      // resolved → remap
+      // else: drop (index no longer valid)
+    } else if (seoNum) {
+      const idx = Number(seoNum[1]);
+      const kw = seo[idx]?.kw || seo[idx]?.keyword;
+      if (kw) out.add(`seo-${raSlug(kw)}`);
+      // else: drop
+    } else {
+      out.add(id);                                 // already slug-based / other → keep
+    }
+  }
+  return [...out];
+}
 
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -886,6 +933,8 @@ export default function RankActions() {
         return null;
       } catch { return null; }
     };
+    // Also wire the userData persistence layer to use this same session token.
+    setUserDataTokenGetter(_getToken);
   }, [session]);
 
   // ─── Theme: respect the user's OS-level light/dark preference ───────────────
@@ -1083,10 +1132,10 @@ export default function RankActions() {
 
   // ── Plan helpers ────────────────────────────────────────────
   const isAgency  = plan === "agency";
-  const isPro     = plan === "pro" || isAgency;
-  const isStarter = plan === "starter" || isPro;
+  const isPro     = plan === "pro" || plan === "business" || isAgency;   // business = Pro-level features
+  const isStarter = plan === "starter" || plan === "individual" || isPro; // individual = Starter-level paid
   const isPaid    = isStarter;
-  const AI_FIX_LIMIT = isPro ? Infinity : plan === "starter" ? 20 : 5;
+  const AI_FIX_LIMIT = isPro ? Infinity : (plan === "starter" || plan === "individual") ? 20 : 5;
   const aiFixesLeft = AI_FIX_LIMIT === Infinity ? Infinity : Math.max(0, AI_FIX_LIMIT - aiFixCount);
 
   const trackAiFixUsage = () => {
@@ -1262,19 +1311,50 @@ export default function RankActions() {
   // ── Reload per-site state when site changes ─────────────────
   useEffect(() => {
     if (!selectedSite) return;
-    // Reload doneFixes for this site
-    try { setDoneFixes(new Set(JSON.parse(localStorage.getItem(`ra_done_${selectedSite}`) || "[]"))); } catch { setDoneFixes(new Set()); }
-    // Reload link prospects for this site
-    try { setLinkProspects(JSON.parse(localStorage.getItem(`ra_prospects_${selectedSite}`) || "[]")); } catch { setLinkProspects([]); }
+    let cancelled = false;
+    const site = selectedSite;
+    // Load done + prospects from the server (loadUserData falls back to
+    // localStorage automatically if the server is unreachable). The `cancelled`
+    // guard drops stale results if the site changes again before these resolve.
+    (async () => {
+      // doneFixes — load, then apply Option B legacy-id migration.
+      const rawDone = await loadUserData(site, 'done');
+      if (cancelled || site !== selectedSite) return;
+      const migrated = migrateDoneIds(
+        Array.isArray(rawDone) ? rawDone : [],
+        siteData?.topOpportunities,
+        siteData?.keywords
+      );
+      setDoneFixes(new Set(migrated));
+      // If migration changed anything, persist the cleaned set back.
+      const before = Array.isArray(rawDone) ? rawDone : [];
+      if (JSON.stringify([...migrated].sort()) !== JSON.stringify([...before].sort())) {
+        saveUserData(site, 'done', migrated);
+      }
+    })();
+    (async () => {
+      const rawProspects = await loadUserData(site, 'prospects');
+      if (cancelled || site !== selectedSite) return;
+      setLinkProspects(Array.isArray(rawProspects) ? rawProspects : []);
+    })();
+    // Hydrate the remaining types from the server into the localStorage cache.
+    // These are read synchronously elsewhere; loadUserData write-throughs to
+    // localStorage on a successful server read, so after a cache wipe the
+    // synchronous reads find server-backed data once hydration completes.
+    // Fire-and-forget — we don't hold dedicated React state for all of them.
+    ['strategy', 'strategy_history', 'content_history', 'link_history', 'starting_out', 'kw_enrich']
+      .forEach((t) => { loadUserData(site, t); });
     // Clear cached link opps and AI summary (they're site-specific)
     setLinkOpps([]);
     setAiSummary(null);
+    return () => { cancelled = true; };
   }, [selectedSite]);
 
   // ── Persist doneFixes whenever they change ──────────────────
   useEffect(() => {
     if (!selectedSite) return;
-    localStorage.setItem(`ra_done_${selectedSite}`, JSON.stringify([...doneFixes]));
+    // saveUserData writes localStorage immediately AND the server (debounced).
+    saveUserData(selectedSite, 'done', [...doneFixes]);
   }, [doneFixes, selectedSite]);
 
   // ── Show onboarding tour on first dashboard visit ──────────
@@ -1370,14 +1450,13 @@ export default function RankActions() {
     const levels = ["high","medium","low"];
     // Filter out completed fixes and show the next best opportunities
     const allOpps = siteData.topOpportunities || [];
-    const available = allOpps.filter((_opp, i) => !doneFixes.has(`live-${i}`));
+    const available = allOpps.filter((opp) => !doneFixes.has(`live-${raSlug(opp.keyword)}`));
     // If all top ones are done, pull from deeper in the list
     const opps = available.length > 0 ? available : allOpps.slice(3, 6);
     if (opps.length === 0) return DEMO_FIXES;
     return opps.slice(0,3).map((opp,i) => {
-      const origIdx = allOpps.indexOf(opp);
       return {
-        id: origIdx >= 0 ? `live-${origIdx}` : `live-ext-${i}`,
+        id: `live-${raSlug(opp.keyword)}`,
         level:levels[Math.min(i, 2)], color:colors[Math.min(i, 2)], label:labels[Math.min(i, 2)], type:"SEO",
         title:`Improve ranking for "${opp.keyword}"`,
         desc:`Currently at position #${opp.position}. ${opp.potential}.`,
@@ -1871,6 +1950,8 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
     pro_annual:      'price_1TZ9gNPrI9axbg39hmEWGiwK',
     agency_monthly:  'price_1TiXYyPrI9axbg39qSLW6jSx',
     agency_annual:   'price_1TiXZIPrI9axbg39SB3suRHW',
+    individual_monthly: 'price_1Tix8iPrI9axbg39G1IXcm0G',
+    individual_annual:  'price_1Tix98PrI9axbg39Vh1xXTqq',
   };
 
   const startCheckout = async (priceId) => {
@@ -1961,7 +2042,6 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
           </div>
           <span style={{fontSize:".875rem",fontWeight:isAnnual?700:400,color:isAnnual?"var(--text)":"var(--text3)"}}>
             Annual
-            <span style={{background:"var(--green)",color:"#000",fontSize:".65rem",fontWeight:700,padding:".15rem .45rem",borderRadius:999,marginLeft:".4rem"}}>2 months free</span>
           </span>
         </div>
 
@@ -1980,14 +2060,13 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
               <li>Weekly email digest</li>
             </ul>
           </div>
-          <div className={`plan-card ${selPlan==="starter"?"selected":""}`} onClick={()=>setSelPlan("starter")}>
-            {plan==="starter" && <div className="plan-badge" style={{background:"var(--blue)",color:"#fff"}}>Current plan</div>}
-            <div className="plan-name">Starter</div>
-            <div className="plan-price">{isAnnual ? "£190" : "£19"}</div>
-            <div className="plan-period">{isAnnual ? "per year — £15.83/mo" : "per month"}</div>
-            {isAnnual && <div style={{fontSize:".78rem",color:"var(--green)",fontWeight:600,marginBottom:".5rem"}}>Save £38 vs monthly</div>}
+          <div className={`plan-card featured ${selPlan==="individual"?"selected":""}`} onClick={()=>setSelPlan("individual")}>
+            {plan==="individual" ? <div className="plan-badge" style={{background:"var(--blue)",color:"#fff"}}>Current plan</div> : <div className="plan-badge">Most popular</div>}
+            <div className="plan-name">Individual</div>
+            <div className="plan-price">{isAnnual ? "£1,200" : "£100"}</div>
+            <div className="plan-period">{isAnnual ? "per year — £100/mo" : "per month"}</div>
             <ul className="plan-features">
-              <li>3 websites</li>
+              <li>1 website</li>
               <li>Full action list</li>
               <li>20 AI fixes/month</li>
               <li>Rank Tracker</li>
@@ -1995,35 +2074,32 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
               <li>Weekly email digest</li>
             </ul>
           </div>
-          <div className={`plan-card featured ${selPlan==="pro"?"selected":""}`} onClick={()=>setSelPlan("pro")}>
-            {plan==="pro" ? <div className="plan-badge" style={{background:"var(--blue)",color:"#fff"}}>Current plan</div> : <div className="plan-badge">Most popular</div>}
-            <div className="plan-name">Pro</div>
-            <div className="plan-price">{isAnnual ? "£390" : "£39"}</div>
-            <div className="plan-period">{isAnnual ? "per year — £32.50/mo" : "per month"}</div>
-            {isAnnual && <div style={{fontSize:".78rem",color:"var(--green)",fontWeight:600,marginBottom:".5rem"}}>Save £78 vs monthly</div>}
+          <div className={`plan-card ${selPlan==="business"?"selected":""}`} onClick={()=>setSelPlan("business")}>
+            {plan==="business" && <div className="plan-badge" style={{background:"var(--blue)",color:"#fff"}}>Current plan</div>}
+            <div className="plan-name">Business</div>
+            <div className="plan-price" style={{fontSize:"1.4rem"}}>Let’s talk</div>
+            <div className="plan-period">tailored pricing</div>
             <ul className="plan-features">
-              <li>5 websites (+£5/site extra)</li>
+              <li>1 website</li>
               <li>Unlimited AI fixes</li>
               <li>AI Content Generator</li>
               <li>Strategy Planner</li>
               <li>Link Building tools</li>
-              <li>Rank Tracker</li>
-              <li>Page Audit</li>
-              <li>Weekly email digest</li>
+              <li>Competitor tracking (soon)</li>
+              <li>Priority support</li>
             </ul>
           </div>
           <div className={`plan-card ${selPlan==="agency"?"selected":""}`} onClick={()=>setSelPlan("agency")}>
             {plan==="agency" && <div className="plan-badge" style={{background:"var(--blue)",color:"#fff"}}>Current plan</div>}
             <div className="plan-name">Agency</div>
-            <div className="plan-price">{isAnnual ? "£1,490" : "£149"}</div>
-            <div className="plan-period">{isAnnual ? "per year — £124.17/mo" : "per month"}</div>
-            {isAnnual && <div style={{fontSize:".78rem",color:"var(--green)",fontWeight:600,marginBottom:".5rem"}}>Save £298 vs monthly</div>}
+            <div className="plan-price" style={{fontSize:"1.4rem"}}>Let’s talk</div>
+            <div className="plan-period">tailored pricing</div>
             <ul className="plan-features">
-              <li>Everything in Pro</li>
-              <li>10 websites (+£5/site extra)</li>
-              <li>DataForSEO data (soon)</li>
-              <li>Competitor tracking (soon)</li>
+              <li>Everything in Business</li>
+              <li>Multiple websites</li>
               <li>White-label reports (soon)</li>
+              <li>DataForSEO data (soon)</li>
+              <li>Dedicated account manager</li>
               <li>Priority support</li>
             </ul>
           </div>
@@ -2039,8 +2115,14 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
             localStorage.setItem("rankactions_plan", "free");
             localStorage.setItem("rankactions_plan_chosen", "1");
             setShowPlan(false);
+          } else if (selPlan === "business" || selPlan === "agency") {
+            // Contact-form tiers (bespoke pricing, no Stripe) — same flow as Enterprise.
+            localStorage.setItem("rankactions_plan_chosen", "1");
+            setShowPlan(false);
+            window.open(`https://rankactions.com/#enterprise-${selPlan}`, "_blank", "noopener");
           } else {
-            const pm = { starter: isAnnual?STRIPE_PRICES.starter_annual:STRIPE_PRICES.starter_monthly, pro: isAnnual?STRIPE_PRICES.pro_annual:STRIPE_PRICES.pro_monthly, agency: isAnnual?STRIPE_PRICES.agency_annual:STRIPE_PRICES.agency_monthly };
+            // Only Individual goes through Stripe checkout.
+            const pm = { individual: isAnnual?STRIPE_PRICES.individual_annual:STRIPE_PRICES.individual_monthly };
             localStorage.setItem("rankactions_plan_chosen", "1");
             setShowPlan(false);
             await startCheckout(pm[selPlan]);
@@ -2049,6 +2131,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
           {selPlan === plan ? "← Back to dashboard"
             : selPlan === "free" && isPaid ? "Manage subscription →"
             : selPlan === "free" ? "Continue with Free →"
+            : (selPlan === "business" || selPlan === "agency") ? `Contact us about ${selPlan.charAt(0).toUpperCase()+selPlan.slice(1)} →`
             : isPaid ? `Switch to ${selPlan.charAt(0).toUpperCase()+selPlan.slice(1)} →`
             : `Subscribe to ${selPlan.charAt(0).toUpperCase()+selPlan.slice(1)} →`}
         </button>
@@ -2686,7 +2769,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
                           {row.action==="fix_title" ? (
                             // Title tag fix → opens AI fix modal
                             <span className="td-link" style={{color:btnColor}} onClick={()=>openModal({
-                              id:`seo-${i}`, level:"medium", color:"#f5a623", label:"OPPORTUNITY", type:"SEO",
+                              id:`seo-${raSlug(row.kw)}`, level:"medium", color:"#f5a623", label:"OPPORTUNITY", type:"SEO",
                               title:`Improve ranking for "${row.kw}"`,
                               desc:`Currently at position #${row.pos} with ${row.vol} impressions. ${row.gap}.`,
                               m1:`Position: #${row.pos}`, m2:row.vol,
@@ -3631,21 +3714,19 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
   // ─────────────────────────────────────────────────────────────
 
   const UpgradeModal = () => {
-    const [upgradePlan, setUpgradePlan] = useState(plan === "free" ? "starter" : "pro");
+    const [upgradePlan, setUpgradePlan] = useState("individual");
     const [billing, setBilling] = useState("monthly");
     const [loading, setLoading] = useState(false);
 
     const prices = {
-      starter:{ monthly: "£19",  annual: "£190",   save: "£38",  monthlyEff: "£15.83" },
-      pro:    { monthly: "£39",  annual: "£390",   save: "£78",  monthlyEff: "£32.50" },
-      agency: { monthly: "£149", annual: "£1,490", save: "£298", monthlyEff: "£124.17" },
+      individual:{ monthly: "£100", annual: "£1,200", save: "", monthlyEff: "£100" },
     };
-    const p = prices[upgradePlan];
+    // Business & Agency are contact-form tiers (bespoke pricing, no Stripe).
+    const isContactTier = upgradePlan === "business" || upgradePlan === "agency";
+    const p = prices[upgradePlan] || { monthly: "", annual: "", save: "", monthlyEff: "" };
 
     const priceMap = {
-      starter: billing==="annual" ? STRIPE_PRICES.starter_annual : STRIPE_PRICES.starter_monthly,
-      pro: billing==="annual" ? STRIPE_PRICES.pro_annual : STRIPE_PRICES.pro_monthly,
-      agency: billing==="annual" ? STRIPE_PRICES.agency_annual : STRIPE_PRICES.agency_monthly,
+      individual: billing==="annual" ? STRIPE_PRICES.individual_annual : STRIPE_PRICES.individual_monthly,
     };
     const priceId = priceMap[upgradePlan];
 
@@ -3654,13 +3735,13 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
       <div className="upgrade-modal">
         <div className="upgrade-modal-badge">Upgrade</div>
         <h2>Unlock RankActions {upgradePlan.charAt(0).toUpperCase()+upgradePlan.slice(1)}</h2>
-        <p>{upgradePlan === "starter" ? "More AI fixes, rank tracking, unlimited page audits, and weekly reports."
-          : upgradePlan === "pro" ? "Unlimited AI fixes, content generation, strategy planner, and link building."
-          : "Everything in Pro plus unlimited client sites and priority support."}</p>
+        <p>{upgradePlan === "individual" ? "More AI fixes, rank tracking, unlimited page audits, and weekly reports — for your one website."
+          : upgradePlan === "business" ? "Unlimited AI fixes, content generation, strategy planner, and link building — tailored to your business."
+          : "Everything in Business plus multiple sites, white-label reports and a dedicated account manager."}</p>
 
         {/* Plan toggle */}
         <div style={{display:"flex",background:"var(--s2)",borderRadius:999,padding:3,gap:3,marginBottom:".75rem"}}>
-          {[["starter","Starter"],["pro","Pro"],["agency","Agency"]].filter(([id])=> id !== plan).map(([id,label])=>(
+          {[["individual","Individual"],["business","Business"],["agency","Agency"]].filter(([id])=> id !== plan).map(([id,label])=>(
             <button key={id} onClick={()=>setUpgradePlan(id)}
               style={{flex:1,padding:".45rem",borderRadius:999,border:"none",fontFamily:"var(--font)",fontSize:".82rem",fontWeight:600,cursor:"pointer",background:upgradePlan===id?"var(--blue)":"none",color:upgradePlan===id?"#fff":"var(--text2)",transition:"all .15s"}}>
               {label}
@@ -3668,60 +3749,68 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
           ))}
         </div>
 
-        {/* Billing toggle */}
+        {/* Billing toggle — only for Individual (the Stripe tier) */}
+        {!isContactTier && (
         <div style={{display:"flex",background:"var(--s2)",borderRadius:999,padding:3,gap:3,marginBottom:"1.25rem"}}>
           {[["monthly",`${p.monthly}/month`],["annual",`${p.annual}/year`]].map(([b,label])=>(
             <button key={b} onClick={()=>setBilling(b)}
               style={{flex:1,padding:".45rem",borderRadius:999,border:"none",fontFamily:"var(--font)",fontSize:".82rem",fontWeight:600,cursor:"pointer",background:billing===b?"var(--green)":"none",color:billing===b?"#000":"var(--text2)",transition:"all .15s"}}>
               {label}
-              {b==="annual" && <span style={{display:"block",fontSize:".68rem",fontWeight:500,opacity:.8}}>save {p.save}</span>}
+              {b==="annual" && p.save && <span style={{display:"block",fontSize:".68rem",fontWeight:500,opacity:.8}}>save {p.save}</span>}
             </button>
           ))}
         </div>
+        )}
 
         <ul className="upgrade-modal-features">
-          {upgradePlan === "starter" ? (
+          {upgradePlan === "individual" ? (
             <>
-              <li>3 websites</li>
+              <li>1 website</li>
               <li>20 AI fixes per month</li>
               <li>Rank Tracker</li>
               <li>Unlimited page audits</li>
               <li>Weekly email digest</li>
               <li>Full action list</li>
             </>
-          ) : upgradePlan === "pro" ? (
+          ) : upgradePlan === "business" ? (
             <>
-              <li>5 websites (+£5/site extra)</li>
+              <li>1 website</li>
               <li>Unlimited AI fixes</li>
               <li>AI content generator</li>
               <li>Strategy planner</li>
               <li>Link building tools</li>
               <li>Rank Tracker + Page Audit</li>
-              <li>Weekly email digest</li>
+              <li>Priority support</li>
             </>
           ) : (
             <>
-              <li>Everything in Pro</li>
-              <li>10 websites (+£5/site extra)</li>
-              <li>Priority support</li>
+              <li>Everything in Business</li>
+              <li>Multiple websites</li>
+              <li>Dedicated account manager</li>
               <li>White-label reports (coming soon)</li>
               <li>Competitor tracking (coming soon)</li>
             </>
           )}
         </ul>
-        <button className="upgrade-modal-cta" disabled={loading} onClick={async ()=>{
-          setLoading(true);
-          await startCheckout(priceId);
-          setLoading(false);
-        }}>
-          {loading ? "Redirecting to checkout…" : billing==="annual" ? `Upgrade — ${p.annual}/year` : `Upgrade — ${p.monthly}/month`}
-        </button>
-        {billing==="monthly" && (
+        {isContactTier ? (
+          <button className="upgrade-modal-cta" onClick={()=>window.open(`https://rankactions.com/#enterprise-${upgradePlan}`,"_blank","noopener")}>
+            Contact us about {upgradePlan.charAt(0).toUpperCase()+upgradePlan.slice(1)} →
+          </button>
+        ) : (
+          <button className="upgrade-modal-cta" disabled={loading} onClick={async ()=>{
+            setLoading(true);
+            await startCheckout(priceId);
+            setLoading(false);
+          }}>
+            {loading ? "Redirecting to checkout…" : billing==="annual" ? `Upgrade — ${p.annual}/year` : `Upgrade — ${p.monthly}/month`}
+          </button>
+        )}
+        {!isContactTier && billing==="monthly" && p.save && (
           <div style={{fontSize:".75rem",color:"var(--green)",textAlign:"center",margin:".5rem 0",cursor:"pointer"}} onClick={()=>setBilling("annual")}>
             💡 Switch to annual and save {p.save}/year
           </div>
         )}
-        <div style={{fontSize:".7rem",color:"var(--text3)",textAlign:"center",marginTop:".5rem"}}>Secure payment via Stripe · Cancel any time</div>
+        {!isContactTier && <div style={{fontSize:".7rem",color:"var(--text3)",textAlign:"center",marginTop:".5rem"}}>Secure payment via Stripe · Cancel any time</div>}
         <div className="upgrade-modal-skip" onClick={()=>setShowUpgrade(false)}>Maybe later</div>
         {/* Enterprise nudge — opens the landing-page contact form in a new tab.
             Enterprise pricing is bespoke and managed manually, no Stripe flow. */}
@@ -3939,6 +4028,7 @@ IMPORTANT — The keyword "${kw.trim()}" MUST appear verbatim in the title, meta
           const hist = JSON.parse(localStorage.getItem(histKey) || "[]");
           hist.push({ keyword: kw.trim(), date: new Date().toISOString().slice(0,10) });
           localStorage.setItem(histKey, JSON.stringify(hist.slice(-50))); // keep last 50
+          saveUserData(selectedSite, 'content_history', hist.slice(-50));
         } catch {}
       } catch(e) {
         clearInterval(iv);
@@ -4815,26 +4905,24 @@ ${stratHtml}${contentHtml}
                 <div style={{fontSize:"1.4rem",fontWeight:800,fontFamily:"var(--mono)",color:"var(--green)",marginBottom:".5rem"}}>{completedFixes.length}</div>
                 <div style={{fontSize:".78rem",color:"var(--text2)",marginBottom:".75rem"}}>actions completed for {selectedSite}</div>
                 {completedFixes.slice(0,6).map((id,i) => {
-                  // Resolve the action ID to a human-readable label by looking
-                  // up the underlying keyword from the source data.
-                  // Format: live-N → topOpportunities[N], seo-N → keywords[N].
-                  // Note: this lookup is index-based, so if the source data
-                  // has reshuffled since the action was completed, the label
-                  // may point at a different keyword. A future fix would key
-                  // actions by stable identifier (e.g. slugified keyword)
-                  // rather than position-in-list.
+                  // Resolve the action ID to a human-readable label. IDs are now
+                  // stable keyword-slug based: live-<slug> / seo-<slug>. We match
+                  // the slug back against current source data for an exact label,
+                  // and fall back to un-slugifying the id if the keyword is no
+                  // longer in the current list.
                   const stripQuotes = (s) => (s || "").replace(/^["']+|["']+$/g, '');
+                  const unslug = (sl) => sl.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
                   let label = id;
                   if (id.startsWith("live-ext-")) {
                     label = "Ranking improvement (extended list)";
                   } else if (id.startsWith("live-")) {
-                    const idx = parseInt(id.slice(5), 10);
-                    const opp = siteData?.topOpportunities?.[idx];
-                    label = opp?.keyword ? `Improve "${stripQuotes(opp.keyword)}"` : `Ranking improvement #${idx + 1}`;
+                    const slug = id.slice(5);
+                    const opp = (siteData?.topOpportunities || []).find(o => raSlug(o.keyword) === slug);
+                    label = opp?.keyword ? `Improve "${stripQuotes(opp.keyword)}"` : `Improve "${unslug(slug)}"`;
                   } else if (id.startsWith("seo-")) {
-                    const idx = parseInt(id.slice(4), 10);
-                    const kw = siteData?.keywords?.[idx];
-                    label = kw?.keyword ? `Improve "${stripQuotes(kw.keyword)}"` : `SEO opportunity #${idx + 1}`;
+                    const slug = id.slice(4);
+                    const kw = (siteData?.keywords || []).find(k => raSlug(k.keyword || k.kw) === slug);
+                    label = kw ? `Improve "${stripQuotes(kw.keyword || kw.kw)}"` : `Improve "${unslug(slug)}"`;
                   } else if (id.startsWith("demo-")) {
                     label = `Fix: ${id.slice(5)}`;
                   }
@@ -5212,6 +5300,7 @@ Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource
         const hist = JSON.parse(localStorage.getItem(histKey) || "[]");
         parsed.forEach(o => hist.push({ title: o.title, type: o.type, target: o.targets?.[0]?.name || "", date: new Date().toISOString().slice(0,10) }));
         localStorage.setItem(histKey, JSON.stringify(hist.slice(-40))); // keep last 40
+        saveUserData(selectedSite, 'link_history', hist.slice(-40));
       } catch {}
     } catch {
       setLinkOpps([
@@ -5254,19 +5343,19 @@ Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource
     const prospect = { id: Date.now(), domain, type, status, date: new Date().toLocaleDateString("en-GB"), notes:"" };
     const updated = [prospect, ...linkProspects];
     setLinkProspects(updated);
-    localStorage.setItem(`ra_prospects_${selectedSite}`, JSON.stringify(updated));
+    saveUserData(selectedSite, 'prospects', updated);
   };
 
   const moveProspect = (id, newStatus) => {
     const updated = linkProspects.map(p => p.id===id ? {...p, status:newStatus} : p);
     setLinkProspects(updated);
-    localStorage.setItem(`ra_prospects_${selectedSite}`, JSON.stringify(updated));
+    saveUserData(selectedSite, 'prospects', updated);
   };
 
   const deleteProspect = (id) => {
     const updated = linkProspects.filter(p => p.id!==id);
     setLinkProspects(updated);
-    localStorage.setItem(`ra_prospects_${selectedSite}`, JSON.stringify(updated));
+    saveUserData(selectedSite, 'prospects', updated);
   };
 
   // ─────────────────────────────────────────────────────────────
@@ -5382,7 +5471,7 @@ Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource
           }
         }
         setKeywordEnrichment(merged);
-        localStorage.setItem(`ra_kw_enrich_${selectedSite}`, JSON.stringify(merged));
+        saveUserData(selectedSite, 'kw_enrich', merged);
         if (data.quotaLimit !== null && data.quotaLimit !== undefined) {
           setEnrichQuota({ used: data.quotaUsed, limit: data.quotaLimit });
         }
@@ -5418,7 +5507,7 @@ Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource
 
     const saveStrategy = (s) => {
       setStrategy(s);
-      localStorage.setItem(`ra_strategy_${selectedSite}`, JSON.stringify(s));
+      saveUserData(selectedSite, 'strategy', s);
     };
 
     // Generate cluster suggestions from GSC data
@@ -5551,7 +5640,9 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
           const histKey = `ra_strategy_history_${selectedSite}`;
           const hist = JSON.parse(localStorage.getItem(histKey) || "[]");
           hist.push({ topic: strategy.topic, date: strategy.createdAt?.slice(0,10) || new Date().toISOString().slice(0,10), clusters: strategy.clusters.map(c => c.keyword) });
-          localStorage.setItem(histKey, JSON.stringify(hist.slice(-20))); // keep last 20
+          localStorage.setItem(histKey, JSON.stringify(hist.slice(-20)));
+          saveUserData(selectedSite, 'strategy_history', hist.slice(-20)); // keep last 20
+          saveUserData(selectedSite, 'strategy_history', hist.slice(-20));
         } catch {}
       }
       const newStrategy = {
@@ -6235,6 +6326,67 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
     }
   };
 
+    // ── localStorage backup / restore (data-loss safety net) ─────
+    // Downloads EVERY ra_* / rankactions_* key as a raw JSON file the user
+    // can re-import to restore their work after a browser-data wipe. Does NOT
+    // touch the server — purely a client-side backup. Belt-and-braces until
+    // server-side persistence is fully in place.
+    const backupLocalData = () => {
+      try {
+        const dump = {};
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && (k.startsWith("ra_") || k.startsWith("rankactions_"))) {
+            dump[k] = localStorage.getItem(k);
+          }
+        }
+        const payload = {
+          _format: "rankactions-localstorage-backup",
+          _version: 1,
+          _exportedAt: new Date().toISOString(),
+          keys: dump,
+        };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `rankactions-backup-${new Date().toISOString().slice(0,10)}.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        alert("Couldn't create backup. Please try again.");
+      }
+    };
+
+    const restoreLocalData = (file) => {
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const parsed = JSON.parse(ev.target.result);
+          if (!parsed || parsed._format !== "rankactions-localstorage-backup" || !parsed.keys) {
+            alert("That doesn't look like a RankActions backup file.");
+            return;
+          }
+          const keys = parsed.keys;
+          const count = Object.keys(keys).length;
+          if (!window.confirm(`Restore ${count} saved items from this backup? This will overwrite any matching data currently in this browser.`)) return;
+          Object.keys(keys).forEach(k => {
+            if (k && (k.startsWith("ra_") || k.startsWith("rankactions_"))) {
+              try { localStorage.setItem(k, keys[k]); } catch {}
+            }
+          });
+          alert("Backup restored. The app will now reload to apply it.");
+          window.location.reload();
+        } catch (err) {
+          alert("Couldn't read that backup file — it may be corrupted.");
+        }
+      };
+      reader.readAsText(file);
+    };
+
     const exportData = () => {
       const prospectData = {};
       const fixData = {};
@@ -6429,6 +6581,15 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
           <div style={rowStyle}>
             <div><div style={valStyle}>Export your data</div><div style={subStyle}>Printable summary of your sites, fixes, content and strategy</div></div>
             <button style={btnStyle} onClick={exportData}>Export</button>
+          </div>
+          <div style={rowStyle}>
+            <div><div style={valStyle}>Back up your work</div><div style={subStyle}>Download a JSON backup of your saved data. Keep it safe — you can restore it if you clear your browser or switch devices.</div></div>
+            <button style={btnStyle} onClick={backupLocalData}>Back up</button>
+          </div>
+          <div style={rowStyle}>
+            <div><div style={valStyle}>Restore from backup</div><div style={subStyle}>Import a previously downloaded backup file to restore your saved data in this browser.</div></div>
+            <button style={btnStyle} onClick={()=>document.getElementById("ra-restore-input").click()}>Restore</button>
+            <input id="ra-restore-input" type="file" accept="application/json,.json" style={{display:"none"}} onChange={(e)=>{ const f=e.target.files&&e.target.files[0]; restoreLocalData(f); e.target.value=""; }} />
           </div>
           <div style={rowStyle}>
             <div><div style={valStyle}>Download data archive (GDPR)</div><div style={subStyle}>Complete JSON of everything we hold about you — for your records or to take to another service</div></div>
@@ -7985,6 +8146,7 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
     useEffect(() => {
       const toSave = { ...state, updatedAt: new Date().toISOString() };
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave)); } catch {}
+      saveUserData(selectedSite, 'starting_out', toSave);
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [state]);
 
@@ -8487,6 +8649,7 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
             clusters: (existing.clusters || []).map(c => c.keyword),
           });
           localStorage.setItem(histKey, JSON.stringify(hist.slice(-20)));
+          saveUserData(selectedSite, 'strategy_history', hist.slice(-20));
         }
       } catch {}
 
@@ -8548,7 +8711,7 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
 
       // Save the strategy and mark wizard complete
       try {
-        localStorage.setItem(`ra_strategy_${selectedSite}`, JSON.stringify(newStrategy));
+        saveUserData(selectedSite, 'strategy', newStrategy);
       } catch {}
 
       setState(s => ({
