@@ -18,6 +18,19 @@ let _getToken = async () => null;
 // Stable, deterministic id-safe slug from a keyword string. Used to give
 // completed-action ("done") fixes IDs that are tied to the KEYWORD, not the
 // keyword's array index — so completions survive GSC data reshuffles.
+// Human-readable plan label. Covers current tiers (free/individual/business/
+// agency) AND legacy tiers (starter/pro) still held by grandfathered customers.
+function planLabel(plan) {
+  switch (plan) {
+    case 'agency':     return 'Agency';
+    case 'business':   return 'Business';
+    case 'individual': return 'Individual';
+    case 'pro':        return 'Pro';      // legacy
+    case 'starter':    return 'Starter';  // legacy
+    default:           return 'Free';
+  }
+}
+
 function raSlug(str) {
   return String(str || '')
     .toLowerCase()
@@ -2304,10 +2317,10 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
             }}>
             <span style={{fontSize:"0.9rem"}}>{n.icon}</span>
             {n.label}
-            {n.id==="content" && !isPro && <span style={{fontSize:".6rem",marginLeft:"auto",color:"var(--text3)"}}>Pro</span>}
-            {n.id==="strategy" && !isPro && <span style={{fontSize:".6rem",marginLeft:"auto",color:"var(--text3)"}}>Pro</span>}
-            {n.id==="links" && !isPro && <span style={{fontSize:".6rem",marginLeft:"auto",color:"var(--text3)"}}>Pro</span>}
-            {n.id==="tracker" && !isStarter && <span style={{fontSize:".6rem",marginLeft:"auto",color:"var(--text3)"}}>Starter</span>}
+            {n.id==="content" && !isPro && <span style={{fontSize:".6rem",marginLeft:"auto",color:"var(--text3)"}}>Paid</span>}
+            {n.id==="strategy" && !isPro && <span style={{fontSize:".6rem",marginLeft:"auto",color:"var(--text3)"}}>Paid</span>}
+            {n.id==="links" && !isPro && <span style={{fontSize:".6rem",marginLeft:"auto",color:"var(--text3)"}}>Paid</span>}
+            {n.id==="tracker" && !isStarter && <span style={{fontSize:".6rem",marginLeft:"auto",color:"var(--text3)"}}>Paid</span>}
           </div>
         );})}
       </div>
@@ -2373,7 +2386,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
             setSelPlan(plan || "free");
             setShowPlan(true);
           }}>
-          {plan==="agency"?"Agency":plan==="pro"?"Pro":plan==="starter"?"Starter":"Free"}
+          {planLabel(plan)}
         </span>
         {isConnected
           ? <button className="disconnect-btn" onClick={disconnect}>Disconnect GSC</button>
@@ -2397,7 +2410,8 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
             style={{background:"var(--s2)",border:"1px solid var(--border)",borderRadius:6,padding:".3rem .6rem",color:"var(--text2)",fontFamily:"var(--font)",fontSize:".75rem",cursor:"pointer"}}
             title="Admin: switch plan for testing">
             <option value="free">Free</option>
-            <option value="pro">Pro</option>
+            <option value="individual">Individual</option>
+            <option value="business">Business</option>
             <option value="agency">Agency</option>
           </select>
         )}
@@ -2445,8 +2459,8 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
                   {summaryLoading?<span className="spinner-sm"/>:"↻"}
                   {summaryLoading?" Generating…":" Regenerate"}
                 </button>
-              : <button className="ai-regen-btn" onClick={()=>setShowUpgrade(true)} title="Pro feature">
-                  🔒 Pro only
+              : <button className="ai-regen-btn" onClick={()=>setShowUpgrade(true)} title="Paid feature">
+                  🔒 Paid plan
                 </button>
             }
           </div>
@@ -2729,14 +2743,14 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
                   <span style={{color:"var(--green)",fontWeight:700,flexShrink:0}}>2.</span>
                   <span>{isPro
                     ? <>Use the <span className="td-link" style={{color:"var(--blue)"}} onClick={()=>setScreen("content")}>Content Generator</span> to publish your first piece of SEO-optimised content targeting a keyword you want to rank for.</>
-                    : <>Upgrade to Pro to use the Content Generator and publish SEO-optimised articles targeting keywords you want to rank for.</>
+                    : <>Upgrade to a paid plan to use the Content Generator and publish SEO-optimised articles targeting keywords you want to rank for.</>
                   }</span>
                 </li>
                 <li style={{display:"flex",alignItems:"flex-start",gap:".65rem",fontSize:".88rem",color:"var(--text2)",lineHeight:1.55}}>
                   <span style={{color:"var(--green)",fontWeight:700,flexShrink:0}}>3.</span>
                   <span>{isPro
                     ? <>Open the <span className="td-link" style={{color:"var(--blue)"}} onClick={()=>setScreen("links")}>Link Building</span> tools to find directories, guest post targets and partnerships you can pursue manually while your organic data builds up.</>
-                    : <>Upgrade to Pro to access Link Building tools — find directories, guest post targets and partnerships you can pursue manually.</>
+                    : <>Upgrade to a paid plan to access Link Building tools — find directories, guest post targets and partnerships you can pursue manually.</>
                   }</span>
                 </li>
                 <li style={{display:"flex",alignItems:"flex-start",gap:".65rem",fontSize:".88rem",color:"var(--text2)",lineHeight:1.55}}>
@@ -2807,7 +2821,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
             <div style={{marginTop:"1rem",background:"var(--adim)",border:"1px solid rgba(245,166,35,.2)",borderRadius:10,padding:"1rem 1.25rem",display:"flex",alignItems:"center",gap:"1rem",flexWrap:"wrap"}}>
               <span style={{fontSize:".875rem",color:"var(--amber)"}}>🔒 <strong>Write page</strong> and <strong>Write blog post</strong> actions require Pro — they open the AI content generator pre-filled with the keyword ready to go.</span>
               <button style={{marginLeft:"auto",background:"var(--green)",color:"#000",border:"none",borderRadius:7,padding:".4rem .9rem",fontFamily:"var(--font)",fontSize:".82rem",fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}} onClick={()=>setShowUpgrade(true)}>
-                Upgrade to Pro →
+                Upgrade →
               </button>
             </div>
           )}
@@ -3346,7 +3360,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
           </p>
           <button onClick={()=>setShowUpgrade(true)}
             style={{background:"var(--blue)",color:"#fff",border:"none",borderRadius:8,padding:".7rem 1.4rem",fontSize:".9rem",fontWeight:600,cursor:"pointer"}}>
-            Upgrade to Agency — £149/month
+            Upgrade to Agency
           </button>
         </div>
       );
@@ -4065,7 +4079,7 @@ IMPORTANT — The keyword "${kw.trim()}" MUST appear verbatim in the title, meta
           <div className="upgrade-wall-sub">
             Pick a keyword from your dashboard, generate a fully SEO-optimised blog post in 30 seconds. Ready to publish, complete with meta tags, structured headings and a call to action.
           </div>
-          <button className="upgrade-wall-btn" onClick={()=>setShowUpgrade(true)}>Upgrade to Pro — £39/month</button>
+          <button className="upgrade-wall-btn" onClick={()=>setShowUpgrade(true)}>Upgrade — from £100/month</button>
         </div>
       </div>
     );
@@ -4395,6 +4409,8 @@ h1, h2, h3, h4, h5, h6 {
       const matchSearch = !search || u.email?.toLowerCase().includes(search.toLowerCase()) || u.name?.toLowerCase().includes(search.toLowerCase());
       const matchFilter = filter==="all"
         || (filter==="agency"  && u.plan==="agency")
+        || (filter==="business" && u.plan==="business")
+        || (filter==="individual" && u.plan==="individual")
         || (filter==="pro"     && u.plan==="pro")
         || (filter==="starter" && u.plan==="starter")
         || (filter==="free"    && (!u.plan||u.plan==="free"))
@@ -4455,8 +4471,10 @@ h1, h2, h3, h4, h5, h6 {
           <select className="admin-filter" value={filter} onChange={e=>setFilter(e.target.value)}>
             <option value="all">All users</option>
             <option value="agency">Agency only</option>
-            <option value="pro">Pro only</option>
-            <option value="starter">Starter only</option>
+            <option value="business">Business only</option>
+            <option value="individual">Individual only</option>
+            <option value="pro">Pro only (legacy)</option>
+            <option value="starter">Starter only (legacy)</option>
             <option value="free">Free only</option>
             <option value="disabled">Disabled</option>
           </select>
@@ -4578,14 +4596,14 @@ h1, h2, h3, h4, h5, h6 {
                     ↑ Upgrade to Agency
                   </button>
                 )}
-                {selected.plan!=="pro" && (
-                  <button className="drawer-btn upgrade" disabled={saving} onClick={()=>updateUser(selected._id,{plan:"pro"})}>
-                    {selected.plan==="agency" ? "↓ Downgrade to Pro" : "↑ Upgrade to Pro"}
+                {selected.plan!=="business" && (
+                  <button className="drawer-btn upgrade" disabled={saving} onClick={()=>updateUser(selected._id,{plan:"business"})}>
+                    {selected.plan==="agency" ? "↓ Downgrade to Business" : "↑ Upgrade to Business"}
                   </button>
                 )}
-                {selected.plan!=="starter" && (
-                  <button className="drawer-btn upgrade" style={{background:"var(--blue)"}} disabled={saving} onClick={()=>updateUser(selected._id,{plan:"starter"})}>
-                    {selected.plan==="pro"||selected.plan==="agency" ? "↓ Downgrade to Starter" : "↑ Upgrade to Starter"}
+                {selected.plan!=="individual" && (
+                  <button className="drawer-btn upgrade" style={{background:"var(--blue)"}} disabled={saving} onClick={()=>updateUser(selected._id,{plan:"individual"})}>
+                    {selected.plan==="business"||selected.plan==="agency" ? "↓ Downgrade to Individual" : "↑ Upgrade to Individual"}
                   </button>
                 )}
                 {selected.plan!=="free" && (
@@ -5154,7 +5172,7 @@ ${stratHtml}${contentHtml}
             <div className="site-picker-sub">
               {isPro
                 ? "Select all the sites you want to track. You can add or remove sites later."
-                : "Select one site to track. Upgrade to Pro to track unlimited sites."
+                : "Select one site to track. Upgrade to a paid plan to track more sites."
               } Your Google account has access to {pickerSites.length} sites.
             </div>
           </div>
@@ -5188,7 +5206,7 @@ ${stratHtml}${contentHtml}
             })}
             {!isPro && selected.size >= 1 && (
               <div style={{fontSize:".75rem",color:"var(--amber)",padding:".5rem .85rem",background:"var(--adim)",borderRadius:7,marginTop:".25rem"}}>
-                🔒 Free plan: 1 site only. <span style={{color:"var(--green)",cursor:"pointer",fontWeight:600}} onClick={()=>setShowUpgrade(true)}>Upgrade to Pro</span> to add unlimited sites.
+                🔒 Free plan: 1 site only. <span style={{color:"var(--green)",cursor:"pointer",fontWeight:600}} onClick={()=>setShowUpgrade(true)}>Upgrade</span> to add more sites.
               </div>
             )}
           </div>
@@ -5416,7 +5434,7 @@ Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource
           <div className="upgrade-wall-sub">
             Build a complete pillar content strategy in 60 seconds. AI analyses your keyword data, groups related terms into topic clusters, and creates a roadmap of one authority page plus 6–8 supporting blog posts.
           </div>
-          <button className="upgrade-wall-btn" onClick={()=>setShowUpgrade(true)}>Upgrade to Pro — £39/month</button>
+          <button className="upgrade-wall-btn" onClick={()=>setShowUpgrade(true)}>Upgrade — from £100/month</button>
         </div>
       </div>
     );
@@ -6502,7 +6520,7 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
             <div><div style={valStyle}>{user?.primaryEmailAddress?.emailAddress || "—"}</div><div style={subStyle}>Email</div></div>
           </div>
           <div style={{...rowStyle,borderBottom:"none"}}>
-            <div><div style={valStyle}><span className={`plan-pill ${plan==="pro"?"pro":plan==="agency"?"agency":plan==="starter"?"starter":""}`} style={{fontSize:".75rem"}}>{plan==="agency"?"Agency":plan==="pro"?"Pro":plan==="starter"?"Starter":"Free"}</span></div><div style={subStyle}>Current plan</div></div>
+            <div><div style={valStyle}><span className={`plan-pill ${plan==="pro"||plan==="business"?"pro":plan==="agency"?"agency":plan==="starter"||plan==="individual"?"starter":""}`} style={{fontSize:".75rem"}}>{planLabel(plan)}</span></div><div style={subStyle}>Current plan</div></div>
             <div style={{display:"flex",gap:".5rem"}}>
               {isPro ? (
                 <button style={btnStyle} onClick={openBillingPortal}>Manage subscription</button>
@@ -6889,7 +6907,7 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
         <div style={{fontSize:".82rem",color:"var(--text3)",maxWidth:440,margin:"0 auto 1rem",lineHeight:1.5}}>
           {canAdd
             ? <>Pin keywords you care about and we'll check their real position in Google every Sunday night. You can track up to <b>{planLimit}</b> keywords on your plan.</>
-            : <>Your plan doesn't include tracked keywords. Upgrade to <b>Starter</b> (25 keywords) or <b>Pro</b> (100 keywords) to start tracking. Meanwhile, browse the <b>Discovered</b> tab for your existing rankings from Search Console.</>
+            : <>Your plan doesn't include tracked keywords. Upgrade to a paid plan to start tracking. Meanwhile, browse the <b>Discovered</b> tab for your existing rankings from Search Console.</>
           }
         </div>
         {canAdd && (
@@ -7288,7 +7306,7 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
                       </div>
                       <button onClick={(e)=>{ e.stopPropagation(); trackKeyword(kw.keyword); }}
                         disabled={isTracked || isTracking}
-                        title={isTracked ? "Already tracked — view in Tracked tab" : isStarter ? "Pin this keyword to track its real position weekly" : "Upgrade to Starter or higher to track keywords"}
+                        title={isTracked ? "Already tracked — view in Tracked tab" : isStarter ? "Pin this keyword to track its real position weekly" : "Upgrade to a paid plan to track keywords"}
                         style={{
                           background: isTracked ? "transparent" : "transparent",
                           color: isTracked ? "var(--green)" : isTracking ? "var(--text3)" : isStarter ? "var(--green)" : "var(--text3)",
@@ -7795,7 +7813,7 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
           <div className="upgrade-wall-sub">
             Get AI-generated link opportunities specific to your site, plus personalised outreach emails for guest posts, resource pages, broken-link campaigns and more. Track every prospect from identified to secured.
           </div>
-          <button className="upgrade-wall-btn" onClick={()=>setShowUpgrade(true)}>Upgrade to Pro — £39/month</button>
+          <button className="upgrade-wall-btn" onClick={()=>setShowUpgrade(true)}>Upgrade — from £100/month</button>
         </div>
       </div>
     );
@@ -9224,11 +9242,11 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
                       Real keyword data is a Pro feature
                     </div>
                     <div style={{ fontSize: ".85rem", color: "var(--text2)", maxWidth: 480, margin: "0 auto 1.25rem", lineHeight: 1.6 }}>
-                      Upgrade to Pro to pull real monthly search volume and difficulty scores from DataForSEO. You'll see exactly which of your seed keywords are worth targeting — and which to skip.
+                      Upgrade to a paid plan to pull real monthly search volume and difficulty scores from DataForSEO. You'll see exactly which of your seed keywords are worth targeting — and which to skip.
                     </div>
                     <button onClick={() => setShowUpgrade(true)}
                       style={{ background: "var(--green)", color: "#000", border: "none", borderRadius: 8, padding: ".75rem 1.5rem", fontSize: ".88rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-                      ✨ Upgrade to Pro
+                      ✨ Upgrade
                     </button>
                   </div>
                   <div style={{ marginTop: "1.25rem", display: "flex", gap: ".6rem", flexWrap: "wrap" }}>
@@ -9485,11 +9503,11 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
                       Competitor analysis is a Pro feature
                     </div>
                     <div style={{ fontSize: ".85rem", color: "var(--text2)", maxWidth: 480, margin: "0 auto 1.25rem", lineHeight: 1.6 }}>
-                      Upgrade to Pro to discover what your competitors are ranking for. We'll pull their top keywords from DataForSEO Labs and surface gaps you should be targeting.
+                      Upgrade to a paid plan to discover what your competitors are ranking for. We'll pull their top keywords from DataForSEO Labs and surface gaps you should be targeting.
                     </div>
                     <button onClick={() => setShowUpgrade(true)}
                       style={{ background: "var(--green)", color: "#000", border: "none", borderRadius: 8, padding: ".75rem 1.5rem", fontSize: ".88rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-                      ✨ Upgrade to Pro
+                      ✨ Upgrade
                     </button>
                   </div>
                   <div style={{ marginTop: "1.25rem", display: "flex", gap: ".6rem", flexWrap: "wrap" }}>
