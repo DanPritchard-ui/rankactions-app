@@ -8275,6 +8275,10 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
         description: "",
         services: [],
         location: "",
+        // Coverage scale, set by the user in step 1. "" = auto (infer from the
+        // location text, the pre-existing behaviour). Explicit values override
+        // inference. Old saved wizards lack this key and fall through to auto.
+        coverage: "",
         targetCustomer: "",
         country: "gb",
       },
@@ -8524,6 +8528,162 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
       setDomainInput("");
     };
     const removeDomain = (d) => setPendingDomains(pendingDomains.filter(x => x !== d));
+
+    // ── AI competitor suggestions ────────────────────────────────
+    // Asks the AI (Claude, via /api/ai) to suggest likely competitor
+    // domains from the business profile the user already entered. These
+    // are SUGGESTIONS ONLY — they pre-fill the review list and NEVER
+    // trigger a DataForSEO pull on their own. The user checkbox-selects
+    // the ones they want, clicks "Add selected", reviews/edits the chips,
+    // then runs the existing paid analysis on confirmed domains only.
+    const [suggesting, setSuggesting]       = useState(false);
+    const [suggestError, setSuggestError]   = useState(null);
+    // null = not yet asked; [] = asked but nothing usable; [...] = suggestions
+    const [suggestions, setSuggestions]     = useState(null);
+    // The geographic scale we inferred for the last suggestion run, shown to
+    // the user so they can spot (and correct, by editing step 1) a wrong call.
+    const [suggestScale, setSuggestScale]   = useState(null); // "local" | "national" | null
+    // Set of domains the user has ticked in the suggestion list.
+    const [selectedSuggestions, setSelectedSuggestions] = useState(new Set());
+
+    const toggleSuggestion = (domain) => {
+      setSelectedSuggestions(prev => {
+        const next = new Set(prev);
+        if (next.has(domain)) next.delete(domain); else next.add(domain);
+        return next;
+      });
+    };
+
+    // How many of the currently-selected suggestions can actually be added
+    // given the 5-domain cap and any already-present chips.
+    const addableSelectedCount = () => {
+      const room = Math.max(0, 5 - pendingDomains.length);
+      const notAlready = [...selectedSuggestions].filter(d => !pendingDomains.includes(d));
+      return Math.min(room, notAlready.length);
+    };
+
+    const addSelectedSuggestions = () => {
+      const room = Math.max(0, 5 - pendingDomains.length);
+      if (room === 0) return;
+      const toAdd = [...selectedSuggestions]
+        .filter(d => !pendingDomains.includes(d))
+        .slice(0, room);
+      if (toAdd.length === 0) return;
+      setPendingDomains([...pendingDomains, ...toAdd]);
+      // Clear the ticks for the ones we just added; leave any overflow ticked
+      // so the user can see what didn't fit.
+      setSelectedSuggestions(prev => {
+        const next = new Set(prev);
+        toAdd.forEach(d => next.delete(d));
+        return next;
+      });
+    };
+
+    const suggestCompetitors = async () => {
+      setSuggesting(true);
+      setSuggestError(null);
+      try {
+        const p = state.profile || {};
+
+        // Determine the business's geographic SCALE. An explicit coverage
+        // choice from step 1 always wins; if the user left it blank we fall
+        // back to inferring from the location text (the original behaviour).
+        // This stops a local plumber being matched against national giants —
+        // and a wasted DataForSEO pull on unwinnable national keywords.
+        const loc = String(p.location || "").trim();
+        const locLower = loc.toLowerCase();
+        const NATIONWIDE_HINTS = [
+          "uk", "u.k.", "united kingdom", "gb", "great britain", "britain",
+          "england", "scotland", "wales", "northern ireland",
+          "nationwide", "national", "nation-wide", "country-wide", "countrywide",
+          "whole of the uk", "across the uk", "all of the uk", "remote", "online", "worldwide", "global",
+        ];
+        const explicit = ["local", "regional", "national"].includes(p.coverage) ? p.coverage : "";
+        const inferred = (!loc || NATIONWIDE_HINTS.includes(locLower)) ? "national" : "local";
+        const scale = explicit || inferred;
+        setSuggestScale(scale);
+
+        const scaleInstruction =
+          scale === "local"
+            ? `IMPORTANT — SCALE: This business competes at a LOCAL level, serving the area "${loc || "(their town/city)"}". Suggest competitors of a SIMILAR scale — other independent or single-location businesses serving the same town/area or immediately neighbouring areas. Do NOT suggest large national chains, multi-branch giants, marketplaces, or directories — a local operator cannot realistically compete with those, and including them would mislead the analysis. If you genuinely can't name local rivals, return fewer suggestions rather than padding the list with national brands.`
+          : scale === "regional"
+            ? `IMPORTANT — SCALE: This business competes at a REGIONAL level, based around "${loc || "their area"}". Suggest competitors operating across that wider region (multiple towns / a county or two), not tiny single-street operators and not UK-wide national giants. Aim for the middle ground.`
+            : `SCALE: This business competes NATIONALLY across ${(p.country || "gb").toUpperCase()}${loc ? ` (it may be based in ${loc}, but serves the whole country)` : ""}. Suggest competitors that operate at a national level. Avoid purely local single-town operators.`;
+
+        const profileLines = [
+          p.businessName ? `Business name: ${p.businessName}` : "",
+          p.description  ? `What they do: ${p.description}`    : "",
+          (p.services && p.services.length) ? `Services/products: ${p.services.join(", ")}` : "",
+          loc            ? `Location / area served: ${loc}` : "Location / area served: (not specified)",
+          p.targetCustomer ? `Target customer: ${p.targetCustomer}` : "",
+          `Country: ${(p.country || "gb").toUpperCase()}`,
+        ].filter(Boolean).join("\n");
+
+        const txt = await callClaude(
+          `A business has the following profile:
+${profileLines}
+
+${scaleInstruction}
+
+Suggest 5 to 8 REAL, likely direct competitor websites — businesses offering similar services to a similar audience, at the scale described above. Prefer genuine operators in their niche over generic directories or marketplaces.
+
+For each, give the bare domain (hostname only, no http/www/paths) and a short reason (max 12 words) why they're a likely competitor — and where relevant, note their locality.
+
+These are best-effort guesses from a description — if you are unsure, still suggest your most plausible candidates but keep the list realistic and scale-appropriate. Do not invent domains you don't believe exist.
+
+Return ONLY valid JSON — no markdown:
+{
+  "suggestions": [
+    { "domain": "example.com", "reason": "short reason" }
+  ]
+}`,
+          "SEO competitor researcher. Return valid JSON only, no markdown. Domains must be bare hostnames (no protocol, no www, no path). Match competitors to the business's geographic SCALE — never pit a local operator against national giants. Suggest only plausible real businesses; never fabricate obviously fake domains.",
+          "quality"
+        );
+
+        let parsed;
+        try {
+          parsed = JSON.parse(txt.replace(/```json|```/g, "").trim());
+        } catch {
+          setSuggestError("Couldn't read the AI suggestions. Please try again, or add competitors manually below.");
+          setSuggesting(false);
+          return;
+        }
+
+        // Normalise + validate with the SAME helpers the manual add uses, so
+        // anything we surface is guaranteed addable. Dedupe and drop any that
+        // are already in the pending list.
+        const seen = new Set();
+        const clean = (Array.isArray(parsed?.suggestions) ? parsed.suggestions : [])
+          .map(s => ({
+            domain: normaliseDomain(s?.domain),
+            reason: String(s?.reason || "").trim().slice(0, 90),
+          }))
+          .filter(s => s.domain && isValidDomain(s.domain))
+          .filter(s => {
+            if (seen.has(s.domain)) return false;
+            seen.add(s.domain);
+            return true;
+          });
+
+        setSuggestions(clean);
+        if (clean.length === 0) {
+          setSuggestError("The AI couldn't suggest competitors from this profile. Try adding more detail in step 1, or add competitors manually below.");
+        }
+      } catch (e) {
+        console.error("suggestCompetitors error:", e);
+        // Mirror callClaude's known error signals
+        const msg = String(e?.message || "");
+        if (msg.startsWith("UPGRADE_REQUIRED:")) {
+          setSuggestError("Suggestions need a paid plan. You can still add competitors manually below.");
+        } else if (msg === "RATE_LIMITED") {
+          setSuggestError("Too many AI requests just now — wait a moment and try again.");
+        } else {
+          setSuggestError("Couldn't get suggestions right now. You can add competitors manually below.");
+        }
+      }
+      setSuggesting(false);
+    };
 
     const fetchCompetitorKeywords = async () => {
       if (pendingDomains.length === 0) {
@@ -9127,6 +9287,38 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
                   onFocus={e => e.target.style.borderColor = "var(--green)"}
                   onBlur={e => e.target.style.borderColor = "var(--border)"} />
                 <div style={helpStyle}>City, region, or "UK-wide" if you serve customers nationally or remotely.</div>
+
+                {/* Coverage scale — explicit control so we match competitors and
+                    keywords to the right scale instead of guessing from the text. */}
+                <div style={{ marginTop: ".85rem" }}>
+                  <label style={{ ...labelStyle, fontSize: ".78rem" }}>How far do you compete?</label>
+                  <div style={{ display: "flex", background: "var(--s2)", borderRadius: 999, padding: 3, gap: 3 }}>
+                    {[
+                      ["local",    "Local"],
+                      ["regional", "Regional"],
+                      ["national", "National"],
+                    ].map(([id, lab]) => (
+                      <button key={id} type="button"
+                        onClick={() => updateProfile({ coverage: p.coverage === id ? "" : id })}
+                        style={{
+                          flex: 1, padding: ".5rem", borderRadius: 999, border: "none",
+                          fontFamily: "inherit", fontSize: ".8rem", fontWeight: 600,
+                          cursor: "pointer",
+                          background: p.coverage === id ? "var(--green)" : "transparent",
+                          color: p.coverage === id ? "#000" : "var(--text2)",
+                          transition: "all .15s",
+                        }}>
+                        {lab}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={helpStyle}>
+                    {p.coverage === "local"    ? "We'll suggest nearby competitors at your scale — not national chains."
+                     : p.coverage === "regional" ? "We'll suggest competitors across your wider region."
+                     : p.coverage === "national" ? "We'll suggest national competitors, even if you're based in one town."
+                     : "Optional — leave blank and we'll work it out from your location above."}
+                  </div>
+                </div>
               </div>
 
               {/* Target customer */}
@@ -9682,6 +9874,108 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
                     <div style={{ fontSize: ".85rem", color: "var(--text2)", maxWidth: 500, margin: "0 auto", lineHeight: 1.6 }}>
                       Add up to 5 competitor websites. We'll pull their top organic keywords from DataForSEO and show you opportunities you might have missed.
                     </div>
+                  </div>
+
+                  {/* AI competitor suggestions — review/select, never auto-pulls DFS */}
+                  <div style={{ marginBottom: "1.25rem" }}>
+                    {suggestions === null ? (
+                      <button type="button" onClick={suggestCompetitors} disabled={suggesting}
+                        style={{
+                          width: "100%",
+                          background: suggesting ? "var(--s2)" : "var(--bdim)",
+                          color: suggesting ? "var(--text3)" : "var(--blue)",
+                          border: "1px solid rgba(77,123,255,.3)",
+                          borderRadius: 8,
+                          padding: ".75rem 1rem",
+                          fontSize: ".85rem",
+                          fontWeight: 700,
+                          cursor: suggesting ? "wait" : "pointer",
+                          fontFamily: "inherit",
+                        }}>
+                        {suggesting ? "✨ Thinking of competitors…" : "✨ Suggest competitors from my business profile"}
+                      </button>
+                    ) : (
+                      <>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: ".5rem", gap: ".5rem", flexWrap: "wrap" }}>
+                          <div style={{ fontSize: ".78rem", fontWeight: 600, color: "var(--text)" }}>
+                            AI suggestions <span style={{ color: "var(--text3)", fontWeight: 400 }}>— tick the ones to review</span>
+                          </div>
+                          <button type="button" onClick={suggestCompetitors} disabled={suggesting}
+                            style={{ background: "transparent", border: "none", color: "var(--blue)", fontSize: ".76rem", fontWeight: 600, cursor: suggesting ? "wait" : "pointer", fontFamily: "inherit", padding: 0 }}>
+                            {suggesting ? "…" : "↻ Regenerate"}
+                          </button>
+                        </div>
+
+                        <div style={{ background: "var(--bg)", border: "1px solid rgba(77,123,255,.2)", borderRadius: 8, padding: ".55rem .7rem", marginBottom: ".6rem", fontSize: ".72rem", color: "var(--text3)", lineHeight: 1.5 }}>
+                          {suggestScale === "local"
+                            ? <>Matched to <strong style={{ color: "var(--text2)" }}>local</strong> competitors{state.profile?.location ? <> around {state.profile.location}</> : null}. </>
+                            : suggestScale === "regional"
+                            ? <>Matched to <strong style={{ color: "var(--text2)" }}>regional</strong> competitors{state.profile?.location ? <> across the {state.profile.location} area</> : null}. </>
+                            : <>Matched to <strong style={{ color: "var(--text2)" }}>national</strong> competitors. </>}
+                          These are AI guesses and may be wrong or miss obvious rivals — review and tick the ones you recognise. Wrong scale? <button type="button" onClick={() => goToStep(1)} style={{ background: "transparent", border: "none", color: "var(--blue)", fontSize: "inherit", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", padding: 0, textDecoration: "underline" }}>edit step 1</button>. Nothing is analysed until you add competitors below and run the analysis.
+                        </div>
+
+                        {suggestions.length > 0 && (
+                          <div style={{ display: "flex", flexDirection: "column", gap: ".4rem", marginBottom: ".7rem" }}>
+                            {suggestions.map(s => {
+                              const already = pendingDomains.includes(s.domain);
+                              const checked = selectedSuggestions.has(s.domain);
+                              return (
+                                <label key={s.domain}
+                                  style={{
+                                    display: "flex", alignItems: "flex-start", gap: ".6rem",
+                                    background: checked ? "var(--bdim)" : "var(--s1)",
+                                    border: `1px solid ${checked ? "rgba(77,123,255,.35)" : "var(--border)"}`,
+                                    borderRadius: 8, padding: ".6rem .75rem",
+                                    cursor: already ? "default" : "pointer",
+                                    opacity: already ? .55 : 1,
+                                  }}>
+                                  <input type="checkbox"
+                                    checked={checked || already}
+                                    disabled={already}
+                                    onChange={() => toggleSuggestion(s.domain)}
+                                    style={{ marginTop: ".15rem", accentColor: "var(--blue)", cursor: already ? "default" : "pointer" }} />
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontSize: ".82rem", fontWeight: 600, color: "var(--text)", fontFamily: "var(--mono)", wordBreak: "break-all" }}>
+                                      {s.domain}{already && <span style={{ fontFamily: "var(--font)", fontWeight: 500, color: "var(--text3)", marginLeft: ".4rem" }}>· added</span>}
+                                    </div>
+                                    {s.reason && <div style={{ fontSize: ".74rem", color: "var(--text2)", marginTop: ".15rem", lineHeight: 1.45 }}>{s.reason}</div>}
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {suggestError && (
+                          <div style={{ fontSize: ".76rem", color: "var(--text2)", marginBottom: ".6rem", lineHeight: 1.5 }}>{suggestError}</div>
+                        )}
+
+                        {suggestions.length > 0 && (
+                          <button type="button" onClick={addSelectedSuggestions}
+                            disabled={addableSelectedCount() === 0}
+                            style={{
+                              width: "100%",
+                              background: addableSelectedCount() > 0 ? "var(--green)" : "var(--s2)",
+                              color: addableSelectedCount() > 0 ? "#000" : "var(--text3)",
+                              border: "none", borderRadius: 8, padding: ".6rem 1rem",
+                              fontSize: ".82rem", fontWeight: 700,
+                              cursor: addableSelectedCount() > 0 ? "pointer" : "not-allowed",
+                              fontFamily: "inherit",
+                            }}>
+                            {pendingDomains.length >= 5
+                              ? "Domain list full (5/5)"
+                              : addableSelectedCount() === 0
+                                ? "Tick suggestions to add"
+                                : `Add ${addableSelectedCount()} selected →`}
+                          </button>
+                        )}
+                      </>
+                    )}
+
+                    {suggestions === null && suggestError && (
+                      <div style={{ fontSize: ".76rem", color: "var(--text2)", marginTop: ".5rem", lineHeight: 1.5 }}>{suggestError}</div>
+                    )}
                   </div>
 
                   {/* Domain input */}
