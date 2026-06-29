@@ -996,6 +996,7 @@ export default function RankActions() {
   // Auth UI state
   const [authView,  setAuthView]  = useState("signin"); // signin | signup
   const [showPlan,  setShowPlan]  = useState(false);
+  const [showSupport, setShowSupport] = useState(false);
   const [plan,      setPlan]      = useState(() => localStorage.getItem("rankactions_plan") || "free");
   const [selPlan,   setSelPlan]   = useState(plan || "free");
 
@@ -2377,6 +2378,12 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
         {dataLoading  ? <span className="topbar-badge demo">⏳ Fetching…</span>
          : isConnected && siteData ? <span className="topbar-badge">✓ Live data</span>
          : <span className="topbar-badge demo">⚠ Demo data</span>}
+        <button
+          onClick={()=>setShowSupport(true)}
+          title="Contact support"
+          style={{background:"var(--s2)",border:"1px solid var(--border)",borderRadius:6,padding:".3rem .7rem",color:"var(--text2)",fontFamily:"var(--font)",fontSize:".75rem",fontWeight:600,cursor:"pointer"}}>
+          💬 Support
+        </button>
         <span
           className={`plan-pill ${plan==="pro"?"pro":plan==="agency"?"agency":plan==="starter"?"starter":""}`}
           style={{cursor:"pointer"}}
@@ -3719,6 +3726,146 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
           Click any site to open its full RankActions view · Data refreshes weekly
         </div>
       </div>
+    );
+  };
+
+  // ─────────────────────────────────────────────────────────────
+  // SUPPORT MODAL
+  // ─────────────────────────────────────────────────────────────
+  // Minimal v1 contact form. Posts message + category + UI context to
+  // /api/support; the worker attaches verified identity (email, plan) and
+  // emails the operator inbox. No ticketing/chat/uploads — email only.
+  const SupportModal = () => {
+    const [category, setCategory] = useState("bug");
+    const [message, setMessage]   = useState("");
+    const [sending, setSending]   = useState(false);
+    const [sent, setSent]         = useState(false);
+    const [error, setError]       = useState(null);
+    // Honeypot — hidden from real users, only bots populate it.
+    const [hp, setHp]             = useState("");
+
+    const CATEGORIES = [
+      ["bug",      "Bug / something broken"],
+      ["question", "Question / how do I…"],
+      ["billing",  "Billing"],
+      ["feature",  "Feature request"],
+      ["other",    "Other"],
+    ];
+
+    // The screen the user is on, for triage context. currentView/screen are
+    // in scope from the parent component.
+    const screenLabel = currentView === "portfolio" ? "Portfolio" : (screen || "dashboard");
+
+    const submit = async () => {
+      setError(null);
+      if (message.trim().length < 10) {
+        setError("Please describe the issue in a sentence or two.");
+        return;
+      }
+      setSending(true);
+      try {
+        const res = await authFetch(`${WORKER_URL}/api/support`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            category,
+            message: message.trim(),
+            site: selectedSite,
+            screen: screenLabel,
+            hp_extra_info: hp,
+          }),
+        });
+        if (res.status === 429) {
+          const d = await res.json().catch(()=>({}));
+          setError(d.error || "Too many messages — please wait a little while.");
+          setSending(false);
+          return;
+        }
+        if (!res.ok) {
+          const d = await res.json().catch(()=>({}));
+          setError(d.error || "Couldn't send right now. Please email hello@rankactions.com directly.");
+          setSending(false);
+          return;
+        }
+        setSent(true);
+      } catch {
+        setError("Couldn't send right now. Please email hello@rankactions.com directly.");
+      }
+      setSending(false);
+    };
+
+    return (
+    <div className="overlay" onClick={e=>e.target===e.currentTarget&&setShowSupport(false)}>
+      <div className="modal">
+        <div className="modal-head">
+          <div>
+            <div className="modal-h">Contact support</div>
+            <div className="modal-sub">We typically reply within 1 business day</div>
+          </div>
+          <button className="modal-close" onClick={()=>setShowSupport(false)}>✕</button>
+        </div>
+        <div className="modal-content">
+          {sent ? (
+            <div style={{textAlign:"center",padding:"1.5rem 0"}}>
+              <div style={{fontSize:"2rem",marginBottom:".5rem"}}>✓</div>
+              <div style={{fontSize:"1rem",fontWeight:600,marginBottom:".35rem"}}>Message sent</div>
+              <div style={{fontSize:".85rem",color:"var(--text3)",lineHeight:1.5}}>
+                Thanks — we'll reply to your account email within 1 business day.
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="modal-section-label">What's this about?</div>
+              <select
+                value={category}
+                onChange={e=>setCategory(e.target.value)}
+                style={{width:"100%",background:"var(--s2)",border:"1px solid var(--border)",borderRadius:7,padding:".55rem .7rem",color:"var(--text2)",fontFamily:"var(--font)",fontSize:".85rem",cursor:"pointer",marginBottom:".9rem"}}>
+                {CATEGORIES.map(([id,label])=>(
+                  <option key={id} value={id}>{label}</option>
+                ))}
+              </select>
+
+              <div className="modal-section-label">Message</div>
+              <textarea
+                value={message}
+                onChange={e=>setMessage(e.target.value)}
+                rows={6}
+                maxLength={5000}
+                placeholder="Tell us what's happening. The more detail the better — what you were doing, what you expected, and what went wrong."
+                style={{width:"100%",background:"var(--s2)",border:"1px solid var(--border)",borderRadius:7,padding:".7rem",color:"var(--text2)",fontFamily:"var(--font)",fontSize:".85rem",lineHeight:1.5,resize:"vertical",boxSizing:"border-box"}}
+              />
+
+              {/* Honeypot — visually hidden, off-screen, not tab-reachable */}
+              <input
+                type="text"
+                value={hp}
+                onChange={e=>setHp(e.target.value)}
+                tabIndex={-1}
+                autoComplete="off"
+                aria-hidden="true"
+                style={{position:"absolute",left:"-9999px",width:1,height:1,opacity:0}}
+              />
+
+              <div style={{fontSize:".7rem",color:"var(--text3)",marginTop:".6rem",lineHeight:1.5}}>
+                We'll automatically include your account email, plan, and the site you're viewing ({displaySite(selectedSite)}) to help us help you faster.
+              </div>
+
+              {error && (
+                <div style={{marginTop:".7rem",fontSize:".8rem",color:"var(--red,#d9534f)",lineHeight:1.45}}>{error}</div>
+              )}
+            </>
+          )}
+        </div>
+        {!sent && (
+          <div className="modal-footer">
+            <button className="mf-btn" onClick={()=>setShowSupport(false)} disabled={sending}>Cancel</button>
+            <button className="mf-btn primary" onClick={submit} disabled={sending}>
+              {sending ? "Sending…" : "Send message"}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
     );
   };
 
@@ -10541,6 +10688,7 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
       {modal            && FixModal()}
       {croModal         && <CroModal/>}
       {showUpgrade      && <UpgradeModal/>}
+      {showSupport      && <SupportModal/>}
       {gscSitePicker    && <GscSitePicker/>}
       {showTour         && <OnboardingTour/>}
     </div></>
