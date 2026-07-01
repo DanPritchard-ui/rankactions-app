@@ -997,15 +997,22 @@ export default function RankActions() {
   const [authView,  setAuthView]  = useState("signin"); // signin | signup
   const [showPlan,  setShowPlan]  = useState(false);
   const [showSupport, setShowSupport] = useState(false);
-  // Sprout — the guided weekly-action mascot. Open state, the index of the
-  // task currently being offered, and a set of task keys completed this
-  // session (so we can show progress without persisting anything server-side).
+  // RankActions Assist — guided weekly-action state. "Done" and "visited" are
+  // persisted per-site in localStorage (keys ra_assist_done_<site> /
+  // ra_assist_visited_<site>) so progress survives refresh and is separate
+  // per site. A reset control lets the user show all tasks again.
   const [sproutOpen, setSproutOpen] = useState(false);
   const [sproutDismissed, setSproutDismissed] = useState(false);
-  const [sproutDoneKeys, setSproutDoneKeys] = useState(() => new Set());
+  const loadAssistSet = (prefix) => {
+    try {
+      const site = localStorage.getItem("rankactions_selectedSite") || "mywebsite.com";
+      return new Set(JSON.parse(localStorage.getItem(`ra_assist_${prefix}_${site}`) || "[]"));
+    } catch { return new Set(); }
+  };
+  const [sproutDoneKeys, setSproutDoneKeys] = useState(() => loadAssistSet("done"));
   // Tasks the user has been taken to via "Show me how" but not yet confirmed
-  // as complete. These stay in the list; Sprout asks for confirmation on return.
-  const [sproutVisitedKeys, setSproutVisitedKeys] = useState(() => new Set());
+  // as complete. These stay in the list; Assist asks for confirmation on return.
+  const [sproutVisitedKeys, setSproutVisitedKeys] = useState(() => loadAssistSet("visited"));
   const [plan,      setPlan]      = useState(() => localStorage.getItem("rankactions_plan") || "free");
   const [selPlan,   setSelPlan]   = useState(plan || "free");
 
@@ -1379,6 +1386,34 @@ export default function RankActions() {
     // saveUserData writes localStorage immediately AND the server (debounced).
     saveUserData(selectedSite, 'done', [...doneFixes]);
   }, [doneFixes, selectedSite]);
+
+  // ── RankActions Assist: reload per-site progress when the site changes ──
+  // Tracks which site the in-memory sets belong to, so the save effect below
+  // doesn't clobber a site's stored data with another site's keys during the
+  // render where selectedSite has just changed.
+  const assistLoadedSite = useRef(localStorage.getItem("rankactions_selectedSite") || "mywebsite.com");
+  useEffect(() => {
+    if (!selectedSite) return;
+    if (assistLoadedSite.current === selectedSite) return;
+    assistLoadedSite.current = selectedSite;
+    try {
+      setSproutDoneKeys(new Set(JSON.parse(localStorage.getItem(`ra_assist_done_${selectedSite}`) || "[]")));
+      setSproutVisitedKeys(new Set(JSON.parse(localStorage.getItem(`ra_assist_visited_${selectedSite}`) || "[]")));
+    } catch {
+      setSproutDoneKeys(new Set());
+      setSproutVisitedKeys(new Set());
+    }
+  }, [selectedSite]);
+
+  // ── RankActions Assist: persist progress whenever it changes ──
+  useEffect(() => {
+    if (!selectedSite || assistLoadedSite.current !== selectedSite) return;
+    try { localStorage.setItem(`ra_assist_done_${selectedSite}`, JSON.stringify([...sproutDoneKeys])); } catch {}
+  }, [sproutDoneKeys, selectedSite]);
+  useEffect(() => {
+    if (!selectedSite || assistLoadedSite.current !== selectedSite) return;
+    try { localStorage.setItem(`ra_assist_visited_${selectedSite}`, JSON.stringify([...sproutVisitedKeys])); } catch {}
+  }, [sproutVisitedKeys, selectedSite]);
 
   // ── Show onboarding tour on first dashboard visit ──────────
   useEffect(() => {
@@ -2524,9 +2559,16 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
     setActiveTab("Issues");
     setSproutOpen(false);
     openModal(task.modalPayload);
-    // Mark as VISITED, not done — the task stays in the list and Sprout asks
+    // Mark as VISITED, not done — the task stays in the list and Assist asks
     // the user to confirm completion when they return.
     setSproutVisitedKeys(prev => new Set(prev).add(task.key));
+  };
+
+  // Clear this site's Assist progress so all tasks show again. Useful when a
+  // user marked something done that turned out not to be fixed.
+  const sproutReset = () => {
+    setSproutDoneKeys(new Set());
+    setSproutVisitedKeys(new Set());
   };
 
   // The floating Sprout panel. Renders its own launcher bubble + expandable card.
@@ -2604,6 +2646,12 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
                   : "Your site's in good shape this week. Nothing needs doing right now."}
                 {" "}I'll have a fresh check for you next week.
               </div>
+              {doneCount > 0 && (
+                <button onClick={sproutReset}
+                  style={{marginTop:".9rem", background:"transparent", border:"none", color:"var(--blue)", fontSize:".76rem", fontWeight:600, cursor:"pointer", fontFamily:"inherit"}}>
+                  Show all tasks again
+                </button>
+              )}
             </div>
           ) : (
             <>
