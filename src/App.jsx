@@ -1003,6 +1003,9 @@ export default function RankActions() {
   const [sproutOpen, setSproutOpen] = useState(false);
   const [sproutDismissed, setSproutDismissed] = useState(false);
   const [sproutDoneKeys, setSproutDoneKeys] = useState(() => new Set());
+  // Tasks the user has been taken to via "Show me how" but not yet confirmed
+  // as complete. These stay in the list; Sprout asks for confirmation on return.
+  const [sproutVisitedKeys, setSproutVisitedKeys] = useState(() => new Set());
   const [plan,      setPlan]      = useState(() => localStorage.getItem("rankactions_plan") || "free");
   const [selPlan,   setSelPlan]   = useState(plan || "free");
 
@@ -2540,7 +2543,9 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
     setActiveTab("Issues");
     setSproutOpen(false);
     openModal(task.modalPayload);
-    setSproutDoneKeys(prev => new Set(prev).add(task.key));
+    // Mark as VISITED, not done — the task stays in the list and Sprout asks
+    // the user to confirm completion when they return.
+    setSproutVisitedKeys(prev => new Set(prev).add(task.key));
   };
 
   // The floating Sprout panel. Renders its own launcher bubble + expandable card.
@@ -2621,36 +2626,69 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
             </div>
           ) : (
             <>
-              <div style={{fontSize:".78rem", color:"var(--text3)", marginBottom:".6rem"}}>
-                {doneCount > 0
-                  ? <>Nice — that's one done. <strong style={{color:"var(--text2)"}}>{remaining.length}</strong> to go.</>
-                  : <>There {total === 1 ? "is" : "are"} <strong style={{color:"var(--text2)"}}>{remaining.length}</strong> thing{remaining.length===1?"":"s"} worth a look this week. Let's take the most important one first.</>}
-              </div>
+              {sproutVisitedKeys.has(nextTask.key) ? (
+                <>
+                  <div style={{fontSize:".84rem", color:"var(--text2)", marginBottom:".7rem", lineHeight:1.55}}>
+                    Did you get that one sorted?
+                  </div>
+                  <div style={{background:"var(--s2)", border:"1px solid var(--border)", borderRadius:10, padding:".7rem"}}>
+                    <div style={{display:"flex", alignItems:"center", gap:".4rem", marginBottom:".3rem"}}>
+                      <span className={`issue-priority ${nextTask.priority}`}>{nextTask.priority}</span>
+                      <span style={{fontSize:".76rem", color:"var(--text3)"}}>{nextTask.url}</span>
+                    </div>
+                    <div style={{fontSize:".8rem", color:"var(--text3)"}}>{nextTask.label}</div>
+                  </div>
+                  <div style={{display:"flex", gap:".5rem", marginTop:".8rem"}}>
+                    <button onClick={()=>{
+                        setSproutDoneKeys(prev=>new Set(prev).add(nextTask.key));
+                        setSproutVisitedKeys(prev=>{ const n=new Set(prev); n.delete(nextTask.key); return n; });
+                      }}
+                      style={{flex:1, background:"var(--green)", color:"#000", border:"none", borderRadius:8, padding:".6rem", fontWeight:700, fontSize:".84rem", cursor:"pointer", fontFamily:"inherit"}}>
+                      Yes, done ✓
+                    </button>
+                    <button onClick={()=>{
+                        setSproutVisitedKeys(prev=>{ const n=new Set(prev); n.delete(nextTask.key); return n; });
+                      }}
+                      title="Keep it on the list"
+                      style={{background:"var(--s2)", color:"var(--text3)", border:"1px solid var(--border)", borderRadius:8, padding:".6rem .8rem", fontSize:".84rem", cursor:"pointer", fontFamily:"inherit"}}>
+                      Not yet
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{fontSize:".78rem", color:"var(--text3)", marginBottom:".6rem"}}>
+                    {doneCount > 0
+                      ? <>Nice — that's one done. <strong style={{color:"var(--text2)"}}>{remaining.length}</strong> to go.</>
+                      : <>There {total === 1 ? "is" : "are"} <strong style={{color:"var(--text2)"}}>{remaining.length}</strong> thing{remaining.length===1?"":"s"} worth a look this week. Let's take the most important one first.</>}
+                  </div>
 
-              <div style={{background:"var(--s2)", border:"1px solid var(--border)", borderRadius:10, padding:".8rem"}}>
-                <div style={{display:"flex", alignItems:"center", gap:".4rem", marginBottom:".4rem"}}>
-                  <span className={`issue-priority ${nextTask.priority}`}>{nextTask.priority}</span>
-                  <span style={{fontSize:".76rem", color:"var(--text3)"}}>{nextTask.url}</span>
-                </div>
-                <div style={{fontSize:".84rem", color:"var(--text2)", lineHeight:1.55}}>{nextTask.plain}</div>
-              </div>
+                  <div style={{background:"var(--s2)", border:"1px solid var(--border)", borderRadius:10, padding:".8rem"}}>
+                    <div style={{display:"flex", alignItems:"center", gap:".4rem", marginBottom:".4rem"}}>
+                      <span className={`issue-priority ${nextTask.priority}`}>{nextTask.priority}</span>
+                      <span style={{fontSize:".76rem", color:"var(--text3)"}}>{nextTask.url}</span>
+                    </div>
+                    <div style={{fontSize:".84rem", color:"var(--text2)", lineHeight:1.55}}>{nextTask.plain}</div>
+                  </div>
 
-              <div style={{display:"flex", gap:".5rem", marginTop:".8rem"}}>
-                <button onClick={()=>sproutTakeMeThere(nextTask)}
-                  style={{flex:1, background:"var(--green)", color:"#000", border:"none", borderRadius:8, padding:".6rem", fontWeight:700, fontSize:".84rem", cursor:"pointer", fontFamily:"inherit"}}>
-                  Show me how →
-                </button>
-                <button onClick={()=>setSproutDoneKeys(prev=>new Set(prev).add(nextTask.key))}
-                  title="Skip for now"
-                  style={{background:"var(--s2)", color:"var(--text3)", border:"1px solid var(--border)", borderRadius:8, padding:".6rem .8rem", fontSize:".84rem", cursor:"pointer", fontFamily:"inherit"}}>
-                  Skip
-                </button>
-              </div>
+                  <div style={{display:"flex", gap:".5rem", marginTop:".8rem"}}>
+                    <button onClick={()=>sproutTakeMeThere(nextTask)}
+                      style={{flex:1, background:"var(--green)", color:"#000", border:"none", borderRadius:8, padding:".6rem", fontWeight:700, fontSize:".84rem", cursor:"pointer", fontFamily:"inherit"}}>
+                      Show me how →
+                    </button>
+                    <button onClick={()=>setSproutDoneKeys(prev=>new Set(prev).add(nextTask.key))}
+                      title="Skip for now"
+                      style={{background:"var(--s2)", color:"var(--text3)", border:"1px solid var(--border)", borderRadius:8, padding:".6rem .8rem", fontSize:".84rem", cursor:"pointer", fontFamily:"inherit"}}>
+                      Skip
+                    </button>
+                  </div>
 
-              {remaining.length > 1 && (
-                <div style={{fontSize:".72rem", color:"var(--text3)", marginTop:".7rem", textAlign:"center"}}>
-                  Take your time — you can do the rest whenever suits you.
-                </div>
+                  {remaining.length > 1 && (
+                    <div style={{fontSize:".72rem", color:"var(--text3)", marginTop:".7rem", textAlign:"center"}}>
+                      Take your time — you can do the rest whenever suits you.
+                    </div>
+                  )}
+                </>
               )}
             </>
           )}
