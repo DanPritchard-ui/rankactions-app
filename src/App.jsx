@@ -2453,36 +2453,17 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
   // demo mode it invites the user to connect rather than guiding fake fixes.
 
   // Sprout character — four expression states, brand greens on transparent.
+  // RankActions Assist mark — the brand "R" in a rounded tile. Matches the
+  // favicon. The `state` prop is accepted for API compatibility with the old
+  // mascot but the mark stays constant (a professional assistant, not an
+  // emotive character); a small accent dot hints at state.
   const Sprout = ({ state = "greeting", size = 56 }) => {
-    const stem = "#0a7c4e", leafDark = "#0a7c4e", leaf = "#1ea863", ink = "#0d0d0d";
-    const faces = {
-      greeting: <>
-        <circle cx="43" cy="32" r="2.6" fill={ink}/>
-        <circle cx="57" cy="32" r="2.6" fill={ink}/>
-        <path d="M44 40 Q50 45 56 40" stroke={ink} strokeWidth="2.4" fill="none" strokeLinecap="round"/>
-      </>,
-      thinking: <>
-        <circle cx="43" cy="33" r="2.6" fill={ink}/>
-        <circle cx="57" cy="33" r="2.6" fill={ink}/>
-        <path d="M45 39 Q50 37 55 39" stroke={ink} strokeWidth="2.4" fill="none" strokeLinecap="round"/>
-      </>,
-      celebrating: <>
-        <path d="M40 31 Q43 27 46 31" stroke={ink} strokeWidth="2.4" fill="none" strokeLinecap="round"/>
-        <path d="M54 31 Q57 27 60 31" stroke={ink} strokeWidth="2.4" fill="none" strokeLinecap="round"/>
-        <path d="M42 37 Q50 46 58 37" stroke={ink} strokeWidth="2.6" fill="none" strokeLinecap="round"/>
-      </>,
-      resting: <>
-        <path d="M40 35 h6 M54 35 h6" stroke={ink} strokeWidth="2.4" fill="none" strokeLinecap="round"/>
-        <path d="M45 42 Q50 44 55 42" stroke={ink} strokeWidth="2.2" fill="none" strokeLinecap="round"/>
-      </>,
-    };
+    const accent = state === "celebrating" ? "#1ea863" : state === "resting" ? "rgba(245,241,232,.4)" : "#1ea863";
     return (
       <svg width={size} height={size} viewBox="0 0 100 100" style={{flexShrink:0}} aria-hidden="true">
-        <path d="M50 88 V52" stroke={stem} strokeWidth="6" strokeLinecap="round" fill="none"/>
-        <path d="M50 60 C40 60 30 54 28 44 C40 42 50 50 50 60 Z" fill={leaf}/>
-        <path d="M50 54 C60 54 70 46 72 36 C60 34 50 44 50 54 Z" fill={leafDark}/>
-        <circle cx="50" cy="34" r="20" fill={leaf}/>
-        {faces[state] || faces.greeting}
+        <rect x="18" y="18" width="64" height="64" rx="16" fill="#1ea863"/>
+        <path d="M38 32 H56 a13 13 0 0 1 0 26 H48 l12 12 H50 L38 58 V32 Z M46 40 V50 H56 a5 5 0 0 0 0 -10 Z" fill="#0d0d0d"/>
+        {state === "celebrating" && <path d="M14 22 l2 4 l4 -2 M86 24 l-2 4 l-4 -2" stroke={accent} strokeWidth="2.4" fill="none" strokeLinecap="round"/>}
       </svg>
     );
   };
@@ -2564,7 +2545,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
       return (
         <button
           onClick={() => setSproutOpen(true)}
-          title="Open Sprout — your weekly guide"
+          title="Open RankActions Assist"
           style={{
             position:"fixed", right:"1.5rem", bottom:"5rem", zIndex:10000,
             display:"flex", alignItems:"center", gap:".55rem",
@@ -2578,7 +2559,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
             ? <span>{remaining.length} to do this week</span>
             : connected
             ? <span>All caught up</span>
-            : <span>Hi, I'm Sprout</span>}
+            : <span>RankActions Assist</span>}
         </button>
       );
     }
@@ -2595,7 +2576,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
         <div style={{display:"flex", alignItems:"center", gap:".7rem", padding:".9rem 1rem", background:"#0d0d0d"}}>
           <Sprout state={!connected ? "greeting" : remaining.length === 0 ? "celebrating" : "greeting"} size={44}/>
           <div style={{flex:1, minWidth:0}}>
-            <div style={{color:"#f5f1e8", fontWeight:700, fontSize:".92rem"}}>Sprout</div>
+            <div style={{color:"#f5f1e8", fontWeight:700, fontSize:".92rem"}}>RankActions Assist</div>
             <div style={{color:"rgba(245,241,232,.6)", fontSize:".72rem"}}>Your weekly guide</div>
           </div>
           <button onClick={()=>setSproutOpen(false)} title="Minimise"
@@ -2608,7 +2589,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
         <div style={{padding:"1rem"}}>
           {!connected ? (
             <div style={{fontSize:".86rem", color:"var(--text2)", lineHeight:1.55}}>
-              Hi, I'm Sprout 🌱 Once you connect your site to Google Search Console, I'll check it each week and walk you through anything that needs doing — one simple step at a time.
+              Hi 👋 Once you connect your site to Google Search Console, I'll check it each week and walk you through anything that needs doing — one simple step at a time.
               <button onClick={()=>{ setSproutOpen(false); setScreen("settings"); }}
                 style={{marginTop:".9rem", width:"100%", background:"var(--green)", color:"#000", border:"none", borderRadius:8, padding:".6rem", fontWeight:700, fontSize:".84rem", cursor:"pointer", fontFamily:"inherit"}}>
                 Connect my site
@@ -2616,7 +2597,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
             </div>
           ) : remaining.length === 0 ? (
             <div style={{textAlign:"center", padding:".5rem 0"}}>
-              <div style={{fontSize:".95rem", fontWeight:700, marginBottom:".35rem"}}>You're all caught up 🌱</div>
+              <div style={{fontSize:".95rem", fontWeight:700, marginBottom:".35rem"}}>You're all caught up ✓</div>
               <div style={{fontSize:".82rem", color:"var(--text3)", lineHeight:1.55}}>
                 {doneCount > 0
                   ? `Nice work — that's ${doneCount} sorted this week. This is exactly what a healthy site looks like.`
