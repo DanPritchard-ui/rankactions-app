@@ -997,6 +997,12 @@ export default function RankActions() {
   const [authView,  setAuthView]  = useState("signin"); // signin | signup
   const [showPlan,  setShowPlan]  = useState(false);
   const [showSupport, setShowSupport] = useState(false);
+  // Sprout — the guided weekly-action mascot. Open state, the index of the
+  // task currently being offered, and a set of task keys completed this
+  // session (so we can show progress without persisting anything server-side).
+  const [sproutOpen, setSproutOpen] = useState(false);
+  const [sproutDismissed, setSproutDismissed] = useState(false);
+  const [sproutDoneKeys, setSproutDoneKeys] = useState(() => new Set());
   const [plan,      setPlan]      = useState(() => localStorage.getItem("rankactions_plan") || "free");
   const [selPlan,   setSelPlan]   = useState(plan || "free");
 
@@ -2432,6 +2438,225 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
     if (!isConnected) return <div className="data-banner">📊 Showing demo data. Connect Google Search Console for your real numbers.<button className="data-banner-action" onClick={startGoogleOAuth}>Connect Google →</button></div>;
     if (siteData)     return <div className="data-banner live">✓ Live data · {displaySite(selectedSite)} · Last {siteData.dateRange.days} days<button className="data-banner-action" onClick={fetchSiteData}>Refresh</button></div>;
     return null;
+  };
+
+  // ─────────────────────────────────────────────────────────────
+  // SPROUT — guided weekly-action mascot
+  // ─────────────────────────────────────────────────────────────
+  // A friendly guide that offers this week's technical tasks one at a time,
+  // in plain language, and takes the user straight to the fix. Deterministic —
+  // reads the SAME getIssuesData() the Issues tab uses. No AI, no new data.
+  // Only surfaces real tasks when a site is connected (siteData truthy); in
+  // demo mode it invites the user to connect rather than guiding fake fixes.
+
+  // Sprout character — four expression states, brand greens on transparent.
+  const Sprout = ({ state = "greeting", size = 56 }) => {
+    const stem = "#0a7c4e", leafDark = "#0a7c4e", leaf = "#1ea863", ink = "#0d0d0d";
+    const faces = {
+      greeting: <>
+        <circle cx="43" cy="32" r="2.6" fill={ink}/>
+        <circle cx="57" cy="32" r="2.6" fill={ink}/>
+        <path d="M44 40 Q50 45 56 40" stroke={ink} strokeWidth="2.4" fill="none" strokeLinecap="round"/>
+      </>,
+      thinking: <>
+        <circle cx="43" cy="33" r="2.6" fill={ink}/>
+        <circle cx="57" cy="33" r="2.6" fill={ink}/>
+        <path d="M45 39 Q50 37 55 39" stroke={ink} strokeWidth="2.4" fill="none" strokeLinecap="round"/>
+      </>,
+      celebrating: <>
+        <path d="M40 31 Q43 27 46 31" stroke={ink} strokeWidth="2.4" fill="none" strokeLinecap="round"/>
+        <path d="M54 31 Q57 27 60 31" stroke={ink} strokeWidth="2.4" fill="none" strokeLinecap="round"/>
+        <path d="M42 37 Q50 46 58 37" stroke={ink} strokeWidth="2.6" fill="none" strokeLinecap="round"/>
+      </>,
+      resting: <>
+        <path d="M40 35 h6 M54 35 h6" stroke={ink} strokeWidth="2.4" fill="none" strokeLinecap="round"/>
+        <path d="M45 42 Q50 44 55 42" stroke={ink} strokeWidth="2.2" fill="none" strokeLinecap="round"/>
+      </>,
+    };
+    return (
+      <svg width={size} height={size} viewBox="0 0 100 100" style={{flexShrink:0}} aria-hidden="true">
+        <path d="M50 88 V52" stroke={stem} strokeWidth="6" strokeLinecap="round" fill="none"/>
+        <path d="M50 60 C40 60 30 54 28 44 C40 42 50 50 50 60 Z" fill={leaf}/>
+        <path d="M50 54 C60 54 70 46 72 36 C60 34 50 44 50 54 Z" fill={leafDark}/>
+        <circle cx="50" cy="34" r="20" fill={leaf}/>
+        {faces[state] || faces.greeting}
+      </svg>
+    );
+  };
+
+  // Plain-language framing per issue category. Kept short, warm, jargon-free.
+  const SPROUT_PLAIN = {
+    meta: (pg) => `Your ${pg.url} page has no meta description — that's the short summary Google shows under your link in search results. Adding one helps people decide to click.`,
+    pagespeed: (pg) => `Your ${pg.url} page may be loading slowly, especially on phones. Faster pages keep visitors around and Google prefers them.`,
+    broken_links: (pg) => `There's a link on your ${pg.url} page that leads to a page that no longer exists. Fixing it keeps visitors from hitting dead ends.`,
+    schema: (pg) => `Your ${pg.url} page is missing some behind-the-scenes labels that help Google understand it. Adding them can make your listing stand out.`,
+  };
+
+  // Flatten getIssuesData into a flat, prioritised task list. Each task carries
+  // everything needed to (a) describe it plainly and (b) open the exact fix.
+  const PRIORITY_RANK = { high: 0, medium: 1, low: 2 };
+  const buildSproutTasks = () => {
+    if (!siteData) return []; // only guide through REAL issues
+    const groups = getIssuesData(selectedSite, siteData) || [];
+    const tasks = [];
+    groups.forEach((issue, gi) => {
+      (issue.pages || []).forEach((pg, pi) => {
+        tasks.push({
+          key: `${issue.fixCategory}:${pg.url}:${pi}`,
+          groupIndex: gi,
+          pageIndex: pi,
+          label: issue.label,
+          fixCategory: issue.fixCategory,
+          fix: issue.fix,
+          url: pg.url,
+          detail: pg.detail,
+          priority: pg.priority || "medium",
+          plain: SPROUT_PLAIN[issue.fixCategory]?.(pg) || `This one's on your ${pg.url} page. ${issue.fix}`,
+          modalPayload: {
+            id: `issue-${gi}-${pi}`,
+            level: pg.priority === "high" ? "high" : "medium",
+            color: pg.priority === "high" ? "#f03e5f" : "#f5a623",
+            label: issue.label,
+            type: "Technical",
+            title: `Fix: ${issue.label} on ${pg.url}`,
+            desc: pg.detail,
+            m1: pg.url,
+            m2: `${pg.priority} priority`,
+            field: issue.label,
+            current: pg.detail,
+            recommended: issue.fix,
+            metaDesc: null,
+            page: pg.url,
+            fixCategory: issue.fixCategory,
+          },
+        });
+      });
+    });
+    tasks.sort((a, b) => (PRIORITY_RANK[a.priority] ?? 1) - (PRIORITY_RANK[b.priority] ?? 1));
+    return tasks;
+  };
+
+  const sproutTakeMeThere = (task) => {
+    setActiveTab("Issues");
+    setSproutOpen(false);
+    openModal(task.modalPayload);
+    setSproutDoneKeys(prev => new Set(prev).add(task.key));
+  };
+
+  // The floating Sprout panel. Renders its own launcher bubble + expandable card.
+  const SproutPanel = () => {
+    const tasks = buildSproutTasks();
+    const remaining = tasks.filter(t => !sproutDoneKeys.has(t.key));
+    const total = tasks.length;
+    const doneCount = total - remaining.length;
+    const connected = !!siteData;
+    const nextTask = remaining[0] || null;
+
+    if (sproutDismissed) return null;
+
+    // Collapsed launcher bubble.
+    if (!sproutOpen) {
+      return (
+        <button
+          onClick={() => setSproutOpen(true)}
+          title="Open Sprout — your weekly guide"
+          style={{
+            position:"fixed", right:"1.5rem", bottom:"5rem", zIndex:10000,
+            display:"flex", alignItems:"center", gap:".55rem",
+            background:"#0d0d0d", color:"#f5f1e8", border:"1px solid rgba(30,168,99,.35)",
+            borderRadius:999, padding:".5rem .9rem .5rem .5rem", cursor:"pointer",
+            fontFamily:"inherit", fontSize:".82rem", fontWeight:600,
+            boxShadow:"0 6px 20px rgba(0,0,0,.25)",
+          }}>
+          <Sprout state={connected && remaining.length === 0 ? "resting" : "greeting"} size={34}/>
+          {connected && remaining.length > 0
+            ? <span>{remaining.length} to do this week</span>
+            : connected
+            ? <span>All caught up</span>
+            : <span>Hi, I'm Sprout</span>}
+        </button>
+      );
+    }
+
+    // Expanded card.
+    return (
+      <div style={{
+        position:"fixed", right:"1.5rem", bottom:"5rem", zIndex:10000,
+        width:"340px", maxWidth:"calc(100vw - 3rem)",
+        background:"var(--s1)", border:"1px solid var(--border)", borderRadius:16,
+        boxShadow:"0 10px 34px rgba(0,0,0,.28)", overflow:"hidden",
+      }}>
+        {/* Header */}
+        <div style={{display:"flex", alignItems:"center", gap:".7rem", padding:".9rem 1rem", background:"#0d0d0d"}}>
+          <Sprout state={!connected ? "greeting" : remaining.length === 0 ? "celebrating" : "greeting"} size={44}/>
+          <div style={{flex:1, minWidth:0}}>
+            <div style={{color:"#f5f1e8", fontWeight:700, fontSize:".92rem"}}>Sprout</div>
+            <div style={{color:"rgba(245,241,232,.6)", fontSize:".72rem"}}>Your weekly guide</div>
+          </div>
+          <button onClick={()=>setSproutOpen(false)} title="Minimise"
+            style={{background:"transparent", border:"none", color:"rgba(245,241,232,.7)", fontSize:"1.1rem", cursor:"pointer", lineHeight:1}}>–</button>
+          <button onClick={()=>{ setSproutDismissed(true); setSproutOpen(false); }} title="Hide for now"
+            style={{background:"transparent", border:"none", color:"rgba(245,241,232,.7)", fontSize:"1rem", cursor:"pointer", lineHeight:1}}>✕</button>
+        </div>
+
+        {/* Body */}
+        <div style={{padding:"1rem"}}>
+          {!connected ? (
+            <div style={{fontSize:".86rem", color:"var(--text2)", lineHeight:1.55}}>
+              Hi, I'm Sprout 🌱 Once you connect your site to Google Search Console, I'll check it each week and walk you through anything that needs doing — one simple step at a time.
+              <button onClick={()=>{ setSproutOpen(false); setScreen("settings"); }}
+                style={{marginTop:".9rem", width:"100%", background:"var(--green)", color:"#000", border:"none", borderRadius:8, padding:".6rem", fontWeight:700, fontSize:".84rem", cursor:"pointer", fontFamily:"inherit"}}>
+                Connect my site
+              </button>
+            </div>
+          ) : remaining.length === 0 ? (
+            <div style={{textAlign:"center", padding:".5rem 0"}}>
+              <div style={{fontSize:".95rem", fontWeight:700, marginBottom:".35rem"}}>You're all caught up 🌱</div>
+              <div style={{fontSize:".82rem", color:"var(--text3)", lineHeight:1.55}}>
+                {doneCount > 0
+                  ? `Nice work — that's ${doneCount} sorted this week. This is exactly what a healthy site looks like.`
+                  : "Your site's in good shape this week. Nothing needs doing right now."}
+                {" "}I'll have a fresh check for you next week.
+              </div>
+            </div>
+          ) : (
+            <>
+              <div style={{fontSize:".78rem", color:"var(--text3)", marginBottom:".6rem"}}>
+                {doneCount > 0
+                  ? <>Nice — that's one done. <strong style={{color:"var(--text2)"}}>{remaining.length}</strong> to go.</>
+                  : <>There {total === 1 ? "is" : "are"} <strong style={{color:"var(--text2)"}}>{remaining.length}</strong> thing{remaining.length===1?"":"s"} worth a look this week. Let's take the most important one first.</>}
+              </div>
+
+              <div style={{background:"var(--s2)", border:"1px solid var(--border)", borderRadius:10, padding:".8rem"}}>
+                <div style={{display:"flex", alignItems:"center", gap:".4rem", marginBottom:".4rem"}}>
+                  <span className={`issue-priority ${nextTask.priority}`}>{nextTask.priority}</span>
+                  <span style={{fontSize:".76rem", color:"var(--text3)"}}>{nextTask.url}</span>
+                </div>
+                <div style={{fontSize:".84rem", color:"var(--text2)", lineHeight:1.55}}>{nextTask.plain}</div>
+              </div>
+
+              <div style={{display:"flex", gap:".5rem", marginTop:".8rem"}}>
+                <button onClick={()=>sproutTakeMeThere(nextTask)}
+                  style={{flex:1, background:"var(--green)", color:"#000", border:"none", borderRadius:8, padding:".6rem", fontWeight:700, fontSize:".84rem", cursor:"pointer", fontFamily:"inherit"}}>
+                  Show me how →
+                </button>
+                <button onClick={()=>setSproutDoneKeys(prev=>new Set(prev).add(nextTask.key))}
+                  title="Skip for now"
+                  style={{background:"var(--s2)", color:"var(--text3)", border:"1px solid var(--border)", borderRadius:8, padding:".6rem .8rem", fontSize:".84rem", cursor:"pointer", fontFamily:"inherit"}}>
+                  Skip
+                </button>
+              </div>
+
+              {remaining.length > 1 && (
+                <div style={{fontSize:".72rem", color:"var(--text3)", marginTop:".7rem", textAlign:"center"}}>
+                  Take your time — you can do the rest whenever suits you.
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    );
   };
 
   // ─────────────────────────────────────────────────────────────
@@ -10960,6 +11185,7 @@ Return ONLY valid JSON — no markdown:
               </div>
             )}
             {screen==="dashboard"  && <DashboardContent/>}
+            {screen==="dashboard"  && <SproutPanel/>}
             {screen==="siteDetail" && <SiteDetailContent/>}
             {screen==="content"    && <ContentGenerator/>}
             {screen==="strategy"   && <StrategyPlanner/>}
