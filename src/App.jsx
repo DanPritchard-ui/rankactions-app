@@ -1506,8 +1506,12 @@ export default function RankActions() {
     const colors = ["#f03e5f","#f5a623","#0fdb8a"];
     const labels = ["HIGH IMPACT","OPPORTUNITY","QUICK WIN"];
     const levels = ["high","medium","low"];
-    // Filter out completed fixes and show the next best opportunities
-    const allOpps = siteData.topOpportunities || [];
+    // Filter out completed fixes AND non-targetable GSC noise (search-operator
+    // strings, embedded-quote verbatim queries, over-long phrases) — the same
+    // isUsableKeyword guard getSeoRows uses. Without this, raw operator queries
+    // like '"professional services" -jobs -careers ...' surface as HIGH IMPACT
+    // actions, which aren't real keywords a user can target.
+    const allOpps = (siteData.topOpportunities || []).filter((opp) => isUsableKeyword(opp.keyword));
     const available = allOpps.filter((opp) => !doneFixes.has(`live-${raSlug(opp.keyword)}`));
     // If all top ones are done, pull from deeper in the list
     const opps = available.length > 0 ? available : allOpps.slice(3, 6);
@@ -1570,6 +1574,8 @@ export default function RankActions() {
     if (!kw || typeof kw !== 'string') return false;
     if (kw.includes('"')) return false;                       // exact-match quoted searches — usually document text
     if (kw.includes(':')) return false;                       // colons rarely appear in real searches — system text like "rank: 2"
+    if (/(^|\s)-\S/.test(kw)) return false;                   // minus-operator exclusions (e.g. "-jobs -careers") — a scraped search-operator string, not a real keyword
+    if (/\b(OR|AND)\b/.test(kw) || kw.includes('|')) return false; // boolean operators — search-query syntax, not a keyword
     if (kw.split(/\s+/).length > 12) return false;            // > 12-word phrases are document text, not SEO targets
     if (/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/.test(kw)) return false; // contains a date — almost always document text
     return true;
