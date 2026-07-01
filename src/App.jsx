@@ -2561,7 +2561,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
           onClick={() => setSproutOpen(true)}
           title="Open Sprout — your weekly guide"
           style={{
-            position:"fixed", right:"1.5rem", bottom:"1.5rem", zIndex:120,
+            position:"fixed", right:"1.5rem", bottom:"5rem", zIndex:10000,
             display:"flex", alignItems:"center", gap:".55rem",
             background:"#0d0d0d", color:"#f5f1e8", border:"1px solid rgba(30,168,99,.35)",
             borderRadius:999, padding:".5rem .9rem .5rem .5rem", cursor:"pointer",
@@ -2581,7 +2581,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
     // Expanded card.
     return (
       <div style={{
-        position:"fixed", right:"1.5rem", bottom:"1.5rem", zIndex:120,
+        position:"fixed", right:"1.5rem", bottom:"5rem", zIndex:10000,
         width:"340px", maxWidth:"calc(100vw - 3rem)",
         background:"var(--s1)", border:"1px solid var(--border)", borderRadius:16,
         boxShadow:"0 10px 34px rgba(0,0,0,.28)", overflow:"hidden",
