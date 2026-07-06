@@ -7743,7 +7743,10 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
 
     return (
       <div>
-        <div style={{fontSize:".78rem",color:"var(--text3)",marginBottom:"1rem"}}>{localSnapshots.length} snapshots · {trackedKws.length} keywords discovered from Search Console</div>
+        <div style={{fontSize:".78rem",color:"var(--text3)",marginBottom:".35rem"}}>{localSnapshots.length} snapshots · {trackedKws.length} keywords discovered from Search Console</div>
+        <div style={{fontSize:".72rem",color:"var(--text3)",marginBottom:"1rem",lineHeight:1.5}}>
+          These are real searches where your site appeared in Google, straight from your Search Console data — some may surprise you. If one isn't relevant to your business, hide it with the ✕.
+        </div>
         {loading ? (
           <div style={{textAlign:"center",padding:"3rem",color:"var(--text3)"}}><div className="spinner-sm" style={{margin:"0 auto .75rem"}}/>Loading rank history...</div>
         ) : trackedKws.length === 0 ? (
