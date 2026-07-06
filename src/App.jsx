@@ -7618,7 +7618,10 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
             setLocalSnapshots(data.snapshots);
             const kwMap = {};
             data.snapshots.forEach(snap => {
-              snap.keywords.forEach(k => {
+              // Historical snapshots may contain GSC noise stored before
+              // server-side filtering existed (operator strings, verbatim
+              // questions) — apply the same guard on display.
+              snap.keywords.filter(k => isUsableKeyword(k.keyword)).forEach(k => {
                 if (!kwMap[k.keyword]) kwMap[k.keyword] = { keyword: k.keyword, history: [] };
                 kwMap[k.keyword].history.push({ date: snap.date, position: k.position, clicks: k.clicks, impressions: k.impressions });
               });
