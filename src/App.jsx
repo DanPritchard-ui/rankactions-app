@@ -1578,6 +1578,7 @@ export default function RankActions() {
     if (/\b(OR|AND)\b/.test(kw) || kw.includes('|')) return false; // boolean operators — search-query syntax, not a keyword
     if (kw.split(/\s+/).length > 12) return false;            // > 12-word phrases are document text, not SEO targets
     if (/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/.test(kw)) return false; // contains a date — almost always document text
+    if (/^\d+\s+(second|minute|hour|day|week|month|year)s?\s+ago$/i.test(kw.trim())) return false; // relative-time strings ("3 months ago") — scraped page text, not searches
     return true;
   };
 
@@ -7588,6 +7589,29 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
     const [loading, setLoading] = useState(false);
     const [tracking, setTracking] = useState({});  // { [keyword]: true } — in-flight
     const [tracked, setTracked]   = useState({});  // { [keyword]: true } — already pinned (this session or before)
+    // Manually hidden keywords — for relevance junk no syntax filter can catch
+    // (e.g. construction queries appearing on a GDPR consultancy's GSC data,
+    // usually from domain history or stray indexed pages). Persisted per-site.
+    const [hiddenKws, setHiddenKws] = useState(() => {
+      try { return new Set(JSON.parse(localStorage.getItem(`ra_hidden_kw_${selectedSite}`) || "[]")); }
+      catch { return new Set(); }
+    });
+    const [showHidden, setShowHidden] = useState(false);
+    const hideKeyword = (keyword) => {
+      setHiddenKws(prev => {
+        const next = new Set(prev); next.add(keyword);
+        try { localStorage.setItem(`ra_hidden_kw_${selectedSite}`, JSON.stringify([...next])); } catch {}
+        return next;
+      });
+      if (selectedKw === keyword) setSelectedKw(null);
+    };
+    const unhideKeyword = (keyword) => {
+      setHiddenKws(prev => {
+        const next = new Set(prev); next.delete(keyword);
+        try { localStorage.setItem(`ra_hidden_kw_${selectedSite}`, JSON.stringify([...next])); } catch {}
+        return next;
+      });
+    };
     const loadedSite = useRef(null);
 
     const siteUrl = (() => {
@@ -7600,6 +7624,10 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
     useEffect(() => {
       if (loadedSite.current === selectedSite) return;
       loadedSite.current = selectedSite;
+      // Reload this site's hidden-keyword set alongside its data.
+      try { setHiddenKws(new Set(JSON.parse(localStorage.getItem(`ra_hidden_kw_${selectedSite}`) || "[]"))); }
+      catch { setHiddenKws(new Set()); }
+      setShowHidden(false);
       const load = async () => {
         setLoading(true);
         try {
@@ -7729,20 +7757,30 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
         ) : (
           <div style={{display:"grid",gridTemplateColumns:"320px 1fr",gap:"1.5rem",alignItems:"start"}}>
             <div style={{background:"var(--s1)",borderRadius:12,border:"1px solid var(--border)",overflow:"hidden"}}>
-              <div style={{padding:".65rem 1rem",borderBottom:"1px solid var(--border)",fontWeight:600,fontSize:".78rem",color:"var(--text3)"}}>Keywords ({trackedKws.length})</div>
+              <div style={{padding:".65rem 1rem",borderBottom:"1px solid var(--border)",fontWeight:600,fontSize:".78rem",color:"var(--text3)",display:"flex",alignItems:"center",justifyContent:"space-between",gap:".5rem"}}>
+                <span>Keywords ({trackedKws.filter(kw=>!hiddenKws.has(kw.keyword)).length})</span>
+                {hiddenKws.size > 0 && (
+                  <button onClick={()=>setShowHidden(s=>!s)}
+                    style={{background:"transparent",border:"none",color:"var(--blue)",fontSize:".68rem",fontWeight:600,cursor:"pointer",fontFamily:"inherit",padding:0}}>
+                    {showHidden ? "Hide hidden" : `Show hidden (${hiddenKws.size})`}
+                  </button>
+                )}
+              </div>
               <div style={{maxHeight:480,overflow:"auto"}}>
-                {trackedKws.map(kw=>{
+                {trackedKws.filter(kw => showHidden || !hiddenKws.has(kw.keyword)).map(kw=>{
                   const ch = getChange(kw.keyword);
                   const latest = kw.history[kw.history.length-1];
                   const lookup = kw.keyword.toLowerCase();
                   const isTracked  = !!tracked[lookup];
                   const isTracking = !!tracking[lookup];
+                  const isHidden   = hiddenKws.has(kw.keyword);
                   return (
                     <div key={kw.keyword} onClick={()=>setSelectedKw(kw.keyword)}
                       style={{padding:".5rem .85rem",cursor:"pointer",borderBottom:"1px solid var(--b2)",
                         background:selectedKw===kw.keyword?"var(--s2)":"transparent",
                         borderLeft:selectedKw===kw.keyword?"3px solid var(--green)":"3px solid transparent",
-                        display:"flex",alignItems:"center",gap:".5rem"}}>
+                        display:"flex",alignItems:"center",gap:".5rem",
+                        opacity: isHidden ? .5 : 1}}>
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontSize:".78rem",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{kw.keyword}</div>
                         <div style={{display:"flex",gap:".6rem",fontSize:".68rem",color:"var(--text3)"}}>
@@ -7751,6 +7789,13 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
                           <span>{kw.history.length}wk</span>
                         </div>
                       </div>
+                      {isHidden ? (
+                        <button onClick={(e)=>{ e.stopPropagation(); unhideKeyword(kw.keyword); }}
+                          title="Show this keyword again"
+                          style={{background:"transparent",color:"var(--blue)",border:"1px solid var(--border)",borderRadius:5,padding:".2rem .5rem",fontSize:".66rem",fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>
+                          Unhide
+                        </button>
+                      ) : (
                       <button onClick={(e)=>{ e.stopPropagation(); trackKeyword(kw.keyword); }}
                         disabled={isTracked || isTracking}
                         title={isTracked ? "Already tracked — view in Tracked tab" : isStarter ? "Pin this keyword to track its real position weekly" : "Upgrade to a paid plan to track keywords"}
@@ -7765,6 +7810,14 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
                         }}>
                         {isTracked ? "✓ Tracked" : isTracking ? "..." : "+ Track"}
                       </button>
+                      )}
+                      {!isHidden && (
+                        <button onClick={(e)=>{ e.stopPropagation(); hideKeyword(kw.keyword); }}
+                          title="Hide — not relevant to my business"
+                          style={{background:"transparent",color:"var(--text3)",border:"none",borderRadius:5,padding:".2rem .3rem",fontSize:".72rem",cursor:"pointer",flexShrink:0,lineHeight:1}}>
+                          ✕
+                        </button>
+                      )}
                     </div>
                   );
                 })}
