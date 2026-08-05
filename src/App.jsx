@@ -4426,20 +4426,50 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
       // Build the list of REAL pages on the user's site, sorted by traffic.
       // We pass these to Claude so internal links go somewhere real (no 404s).
       // Each page already includes the path; we strip the domain just in case and rebuild as a full URL.
+      // Boilerplate pages (privacy, terms, cookies, legal) are real pages and
+      // often rank, so they used to enter the link pool and the AI would link to
+      // them for lack of anything better - producing anchors like "security
+      // vulnerabilities" pointing at /privacy. They are never a relevant
+      // destination for editorial content, so exclude them from the pool.
+      const BOILERPLATE_RE = /\/(privacy|terms|cookie|cookies|legal|disclaimer|gdpr-notice|accessibility)([-/.]|$)/i;
       const realPages = (siteData?.pages || [])
         .slice()
         .sort((a, b) => (b.impressions || 0) - (a.impressions || 0))
-        .slice(0, 8)
         .map(p => {
           const path = (p.page || "").replace(/^https?:\/\/[^/]+/, "") || "/";
           return `${siteBase}${path}`;
-        });
+        })
+        .filter(u => !BOILERPLATE_RE.test(u))
+        .slice(0, 8);
       // Always include the homepage as a guaranteed-valid fallback
       const homepageUrl = `${siteBase}/`;
       const linkPool = Array.from(new Set([homepageUrl, ...realPages]));
+      const linkRules = `\nINTERNAL LINK RULES — these are absolute:
+- You may ONLY link to URLs from the allowed list. Never invent a path; an invented path is a 404 and a serious error.
+- RELEVANCE IS REQUIRED. Only link when the destination genuinely relates to the sentence it sits in. An irrelevant link is worse than no link.
+- Anchor text MUST describe what the reader will find at the destination. Never wrap unrelated words (e.g. "security vulnerabilities", "adjustment tomorrow") in a link just to place one.
+- If no allowed URL is genuinely relevant to a passage, DO NOT add a link there. Fewer good links beat more bad ones.
+- 0 to 4 internal links total. Zero is acceptable and correct when nothing relevant exists.\n`;
       const linkPoolContext = linkPool.length > 1
-        ? `\nALLOWED INTERNAL LINKS — these are the ONLY URLs that exist on the client's site. You MUST link only to URLs from this list. Do NOT invent any other paths or you will create 404s:\n${linkPool.map(u => `- ${u}`).join("\n")}\n`
-        : `\nALLOWED INTERNAL LINKS — only the homepage is confirmed on this site. Link any internal anchors to: ${homepageUrl}\n`;
+        ? `\nALLOWED INTERNAL LINKS — these are the ONLY URLs that exist on the client's site:\n${linkPool.map(u => `- ${u}`).join("\n")}\n${linkRules}`
+        : `\nALLOWED INTERNAL LINKS — only the homepage is confirmed on this site: ${homepageUrl}\n${linkRules}`;
+
+      // Pillar link - only ever set when the pillar page was matched to a REAL
+      // published URL on the site (see resolvePillarUrl). Without a verified URL
+      // we say nothing: "link back to the pillar" with no URL contradicts the
+      // no-invented-paths rule, and the model resolves that by inventing one.
+      const pillarContext = preset?.pillarUrl
+        ? `\nPILLAR PAGE — this article is a cluster post supporting a pillar page. Include exactly ONE contextual link back to it, placed where it reads naturally (usually near the conclusion), with descriptive anchor text about the pillar's topic:\n- ${preset.pillarUrl}${preset.pillarTitle ? ` ("${preset.pillarTitle}")` : ""}\nThis pillar link is in addition to the internal link rules below and does not count towards the 0-4 limit.\n`
+        : "";
+
+      // Volatile SEO facts. Models trained before these changes confidently
+      // teach the retired versions, which is a credibility problem in an SEO
+      // product. Keep this list short and update it when Google changes things.
+      const freshnessContext = `\nFACTUAL ACCURACY — these SEO facts changed recently and MUST be stated correctly:
+- Core Web Vitals are LCP, INP (Interaction to Next Paint) and CLS. INP replaced First Input Delay (FID) in March 2024. Never present FID as a current Core Web Vital. Targets: INP under 200ms, LCP under 2.5s, CLS under 0.1.
+- Search Console's "Coverage" report is now "Page indexing". The standalone "Mobile Usability" report was retired - assess mobile experience via Core Web Vitals and PageSpeed Insights / Lighthouse.
+- "Page Experience" is a set of signals, not a single ranking factor or score.
+- Do not cite specific ranking-factor percentages or algorithm weightings; they are not published. Do not invent statistics, study results or dates. If you are not confident a number is accurate, describe the effect qualitatively instead.\n`;
 
       try {
         const prompt = `You are an expert SEO content writer. Generate a complete, production-ready HTML blog post styled with RankActions branding.
@@ -4454,7 +4484,7 @@ INPUTS:
 - Primary CTA: ${cta.trim() || "Contact us to find out more"}
 - Additional notes: ${notes.trim() || "none"}
 - Client website: ${displaySite(selectedSite)}
-${linkPoolContext}${historyContext}
+${linkPoolContext}${pillarContext}${freshnessContext}${historyContext}
 
 VISUAL DESIGN — RankActions brand (light cream body for readability, dark branded chrome with green accents):
 
@@ -4492,7 +4522,7 @@ BUILD THIS STRUCTURE:
    - At least one H3 subsection
    - One tip/callout box (green border-left)
    - Natural keyword usage — no stuffing, but the exact phrase "${kw.trim()}" should appear 4-8 times in body text
-   - 2-4 internal links — these MUST use URLs from the ALLOWED INTERNAL LINKS list above. Do NOT invent paths. If no relevant deep page exists for a topic, either link to the homepage from the list OR don't add a link at all rather than making one up. Format: <a href="[URL from the allowed list]">[descriptive anchor text]</a>
+   - Internal links: follow the INTERNAL LINK RULES above exactly (0-4 links, only allowed URLs, relevance required, descriptive anchor text). Format: <a href="[URL from the allowed list]">[descriptive anchor text]</a>
    - Each internal link should have a comment: <!-- Internal link: link to your [page type] page -->
 5. CTA SECTION: prominent green button with text "${cta.trim() || "Get in touch today"}"
 6. FOOTER BAR: dark, centered, "Generated by RankActions — AI-powered SEO content" with "rankactions.com" linked in green #1ea863
@@ -4505,8 +4535,22 @@ IMPORTANT — The keyword "${kw.trim()}" MUST appear verbatim in the title, meta
         );
         clearInterval(iv);
         const clean = text.replace(/^```html\s*/i,"").replace(/^```\s*/i,"").replace(/```\s*$/i,"").trim();
+
+        // Completeness check. Longform generations can hit the token ceiling and
+        // stop mid-sentence; the HTML still previews fine until you reach the end.
+        // Detect it and tell the user rather than letting a broken page be published.
+        const looksComplete = /<\/html>\s*$/i.test(clean) && /<\/body>/i.test(clean);
+        if (!looksComplete) {
+          setError("The article came back incomplete — it was cut off before the end. Please regenerate" + (Number(wordCount) >= 1500 ? ", or try a shorter word count." : "."));
+          setOutput(clean);
+          setTab("preview");
+          setLoading(false);
+          return;
+        }
+
         setOutput(clean);
         setTab("preview");
+
         // Track generated content to avoid future duplication
         try {
           const histKey = `ra_content_history_${selectedSite}`;
@@ -6163,9 +6207,42 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
     };
 
     // Jump to content generator with prefilled keyword
+    // Resolve the pillar page to a REAL published URL by matching its keyword
+    // against the pages Search Console reports for this site. Returns "" unless
+    // confident: a wrong or invented pillar URL is a 404 in published content,
+    // which is worse than omitting the link entirely.
+    const resolvePillarUrl = () => {
+      const p = strategy?.pillar;
+      if (!p || p.status !== "published") return "";
+      const words = String(p.keyword || "")
+        .toLowerCase().replace(/[^a-z0-9\s-]/g, " ").split(/[\s-]+/)
+        .filter(w => w.length > 2);
+      if (words.length < 2) return "";
+      const need = Math.max(2, Math.ceil(words.length * 0.6));
+      let best = "", bestScore = 0;
+      for (const pg of (siteData?.pages || [])) {
+        const url = String(pg.page || "");
+        if (!url) continue;
+        const path = url.toLowerCase().replace(/^https?:\/\/[^/]+/, "");
+        if (path === "" || path === "/") continue;           // homepage is not the pillar
+        const score = words.filter(w => path.includes(w)).length;
+        if (score > bestScore) { bestScore = score; best = url; }
+      }
+      if (bestScore < need) return "";
+      return /^https?:\/\//i.test(best) ? best : "";
+    };
+
+    // Jump to content generator with prefilled keyword
     const writeContent = (keyword, title) => {
       if (!isPro) { setShowUpgrade(true); return; }
-      contentPresetRef.current = { kw: keyword, biz: selectedSite, notes: `Part of pillar strategy: "${strategy?.topic}". Blog title suggestion: "${title}". Link back to the pillar page using the main keyword as anchor text.` };
+      const pillarUrl = resolvePillarUrl();
+      contentPresetRef.current = {
+        kw: keyword,
+        biz: selectedSite,
+        notes: `Part of pillar strategy: "${strategy?.topic}". Blog title suggestion: "${title}".`,
+        pillarUrl,
+        pillarTitle: pillarUrl ? (strategy?.pillar?.title || "") : "",
+      };
       setScreen("content");
     };
 
