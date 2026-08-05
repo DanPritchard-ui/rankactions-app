@@ -4397,6 +4397,48 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
         .replace(/<\/head>/i, `${style}</head>`);
     };
 
+    // Strip internal links whose anchor text doesn't relate to the destination.
+    // The prompt asks for relevance, but when the allowed pool is thin the model
+    // still reaches for a link and wraps a passing phrase (e.g. "implementing
+    // structured testing frameworks" -> homepage). An unlinked phrase is always
+    // better than a misleading link, so we unwrap rather than delete the text.
+    // Only links to the CLIENT's own domain are considered; external links and
+    // the RankActions footer branding are left alone.
+    const enforceLinkRelevance = (html, base) => {
+      if (!html || !base) return html;
+      let host = "";
+      try { host = new URL(base).hostname.replace(/^www\./, ""); } catch { return html; }
+      const brandTokens = host.split(".")[0].toLowerCase();
+      const STOP = new Set(["the","and","for","with","your","our","this","that","from","into","about","more","what","how","why","are","you","its","their"]);
+      const wordsOf = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").split(" ")
+        .filter(w => w.length > 3 && !STOP.has(w));
+
+      let stripped = 0;
+      const out = html.replace(/(<!--\s*Internal link:[^>]*-->\s*)?<a\s+href="([^"]+)"([^>]*)>([\s\S]*?)<\/a>/gi,
+        (full, comment, href, attrs, anchorHtml) => {
+          let u;
+          try { u = new URL(href, base); } catch { return full; }
+          if (u.hostname.replace(/^www\./, "") !== host) return full;   // external — leave alone
+          const anchorText = anchorHtml.replace(/<[^>]+>/g, " ");
+          const aWords = wordsOf(anchorText);
+          const path = u.pathname.replace(/\/+$/, "");
+          const isHome = path === "" || path === "/";
+          let ok;
+          if (isHome) {
+            // Homepage links are only justified when the anchor names the company.
+            ok = aWords.includes(brandTokens) || /\b(homepage|home page)\b/i.test(anchorText);
+          } else {
+            const pWords = wordsOf(path);
+            ok = pWords.length === 0 || aWords.some(w => pWords.includes(w));
+          }
+          if (ok) return full;
+          stripped++;
+          return anchorHtml;   // unwrap: keep the words, drop the link (and its label comment)
+        });
+      if (stripped > 0) console.info(`[content] removed ${stripped} internal link(s) with irrelevant anchor text`);
+      return out;
+    };
+
     const generate = async () => {
       if (!kw.trim()) return;
       setLoading(true); setError(null); setOutput(null);
@@ -4452,7 +4494,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
 - 0 to 4 internal links total. Zero is acceptable and correct when nothing relevant exists.\n`;
       const linkPoolContext = linkPool.length > 1
         ? `\nALLOWED INTERNAL LINKS — these are the ONLY URLs that exist on the client's site:\n${linkPool.map(u => `- ${u}`).join("\n")}\n${linkRules}`
-        : `\nALLOWED INTERNAL LINKS — only the homepage is confirmed on this site: ${homepageUrl}\n${linkRules}`;
+        : `\nALLOWED INTERNAL LINKS — the homepage (${homepageUrl}) is the ONLY confirmed URL on this site. Because there is no relevant deep page to link to, internal links are OPTIONAL in this article. Add AT MOST ONE link to the homepage, and ONLY on a phrase that refers to the company, product or service itself (e.g. the brand name, "our platform"). Do NOT wrap a general concept or descriptive phrase in a homepage link. If no sentence refers to the company directly, add NO internal links at all — that is the correct outcome.\n${linkRules}`;
 
       // Pillar link - only ever set when the pillar page was matched to a REAL
       // published URL on the site (see resolvePillarUrl). Without a verified URL
@@ -4534,7 +4576,8 @@ IMPORTANT — The keyword "${kw.trim()}" MUST appear verbatim in the title, meta
           "longform"
         );
         clearInterval(iv);
-        const clean = text.replace(/^```html\s*/i,"").replace(/^```\s*/i,"").replace(/```\s*$/i,"").trim();
+        let clean = text.replace(/^```html\s*/i,"").replace(/^```\s*/i,"").replace(/```\s*$/i,"").trim();
+        clean = enforceLinkRelevance(clean, siteBase);
 
         // Completeness check. Longform generations can hit the token ceiling and
         // stop mid-sentence; the HTML still previews fine until you reach the end.
