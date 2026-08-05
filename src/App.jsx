@@ -779,7 +779,7 @@ const DEMO_KPI = [
 ];
 
 const DEMO_FIXES = [
-  { id:"f1", level:"high",   color:"#f03e5f", label:"HIGH IMPACT", type:"SEO",
+  { id:"f1", level:"high",   color:"#f03e5f", label:"HIGH IMPACT", type:"SEO", demo:true,
     title:"Improve homepage ranking",
     desc:"Your homepage ranks outside the top 5 for your main keyword — a title tag update could move you into the top 3.",
     m1:"Position: #7", m2:"Target: Top 3",
@@ -787,13 +787,13 @@ const DEMO_FIXES = [
     field:"Title Tag", current:"Homepage | Your Business Name",
     recommended:"Primary Keyword | Clear Value Proposition | Brand",
     metaDesc:"Connect Google Search Console to see your real keyword data and get specific AI suggestions for your site." },
-  { id:"f2", level:"medium", color:"#f5a623", label:"OPPORTUNITY",  type:"CRO",
+  { id:"f2", level:"medium", color:"#f5a623", label:"OPPORTUNITY",  type:"CRO", demo:true,
     title:"Increase conversions on your key service page",
     desc:"Your main service page gets good traffic but converts below the industry average.",
     m1:"Conv: below avg", m2:"Industry: 2.1%",
     suggestion:"Move your primary CTA above the fold and make the benefit clear in the button text.",
     field:"CTA Copy", current:"Contact us", recommended:"Get a free quote today", metaDesc:null },
-  { id:"f3", level:"low",    color:"#0fdb8a", label:"QUICK WIN",    type:"SEO",
+  { id:"f3", level:"low",    color:"#0fdb8a", label:"QUICK WIN",    type:"SEO", demo:true,
     title:"Add internal links to orphan pages",
     desc:"Several pages on your site have no inbound links, limiting their Google authority.",
     m1:"Orphan pages", m2:"Easy fix",
@@ -1502,7 +1502,8 @@ export default function RankActions() {
   };
 
   const getPriorityFixes = () => {
-    if (!siteData?.topOpportunities?.length) return DEMO_FIXES;
+    if (!siteData) return DEMO_FIXES;                 // unconnected -> sales demo
+    if (!siteData.topOpportunities?.length) return []; // connected, no data yet -> empty state
     const colors = ["#f03e5f","#f5a623","#0fdb8a"];
     const labels = ["HIGH IMPACT","OPPORTUNITY","QUICK WIN"];
     const levels = ["high","medium","low"];
@@ -1515,7 +1516,7 @@ export default function RankActions() {
     const available = allOpps.filter((opp) => !doneFixes.has(`live-${raSlug(opp.keyword)}`));
     // If all top ones are done, pull from deeper in the list
     const opps = available.length > 0 ? available : allOpps.slice(3, 6);
-    if (opps.length === 0) return DEMO_FIXES;
+    if (opps.length === 0) return [];                 // connected, nothing qualifying -> empty state
     return opps.slice(0,3).map((opp,i) => {
       return {
         id: `live-${raSlug(opp.keyword)}`,
@@ -1799,6 +1800,21 @@ export default function RankActions() {
   // Fix modal
   // ─────────────────────────────────────────────────────────────
   const openModal = async (fix) => {
+    if (fix.demo) {
+      // Demo/example cards must never generate AI suggestions. The keyword extraction
+      // below falls back to fix.current, which for demo cards is the placeholder
+      // "Homepage | Your Business Name" — the prompt then REQUIRES that placeholder in
+      // every suggestion. Serve canned example copy instead (keyword-first, brand-last).
+      setModal(fix);
+      setModalData({
+        option1: "Example: Primary Keyword | Clear Value Proposition | Brand Name",
+        option2: "Example: What You Do in Your Location — Key Benefit | Brand Name",
+        metaDesc: "This is an example action. Connect Google Search Console and suggestions will be generated from your real pages and keywords.",
+        tip: "Connect Google Search Console for AI suggestions based on your live data"
+      });
+      setModalLoading(false);
+      return;
+    }
     if (!isPro && aiFixCount >= AI_FIX_LIMIT) { setShowUpgrade(true); return; }
     if (!isPro) trackAiFixUsage();
     setModal(fix); setModalData(null); setModalLoading(true);
@@ -2832,9 +2848,14 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
 
         <div className="section-head" data-tour="priority-actions">
           <div className="section-title">Priority Actions</div>
-          <div className="section-sub">{(siteData?.topOpportunities?.length > 0) ? "Based on your live data" : "Demo data"} · {fixes.filter(f=>!doneFixes.has(f.id)).length} remaining</div>
+          <div className="section-sub">{siteData ? "Based on your live data" : "Demo data"} · {fixes.filter(f=>!doneFixes.has(f.id)).length} remaining</div>
         </div>
         <div className="fixes-list">
+          {siteData && fixes.length === 0 && (
+            <div className="fix-card" style={{padding:"1.1rem 1.25rem",color:"var(--text3)",fontSize:".85rem",lineHeight:1.6}}>
+              Nothing actionable yet — your site doesn’t have enough qualifying keyword data in Search Console to generate priority actions. This usually means the site is new or search traffic is still building. Actions will appear automatically as data accumulates.
+            </div>
+          )}
           {fixes.map(fix=>{
             const isDone = doneFixes.has(fix.id);
             const isOpen = expandedFix===fix.id;
@@ -2923,6 +2944,11 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
             ))}
           </div>
           <div className="section-head"><div className="section-title">Top Actions</div><div className="section-sub">Click any to get an AI fix</div></div>
+          {siteData && fixes.length === 0 && (
+            <div className="mini-fix" style={{color:"var(--text3)",fontSize:".82rem"}}>
+              Nothing actionable yet — not enough qualifying keyword data. Actions will appear as Search Console data builds.
+            </div>
+          )}
           {fixes.map(fix=>(
             <div key={fix.id} className="mini-fix">
               <div className="mini-fix-dot" style={{background:fix.color}}/>
