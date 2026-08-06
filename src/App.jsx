@@ -31,6 +31,113 @@ function planLabel(plan) {
   }
 }
 
+// ── Completed-action records ────────────────────────────────────────────────
+// Historically `done` was stored as a bare array of fix IDs: ["live-foo", ...].
+// That records WHAT was done but not WHEN, making it impossible to measure
+// whether a change actually improved anything. Records are now objects:
+//   { id, ts, kw }   ts = ISO timestamp marked done, kw = related keyword
+// Both shapes are accepted on read, so existing users lose nothing; legacy IDs
+// simply carry a null timestamp and are excluded from impact measurement.
+function normaliseDoneRecords(raw) {
+  const ids = [];
+  const meta = {};
+  if (!Array.isArray(raw)) return { ids, meta };
+  for (const entry of raw) {
+    if (typeof entry === "string") {
+      if (!entry) continue;
+      ids.push(entry);
+      meta[entry] = { ts: null, kw: null };
+    } else if (entry && typeof entry === "object" && entry.id) {
+      ids.push(entry.id);
+      meta[entry.id] = { ts: entry.ts || null, kw: entry.kw || null };
+    }
+  }
+  return { ids, meta };
+}
+
+// ── Action impact ───────────────────────────────────────────────────────────
+// Compare Search Console snapshots from before and after a fix was marked done,
+// so users can see whether their work actually moved anything. Deliberately
+// conservative: an action only counts as "measurable" when there is a snapshot
+// on each side AND at least MIN_DAYS have passed, because rankings move slowly
+// and an early reading would be noise presented as fact.
+//
+//   doneMeta  { [fixId]: { ts, kw } }
+//   snapshots [ { date: 'YYYY-MM-DD', keywords: [{ keyword, position, clicks, impressions }] } ]
+//
+// Returns { measured: [...], pending: n, unmeasurable: n }
+const IMPACT_MIN_DAYS = 14;
+
+function computeActionImpact(doneMeta, snapshots, minDays = IMPACT_MIN_DAYS) {
+  const empty = { measured: [], pending: 0, unmeasurable: 0 };
+  if (!doneMeta || typeof doneMeta !== "object") return empty;
+  const snaps = (Array.isArray(snapshots) ? snapshots : [])
+    .filter(s => s && typeof s.date === "string" && Array.isArray(s.keywords))
+    .slice()
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const measured = [];
+  let pending = 0, unmeasurable = 0;
+
+  const findKw = (snap, kw) => {
+    const target = String(kw).trim().toLowerCase();
+    return (snap.keywords || []).find(k => String(k.keyword || "").trim().toLowerCase() === target) || null;
+  };
+
+  for (const [id, meta] of Object.entries(doneMeta)) {
+    if (!meta || !meta.ts || !meta.kw) { unmeasurable++; continue; }   // legacy record, no timestamp
+    const doneDate = String(meta.ts).slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(doneDate)) { unmeasurable++; continue; }
+
+    // Nearest snapshot at or before the fix, and the most recent one after it.
+    let before = null, after = null;
+    for (const s of snaps) {
+      if (s.date <= doneDate) before = s;
+      else if (!after || s.date > after.date) after = s;
+    }
+    if (!before || !after) { pending++; continue; }
+
+    const daysApart = Math.round(
+      (new Date(after.date + "T00:00:00Z") - new Date(doneDate + "T00:00:00Z")) / 86400000
+    );
+    if (daysApart < minDays) { pending++; continue; }
+
+    const b = findKw(before, meta.kw);
+    const a = findKw(after, meta.kw);
+    if (!b || !a) { pending++; continue; }   // keyword absent one side — can't compare
+
+    const posBefore = Number(b.position), posAfter = Number(a.position);
+    if (!isFinite(posBefore) || !isFinite(posAfter)) { pending++; continue; }
+
+    measured.push({
+      id,
+      kw: meta.kw,
+      doneDate,
+      daysApart,
+      posBefore: Math.round(posBefore * 10) / 10,
+      posAfter:  Math.round(posAfter  * 10) / 10,
+      // Positive = moved UP the results (position number fell).
+      posDelta:  Math.round((posBefore - posAfter) * 10) / 10,
+      clicksBefore: Number(b.clicks) || 0,
+      clicksAfter:  Number(a.clicks) || 0,
+      clicksDelta:  (Number(a.clicks) || 0) - (Number(b.clicks) || 0),
+      impressionsDelta: (Number(a.impressions) || 0) - (Number(b.impressions) || 0),
+    });
+  }
+
+  measured.sort((x, y) => y.posDelta - x.posDelta);
+  return { measured, pending, unmeasurable };
+}
+
+// Serialise back to the stored shape. Entries without metadata still round-trip.
+function serialiseDoneRecords(idSet, meta) {
+  return [...idSet].map((id) => ({
+    id,
+    ts: meta?.[id]?.ts || null,
+    kw: meta?.[id]?.kw || null,
+  }));
+}
+
 function raSlug(str) {
   return String(str || '')
     .toLowerCase()
@@ -1046,16 +1153,45 @@ export default function RankActions() {
   const [currentView, setCurrentView] = useState("site");
   const [arrivedFromPortfolio, setArrivedFromPortfolio] = useState(false);
   const [expandedFix,  setExpandedFix]  = useState(null);
+  // doneFixes stays a Set of fix IDs so every existing .has() read is unchanged.
+  // doneMeta carries the detail needed to MEASURE impact later: when the fix was
+  // marked done, and which keyword it related to. Without a timestamp there is no
+  // way to compare Search Console data before vs after a change.
   const [doneFixes,    setDoneFixes]    = useState(() => {
-    try { const site = localStorage.getItem("rankactions_selectedSite") || "mywebsite.com"; return new Set(JSON.parse(localStorage.getItem(`ra_done_${site}`) || "[]")); } catch { return new Set(); }
+    try {
+      const site = localStorage.getItem("rankactions_selectedSite") || "mywebsite.com";
+      return new Set(normaliseDoneRecords(JSON.parse(localStorage.getItem(`ra_done_${site}`) || "[]")).ids);
+    } catch { return new Set(); }
+  });
+  const [doneMeta,     setDoneMeta]     = useState(() => {
+    try {
+      const site = localStorage.getItem("rankactions_selectedSite") || "mywebsite.com";
+      return normaliseDoneRecords(JSON.parse(localStorage.getItem(`ra_done_${site}`) || "[]")).meta;
+    } catch { return {}; }
   });
   const [copiedId,     setCopiedId]     = useState(null);
+  // Mark a fix complete, stamping WHEN and WHICH KEYWORD so impact can later be
+  // measured against Search Console snapshots. Always use this rather than
+  // setDoneFixes directly, or the record lands without a timestamp.
+  const markFixDone = (fix) => {
+    const id = typeof fix === "string" ? fix : fix?.id;
+    if (!id) return;
+    const kw = (fix && typeof fix === "object")
+      ? (fix.kw || (String(fix.title || "").match(/"([^"]+)"/) || [])[1] || null)
+      : null;
+    setDoneFixes(prev => new Set([...prev, id]));
+    setDoneMeta(prev => (prev[id]?.ts ? prev : { ...prev, [id]: { ts: new Date().toISOString(), kw } }));
+  };
   const [aiSummary,    setAiSummary]    = useState(null);
   const [summaryLoading,setSummaryLoading] = useState(false);
   const [modal,        setModal]        = useState(null);
   const [modalData,    setModalData]    = useState(null);
   const [modalLoading, setModalLoading] = useState(false);
   const [modalApplied, setModalApplied] = useState(new Set());
+  // Real on-page state (title/meta/H1) for the page a fix refers to, fetched when
+  // the modal opens. Recommending a new title without reading the current one was
+  // the single most-reported accuracy problem; this is what grounds it in reality.
+  const [modalPageMeta, setModalPageMeta] = useState(null);
   const [indexingStatus, setIndexingStatus] = useState(null); // null | 'loading' | 'success' | 'error'
   const [indexingMsg, setIndexingMsg] = useState("");
 
@@ -1350,22 +1486,51 @@ export default function RankActions() {
       // doneFixes — load, then apply Option B legacy-id migration.
       const rawDone = await loadUserData(site, 'done');
       if (cancelled || site !== selectedSite) return;
+      // Accept legacy (string[]) and current ({id,ts,kw}[]) shapes alike.
+      const { ids: loadedIds, meta: loadedMeta } = normaliseDoneRecords(
+        Array.isArray(rawDone) ? rawDone : []
+      );
       const migrated = migrateDoneIds(
-        Array.isArray(rawDone) ? rawDone : [],
+        loadedIds,
         siteData?.topOpportunities,
         siteData?.keywords
       );
+      // Carry metadata across the id migration where the id is unchanged.
+      const migratedMeta = {};
+      for (const id of migrated) migratedMeta[id] = loadedMeta[id] || { ts: null, kw: null };
       setDoneFixes(new Set(migrated));
-      // If migration changed anything, persist the cleaned set back.
-      const before = Array.isArray(rawDone) ? rawDone : [];
-      if (JSON.stringify([...migrated].sort()) !== JSON.stringify([...before].sort())) {
-        saveUserData(site, 'done', migrated);
+      setDoneMeta(migratedMeta);
+      // Persist back if ids changed OR the stored shape was still legacy.
+      const wasLegacy = (Array.isArray(rawDone) ? rawDone : []).some(e => typeof e === "string");
+      if (wasLegacy ||
+          JSON.stringify([...migrated].sort()) !== JSON.stringify([...loadedIds].sort())) {
+        saveUserData(site, 'done', serialiseDoneRecords(new Set(migrated), migratedMeta));
       }
     })();
     (async () => {
       const rawProspects = await loadUserData(site, 'prospects');
       if (cancelled || site !== selectedSite) return;
       setLinkProspects(Array.isArray(rawProspects) ? rawProspects : []);
+    })();
+    // Snapshots power the completed-action impact panel (Reports). Best-effort:
+    // a failure just means the panel shows nothing, never blocks the dashboard.
+    (async () => {
+      setSnapshotsLoading(true);
+      try {
+        // MUST match the normalisation the Rank Tracker uses when SAVING, because
+        // snapshots are keyed by the exact siteUrl string (snapshots:<clerk>:<url>).
+        // Asking for "example.com" when they were stored under "https://example.com"
+        // silently returns nothing.
+        const snapSiteUrl = (site.startsWith("http") || site.startsWith("sc-domain:")) ? site : `https://${site}`;
+        const res = await authFetch(`${WORKER_URL}/api/rank-snapshots?siteUrl=${encodeURIComponent(snapSiteUrl)}`);
+        const data = res.ok ? await res.json() : null;
+        if (cancelled || site !== selectedSite) return;
+        setSnapshots(Array.isArray(data?.snapshots) ? data.snapshots : []);
+      } catch {
+        if (!cancelled && site === selectedSite) setSnapshots([]);
+      } finally {
+        if (!cancelled && site === selectedSite) setSnapshotsLoading(false);
+      }
     })();
     // Hydrate the remaining types from the server into the localStorage cache.
     // These are read synchronously elsewhere; loadUserData write-throughs to
@@ -1384,8 +1549,8 @@ export default function RankActions() {
   useEffect(() => {
     if (!selectedSite) return;
     // saveUserData writes localStorage immediately AND the server (debounced).
-    saveUserData(selectedSite, 'done', [...doneFixes]);
-  }, [doneFixes, selectedSite]);
+    saveUserData(selectedSite, 'done', serialiseDoneRecords(doneFixes, doneMeta));
+  }, [doneFixes, doneMeta, selectedSite]);
 
   // ── RankActions Assist: reload per-site progress when the site changes ──
   // Tracks which site the in-memory sets belong to, so the save effect below
@@ -1520,6 +1685,11 @@ export default function RankActions() {
     return opps.slice(0,3).map((opp,i) => {
       return {
         id: `live-${raSlug(opp.keyword)}`,
+        // Landing page this keyword actually ranks on (worker resolves it from
+        // Search Console's query->page mapping). Null-safe: older cached siteData
+        // has no page, and openModal falls back to the site root as before.
+        page:    opp.page || null,
+        pageUrl: opp.pageUrl || null,
         level:levels[Math.min(i, 2)], color:colors[Math.min(i, 2)], label:labels[Math.min(i, 2)], type:"SEO",
         title:`Improve ranking for "${opp.keyword}"`,
         desc:`Currently at position #${opp.position}. ${opp.potential}.`,
@@ -1553,7 +1723,9 @@ export default function RankActions() {
         gap    = "Write a blog post targeting this keyword";
         action = "write_blog";
       }
-      return { page:"—", kw:k.keyword, pos:k.position, vol:`${k.impressions}/mo`, gap, action, opp:k.opportunity };
+      // k.page now comes from Search Console's query→page mapping (worker-side).
+      // Older cached siteData won't have it, so keep the placeholder as fallback.
+      return { page:k.page || "—", pageUrl:k.pageUrl || null, kw:k.keyword, pos:k.position, vol:`${k.impressions}/mo`, gap, action, opp:k.opportunity };
     });
   };
 
@@ -1817,10 +1989,40 @@ export default function RankActions() {
     }
     if (!isPro && aiFixCount >= AI_FIX_LIMIT) { setShowUpgrade(true); return; }
     if (!isPro) trackAiFixUsage();
-    setModal(fix); setModalData(null); setModalLoading(true);
+    setModal(fix); setModalData(null); setModalLoading(true); setModalPageMeta(null);
     try {
       const category    = fix.fixCategory || null;
-      const pageUrl     = fix.page ? `https://${selectedSite}${fix.page}` : `https://${selectedSite}`;
+      // Prefer the full URL resolved from Search Console; fall back to the old
+      // construction (and finally the site root) so nothing regresses.
+      // displaySite() strips "sc-domain:" and any scheme. Without it, domain
+      // properties produce "https://sc-domain:example.com", which is not a valid
+      // URL — the old code had this latent bug and it would break /api/page-meta.
+      const siteHost    = displaySite(selectedSite);
+      const pageUrl     = fix.pageUrl || (fix.page ? `https://${siteHost}${fix.page}` : `https://${siteHost}`);
+
+      // Read the page as it is TODAY. Best-effort: any failure leaves pageMeta
+      // null and the prompt falls back to its previous, unGrounded form.
+      let pageMeta = null;
+      try {
+        const pmRes = await authFetch(`${WORKER_URL}/api/page-meta`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: pageUrl }),
+        });
+        if (pmRes.ok) {
+          const pm = await pmRes.json();
+          if (pm?.ok && (pm.title || pm.metaDesc || pm.h1)) { pageMeta = pm; setModalPageMeta(pm); }
+        }
+      } catch { /* non-fatal — recommendation still works without it */ }
+
+      const currentStateBlock = pageMeta
+        ? `\nTHE PAGE'S CURRENT ON-PAGE CONTENT (read live from ${pageMeta.finalUrl || pageUrl} just now — this is what is published RIGHT NOW):
+- Current title tag: ${pageMeta.title ? `"${pageMeta.title}"` : "(none found)"}
+- Current meta description: ${pageMeta.metaDesc ? `"${pageMeta.metaDesc}"` : "(none found)"}
+- Current H1: ${pageMeta.h1 ? `"${pageMeta.h1}"` : "(none found)"}
+- Approx word count: ${pageMeta.wordCount || "unknown"}
+Your suggestions MUST be genuine improvements on the CURRENT title and description above — not generic rewrites. Preserve the brand name and anything factually specific (locations, services, product names) that already appears. If the current title is already strong, say so in the tip and make only a targeted improvement.\n`
+        : "";
       const topKwsShort = siteData?.keywords?.slice(0,5).map(k=>k.keyword).join(", ") || "not connected";
       const topKwsFull  = siteData?.keywords?.slice(0,8).map(k=>`"${k.keyword}" (pos #${k.position}, ${k.impressions} impressions/mo)`).join(", ") || "unknown";
       const allKws      = siteData?.keywords?.map(k=>k.keyword).join(", ") || "";
@@ -1835,6 +2037,7 @@ export default function RankActions() {
 Site: ${selectedSite}
 Page: ${pageUrl}
 Top ranking keywords for this site: ${topKwsShort}
+${currentStateBlock}
 Return ONLY valid JSON — no markdown, no preamble:
 {
   "option1": "ready-to-use title tag — primary keyword in the first 50-60 chars, can extend to ~100 chars if accuracy and click appeal benefit; keyword-rich, compelling",
@@ -1890,7 +2093,7 @@ Return ONLY valid JSON — no markdown, no explanation:
           : `You are a senior SEO copywriter improving a SPECIFIC page on a real website.
 ${siteContext}
 Page being optimised: ${pageUrl}
-The SPECIFIC keyword this page needs to rank for: "${keyword}"
+${currentStateBlock}The SPECIFIC keyword this page needs to rank for: "${keyword}"
 Current ranking position: ${fix.m1}
 Goal: ${fix.m2}
 Fix type: ${fix.type} — ${fix.field}
@@ -2896,7 +3099,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
                       </button>
                       {isDone
                         ? <button className="fa-btn success">✓ Done</button>
-                        : <button className="fa-btn" onClick={()=>setDoneFixes(p=>new Set([...p,fix.id]))}>✅ Mark as done</button>}
+                        : <button className="fa-btn" onClick={()=>markFixDone(fix)}>✅ Mark as done</button>}
                     </div>
                   </div>
                 )}
@@ -3407,7 +3610,16 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
         </div>
         <div className="modal-content">
           <div className="modal-section-label">Issue</div>
-          <div className="current-box"><div className="current-label">{modal.field}</div><div className="current-val">{modal.current}</div></div>
+          <div className="current-box">
+            <div className="current-label">{modalPageMeta?.title ? "Current title tag (live from your page)" : modal.field}</div>
+            <div className="current-val">{modalPageMeta?.title || modal.current}</div>
+            {modalPageMeta?.metaDesc && (
+              <div style={{marginTop:".55rem",paddingTop:".55rem",borderTop:"1px solid var(--border)"}}>
+                <div className="current-label">Current meta description</div>
+                <div className="current-val" style={{fontSize:".8rem"}}>{modalPageMeta.metaDesc}</div>
+              </div>
+            )}
+          </div>
           <div className="modal-section-label">AI Suggestions</div>
           {modalLoading
             ? <div className="loading-center"><div className="spinner"/><span>Generating suggestions…</span></div>
@@ -3440,7 +3652,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
           <div style={{width:"100%",fontSize:".68rem",color:"var(--text3)",lineHeight:1.5,marginBottom:".5rem",textAlign:"center"}}>⚠️ Back up your website before applying changes. Review all suggestions before implementing.</div>
           <button className="mf-btn" onClick={()=>openModal(modal)} disabled={modalLoading}>{modalLoading?"Generating…":"↻ Regenerate"}</button>
           <button className={`mf-btn ${modalApplied.has(modal.id)?"done":"primary"}`}
-            onClick={()=>{setModalApplied(p=>new Set([...p,modal.id]));setDoneFixes(p=>new Set([...p,modal.id]));}}>
+            onClick={()=>{setModalApplied(p=>new Set([...p,modal.id]));markFixDone(modal);}}>
             {modalApplied.has(modal.id)?"✓ Applied":"✅ Mark as applied"}
           </button>
           {modalApplied.has(modal.id) && siteData && (
@@ -5199,6 +5411,7 @@ h1, h2, h3, h4, h5, h6 {
     const seoRows = getSeoRows();
     const completedFixes = [...doneFixes];
     const prospects = linkProspects;
+    const actionImpact = computeActionImpact(doneMeta, snapshots);
 
     // Keyword groupings from real data
     const kwPage1    = siteData?.keywords?.filter(k => k.position <= 10) || [];
@@ -5476,6 +5689,38 @@ ${stratHtml}${contentHtml}
           {/* Completed Actions */}
           <div style={cardStyle}>
             <div style={headStyle}>✅ Completed Actions</div>
+            {/* Impact — did the work actually move anything? Only shown once there
+                is a snapshot either side of the action and enough time has passed;
+                otherwise we say nothing rather than present noise as a result. */}
+            {actionImpact.measured.length > 0 && (
+              <div style={{marginBottom:".9rem",paddingBottom:".9rem",borderBottom:"1px solid var(--border)"}}>
+                <div style={{fontSize:".72rem",fontWeight:700,letterSpacing:".05em",textTransform:"uppercase",color:"var(--text3)",marginBottom:".5rem"}}>
+                  Measured impact
+                </div>
+                {actionImpact.measured.slice(0,4).map((m) => {
+                  const up = m.posDelta > 0;
+                  const flat = m.posDelta === 0;
+                  return (
+                    <div key={m.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:".5rem",padding:".3rem 0",fontSize:".78rem"}}>
+                      <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={`Marked done ${m.doneDate}`}>
+                        "{m.kw}"
+                      </span>
+                      <span style={{fontFamily:"var(--mono)",whiteSpace:"nowrap",color: flat ? "var(--text2)" : up ? "var(--green)" : "var(--red, #f03e5f)"}}>
+                        #{m.posBefore} → #{m.posAfter}{!flat && ` (${up ? "▲" : "▼"}${Math.abs(m.posDelta)})`}
+                      </span>
+                    </div>
+                  );
+                })}
+                <div style={{fontSize:".7rem",color:"var(--text3)",marginTop:".4rem"}}>
+                  Position change since each action was marked done. Correlation, not proof of cause.
+                </div>
+              </div>
+            )}
+            {actionImpact.measured.length === 0 && actionImpact.pending > 0 && (
+              <div style={{fontSize:".74rem",color:"var(--text3)",marginBottom:".8rem",paddingBottom:".8rem",borderBottom:"1px solid var(--border)"}}>
+                {actionImpact.pending} action{actionImpact.pending === 1 ? "" : "s"} awaiting results — rankings need about two weeks to settle before there's anything meaningful to show.
+              </div>
+            )}
             {completedFixes.length > 0 ? (
               <>
                 <div style={{fontSize:"1.4rem",fontWeight:800,fontFamily:"var(--mono)",color:"var(--green)",marginBottom:".5rem"}}>{completedFixes.length}</div>
