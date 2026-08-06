@@ -1998,16 +1998,23 @@ export default function RankActions() {
       // properties produce "https://sc-domain:example.com", which is not a valid
       // URL — the old code had this latent bug and it would break /api/page-meta.
       const siteHost    = displaySite(selectedSite);
-      const pageUrl     = fix.pageUrl || (fix.page ? `https://${siteHost}${fix.page}` : `https://${siteHost}`);
+      // Did Search Console actually tell us which page this keyword ranks on?
+      // If not, we must NOT audit the homepage as a stand-in: a long-tail keyword
+      // usually ranks on a deep article, and showing the homepage's title as "your
+      // current title" would be confidently wrong — the exact failure this feature
+      // exists to prevent. Falling back to the site root for the prompt's "Page
+      // being optimised" line is fine; auditing it is not.
+      const resolvedPageUrl = fix.pageUrl || (fix.page ? `https://${siteHost}${fix.page}` : null);
+      const pageUrl     = resolvedPageUrl || `https://${siteHost}`;
 
       // Read the page as it is TODAY. Best-effort: any failure leaves pageMeta
-      // null and the prompt falls back to its previous, unGrounded form.
+      // null and the prompt falls back to its previous, ungrounded form.
       let pageMeta = null;
-      try {
+      if (resolvedPageUrl) try {
         const pmRes = await authFetch(`${WORKER_URL}/api/page-meta`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: pageUrl }),
+          body: JSON.stringify({ url: resolvedPageUrl }),
         });
         if (pmRes.ok) {
           const pm = await pmRes.json();
@@ -5716,6 +5723,11 @@ ${stratHtml}${contentHtml}
                 </div>
               </div>
             )}
+            {actionImpact.measured.length === 0 && actionImpact.pending === 0 && actionImpact.unmeasurable > 0 && (
+              <div style={{fontSize:".74rem",color:"var(--text3)",marginBottom:".8rem",paddingBottom:".8rem",borderBottom:"1px solid var(--border)"}}>
+                Impact tracking starts from now — actions completed earlier can't be measured, because they weren't dated. Anything you tick off from today will be compared against your Search Console history.
+              </div>
+            )}
             {actionImpact.measured.length === 0 && actionImpact.pending > 0 && (
               <div style={{fontSize:".74rem",color:"var(--text3)",marginBottom:".8rem",paddingBottom:".8rem",borderBottom:"1px solid var(--border)"}}>
                 {actionImpact.pending} action{actionImpact.pending === 1 ? "" : "s"} awaiting results — rankings need about two weeks to settle before there's anything meaningful to show.
@@ -5746,6 +5758,10 @@ ${stratHtml}${contentHtml}
                     label = kw ? `Improve "${stripQuotes(kw.keyword || kw.kw)}"` : `Improve "${unslug(slug)}"`;
                   } else if (id.startsWith("demo-")) {
                     label = `Fix: ${id.slice(5)}`;
+                  } else if (id.startsWith("issue-")) {
+                    // Technical issues from the Issues tab, e.g. "issue-3-0".
+                    // Previously fell through and rendered the raw id.
+                    label = "Technical issue resolved";
                   }
                   return (
                     <div key={i} style={{display:"flex",alignItems:"center",gap:".5rem",padding:".3rem 0",fontSize:".78rem"}}>
