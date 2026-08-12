@@ -4698,6 +4698,42 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
       return out;
     };
 
+    // The prompt asks for the CTA to be a clickable button and specifies the exact
+    // markup, but the model has repeatedly emitted bare text inside the CTA wrapper
+    // instead — leaving the .cta-button class defined but unused and the article
+    // with no working call to action. Fix it deterministically after generation.
+    // The wrapper class varies between generations (.cta-section / .cta), so match
+    // either, and only act when the block genuinely contains no anchor.
+    const ensureCtaButton = (html, homeUrl, ctaText) => {
+      if (!html) return html;
+      const label = String(ctaText || "").trim() || "Get in touch today";
+      let fixed = 0;
+
+      let out = html.replace(
+        /<div class="(cta-section|cta)">([\s\S]*?)<\/div>/gi,
+        (full, cls, inner) => {
+          if (/<a[\s>]/i.test(inner)) return full;                 // already a link
+          // Split the block into the CTA label line(s) and any supporting markup
+          // (e.g. a trailing <p> of explanatory copy), which must be preserved.
+          const supporting = inner.match(/<(p|span|small)[\s>][\s\S]*$/i);
+          const tail = supporting ? supporting[0] : "";
+          const head = (supporting ? inner.slice(0, supporting.index) : inner).trim();
+          const text = head.replace(/<[^>]+>/g, "").trim() || label;
+          fixed++;
+          return `<div class="${cls}">\n  <a href="${homeUrl}" class="cta-button">${text}</a>\n  ${tail.trim()}\n</div>`;
+        }
+      );
+
+      // If the button class was never defined in <style>, add it — otherwise the
+      // anchor renders as a plain link and looks broken.
+      if (fixed > 0 && !/\.cta-button\s*\{/.test(out)) {
+        out = out.replace(/<\/style>/i,
+          `.cta-button{display:inline-block;background:#0e7a3c;color:#fff;padding:.9rem 2rem;border-radius:6px;font-weight:500;font-family:'Barlow Condensed',Impact,sans-serif;text-transform:uppercase;letter-spacing:1px;text-decoration:none}\n.cta-button:hover{background:#1ea863;color:#fff}\n</style>`);
+      }
+      if (fixed > 0) console.info(`[content] converted ${fixed} plain-text CTA(s) into a button`);
+      return out;
+    };
+
     const generate = async () => {
       if (!kw.trim()) return;
       setLoading(true); setError(null); setOutput(null);
@@ -4847,6 +4883,7 @@ IMPORTANT — The keyword "${kw.trim()}" MUST appear verbatim in the title, meta
         clearInterval(iv);
         let clean = text.replace(/^```html\s*/i,"").replace(/^```\s*/i,"").replace(/```\s*$/i,"").trim();
         clean = enforceLinkRelevance(clean, siteBase, linkPool);
+        clean = ensureCtaButton(clean, homepageUrl, cta);
 
         // Completeness check. Longform generations can hit the token ceiling and
         // stop mid-sentence; the HTML still previews fine until you reach the end.
