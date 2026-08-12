@@ -4723,6 +4723,12 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
         ? `\nPILLAR PAGE — this article is a cluster post supporting a pillar page. Include exactly ONE contextual link back to it, placed where it reads naturally (usually near the conclusion), with descriptive anchor text about the pillar's topic:\n- ${preset.pillarUrl}${preset.pillarTitle ? ` ("${preset.pillarTitle}")` : ""}\nThis pillar link is in addition to the internal link rules below and does not count towards the 0-4 limit.\n`
         : "";
 
+      // Dates must be injected, never left to the model. The prompt used to say
+      // "datePublished today", which the model interpreted as its own training
+      // cutoff — articles shipped stamped with dates up to a year in the past.
+      const todayIso   = new Date().toISOString().slice(0, 10);
+      const todayHuman = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+
       // Volatile SEO facts. Models trained before these changes confidently
       // teach the retired versions, which is a credibility problem in an SEO
       // product. Keep this list short and update it when Google changes things.
@@ -4745,7 +4751,9 @@ INPUTS:
 - Primary CTA: ${cta.trim() || "Contact us to find out more"}
 - Additional notes: ${notes.trim() || "none"}
 - Client website: ${displaySite(selectedSite)}
-${linkPoolContext}${pillarContext}${freshnessContext}${historyContext}
+${linkPoolContext}${pillarContext}${freshnessContext}
+TODAY'S DATE IS ${todayHuman} (${todayIso}). Any date shown anywhere in the article — the visible byline, the meta block, JSON-LD datePublished and dateModified — MUST be this exact date. Never output a date from memory.
+${historyContext}
 
 VISUAL DESIGN — RankActions brand (light cream body for readability, dark branded chrome with green accents):
 
@@ -4774,7 +4782,7 @@ KEYWORD PLACEMENT — MANDATORY (this is an SEO tool, the article must pass an S
 - Use the keyword EXACTLY as written above — same wording, same word order. Do not paraphrase, do not synonymise, do not abbreviate. If the keyword has an awkward word order, you must still use it verbatim.
 
 BUILD THIS STRUCTURE:
-1. HEAD: title tag (primary keyword "${kw.trim()}" in the first 50-60 chars for SERP visibility, total title can extend up to ~100 chars if needed for clarity and click appeal), meta description (145-155 chars, MUST include "${kw.trim()}"), canonical URL (${siteBase}/[keyword-slug]/), robots, Open Graph tags (og:title MUST include "${kw.trim()}"), JSON-LD Article schema, datePublished today, the Google Fonts link, and a <style> block with the CSS above
+1. HEAD: title tag (primary keyword "${kw.trim()}" in the first 50-60 chars for SERP visibility, total title can extend up to ~100 chars if needed for clarity and click appeal), meta description (145-155 chars, MUST include "${kw.trim()}"), canonical URL (${siteBase}/[keyword-slug]/), robots, Open Graph tags (og:title MUST include "${kw.trim()}"), JSON-LD Article schema with datePublished AND dateModified set to EXACTLY "${todayIso}" (do not invent or guess a date), the Google Fonts link, and a <style> block with the CSS above
 2. HEADER BAR: dark, with the two-tone "RankActions" wordmark on the left (white "Rank" + green "Actions", Barlow Condensed weight 500) and "Generated for ${displaySite(selectedSite)}" on the right in small cream text
 3. HERO SECTION: H1 containing the exact verbatim phrase "${kw.trim()}", followed by a subtitle, author byline, date, read time
 4. ARTICLE BODY:
@@ -4828,9 +4836,21 @@ IMPORTANT — The keyword "${kw.trim()}" MUST appear verbatim in the title, meta
       setLoading(false);
     };
 
+    // The <!-- Internal link: ... --> comments exist so the PREVIEW can label each
+    // link for non-technical users. They are an editing aid, not content, and they
+    // used to ship into whatever the customer published — leaving instructions like
+    // "link to your homepage" in their page source. Strip them on the way out.
+    const publishableHtml = (html) =>
+      String(html || "")
+        // Comment sitting on its own line: remove the whole line.
+        .replace(/^[ \t]*<!--\s*Internal link:[^>]*-->[ \t]*\r?\n/gim, "")
+        // Comment sitting inline: remove ONLY the comment, preserving the spaces
+        // either side — stripping them would fuse words onto the link text.
+        .replace(/<!--\s*Internal link:[^>]*-->/gi, "");
+
     const copyHtml = () => {
       if (!output) return;
-      navigator.clipboard.writeText(output).catch(()=>{});
+      navigator.clipboard.writeText(publishableHtml(output)).catch(()=>{});
       setCopied(true); setTimeout(()=>setCopied(false), 1800);
     };
 
@@ -4838,7 +4858,7 @@ IMPORTANT — The keyword "${kw.trim()}" MUST appear verbatim in the title, meta
       if (!output) return;
       const slug = kw.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
       const a = document.createElement("a");
-      a.href = URL.createObjectURL(new Blob([output],{type:"text/html"}));
+      a.href = URL.createObjectURL(new Blob([publishableHtml(output)],{type:"text/html"}));
       a.download = `${slug || "article"}.html`;
       a.click();
     };
