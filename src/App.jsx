@@ -4616,28 +4616,61 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
         .replace(/<\/head>/i, `${style}</head>`);
     };
 
-    // Strip internal links whose anchor text doesn't relate to the destination.
-    // The prompt asks for relevance, but when the allowed pool is thin the model
-    // still reaches for a link and wraps a passing phrase (e.g. "implementing
-    // structured testing frameworks" -> homepage). An unlinked phrase is always
-    // better than a misleading link, so we unwrap rather than delete the text.
-    // Only links to the CLIENT's own domain are considered; external links and
-    // the RankActions footer branding are left alone.
-    const enforceLinkRelevance = (html, base) => {
+    // Guard every internal link in generated content. Two independent checks:
+    //
+    //  1. EXISTENCE. The link must point at a URL from the allowed pool (the pages
+    //     Search Console actually reports for this site). The prompt forbids invented
+    //     paths, but when the pool is thin — a new site with little GSC data — the
+    //     model invents plausible ones anyway (e.g. /blog/sar-from-former-employee).
+    //     Those are 404s in the customer's published article, so they must go.
+    //  2. RELEVANCE. The anchor text must describe the destination, or the link is
+    //     noise (e.g. "implementing structured testing frameworks" -> homepage).
+    //
+    // Failing links are UNWRAPPED, never deleted: the sentence keeps its words and
+    // simply loses the link. External links and the RankActions footer are untouched.
+    const enforceLinkRelevance = (html, base, allowedPool = []) => {
       if (!html || !base) return html;
       let host = "";
       try { host = new URL(base).hostname.replace(/^www\./, ""); } catch { return html; }
-      const brandTokens = host.split(".")[0].toLowerCase();
+      // Brand tokens from the domain's first label. Hyphenated domains
+      // ("sar-support.co.uk") must match anchors written as "SAR Support" or
+      // "sar-support", so split on hyphens and keep the joined form too.
+      const brandLabel  = host.split(".")[0].toLowerCase();
+      const brandTokens = new Set([brandLabel, ...brandLabel.split("-")].filter(w => w.length > 2));
       const STOP = new Set(["the","and","for","with","your","our","this","that","from","into","about","more","what","how","why","are","you","its","their"]);
       const wordsOf = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").split(" ")
         .filter(w => w.length > 3 && !STOP.has(w));
 
-      let stripped = 0;
+      // Normalise the pool once: compare on host+path, ignoring scheme, www and
+      // trailing slashes, so "https://x.co.uk/a/" and "http://www.x.co.uk/a" match.
+      const normUrl = (u) => {
+        try {
+          const p = new URL(u, base);
+          return p.hostname.replace(/^www\./, "") + p.pathname.replace(/\/+$/, "").toLowerCase();
+        } catch { return null; }
+      };
+      const allowed = new Set(
+        (Array.isArray(allowedPool) ? allowedPool : []).map(normUrl).filter(Boolean)
+      );
+
+      let stripped = 0, invented = 0;
       const out = html.replace(/(<!--\s*Internal link:[^>]*-->\s*)?<a\s+href="([^"]+)"([^>]*)>([\s\S]*?)<\/a>/gi,
         (full, comment, href, attrs, anchorHtml) => {
           let u;
           try { u = new URL(href, base); } catch { return full; }
           if (u.hostname.replace(/^www\./, "") !== host) return full;   // external — leave alone
+
+          // EXISTENCE CHECK. Only enforced when we actually have a pool to check
+          // against — with no GSC pages at all the pool is just the homepage, and
+          // failing every link open would be worse than the status quo.
+          if (allowed.size > 1) {
+            const key = normUrl(u.href);
+            if (key && !allowed.has(key)) {
+              invented++;
+              return anchorHtml;   // unwrap: this URL does not exist on the site
+            }
+          }
+
           const anchorText = anchorHtml.replace(/<[^>]+>/g, " ");
           const aWords = wordsOf(anchorText);
           const path = u.pathname.replace(/\/+$/, "");
@@ -4645,7 +4678,11 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
           let ok;
           if (isHome) {
             // Homepage links are only justified when the anchor names the company.
-            ok = aWords.includes(brandTokens) || /\b(homepage|home page)\b/i.test(anchorText);
+            // Match if the anchor contains any brand token, or is an explicit
+            // homepage reference. "SAR Support" -> ["support"] hits "support".
+            ok = aWords.some(w => brandTokens.has(w))
+              || [...brandTokens].some(b => anchorText.toLowerCase().includes(b))
+              || /\b(homepage|home page)\b/i.test(anchorText);
           } else {
             const pWords = wordsOf(path);
             ok = pWords.length === 0 || aWords.some(w => pWords.includes(w));
@@ -4654,6 +4691,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
           stripped++;
           return anchorHtml;   // unwrap: keep the words, drop the link (and its label comment)
         });
+      if (invented > 0) console.warn(`[content] removed ${invented} internal link(s) pointing at URLs that don't exist on this site`);
       if (stripped > 0) console.info(`[content] removed ${stripped} internal link(s) with irrelevant anchor text`);
       return out;
     };
@@ -4804,7 +4842,7 @@ IMPORTANT — The keyword "${kw.trim()}" MUST appear verbatim in the title, meta
         );
         clearInterval(iv);
         let clean = text.replace(/^```html\s*/i,"").replace(/^```\s*/i,"").replace(/```\s*$/i,"").trim();
-        clean = enforceLinkRelevance(clean, siteBase);
+        clean = enforceLinkRelevance(clean, siteBase, linkPool);
 
         // Completeness check. Longform generations can hit the token ceiling and
         // stop mid-sentence; the HTML still previews fine until you reach the end.
