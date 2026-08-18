@@ -1170,6 +1170,26 @@ export default function RankActions() {
     } catch { return {}; }
   });
   const [copiedId,     setCopiedId]     = useState(null);
+  // Manually hidden keywords, shared across Site Detail and the Rank Tracker.
+  // Some GSC queries are real but useless — personal names, domain-history noise —
+  // and no syntax filter can reliably catch them, so the user decides. Previously
+  // this lived only inside the Rank Tracker, so junk could be hidden there while
+  // still being served as the top Priority Action.
+  const [hiddenKws, setHiddenKws] = useState(() => {
+    try {
+      const site = localStorage.getItem("rankactions_selectedSite") || "mywebsite.com";
+      return new Set(JSON.parse(localStorage.getItem(`ra_hidden_kw_${site}`) || "[]"));
+    } catch { return new Set(); }
+  });
+  const persistHidden = (next, site) => {
+    try { localStorage.setItem(`ra_hidden_kw_${site}`, JSON.stringify([...next])); } catch {}
+  };
+  const hideKeywordGlobal = (keyword) => {
+    setHiddenKws(prev => { const next = new Set(prev); next.add(keyword); persistHidden(next, selectedSite); return next; });
+  };
+  const unhideKeywordGlobal = (keyword) => {
+    setHiddenKws(prev => { const next = new Set(prev); next.delete(keyword); persistHidden(next, selectedSite); return next; });
+  };
   // Mark a fix complete, stamping WHEN and WHICH KEYWORD so impact can later be
   // measured against Search Console snapshots. Always use this rather than
   // setDoneFixes directly, or the record lands without a timestamp.
@@ -1484,6 +1504,10 @@ export default function RankActions() {
     // guard drops stale results if the site changes again before these resolve.
     (async () => {
       // doneFixes — load, then apply Option B legacy-id migration.
+      // Hidden keywords are per-site; reload alongside the rest of this site's data.
+      try { setHiddenKws(new Set(JSON.parse(localStorage.getItem(`ra_hidden_kw_${site}`) || "[]"))); }
+      catch { setHiddenKws(new Set()); }
+
       const rawDone = await loadUserData(site, 'done');
       if (cancelled || site !== selectedSite) return;
       // Accept legacy (string[]) and current ({id,ts,kw}[]) shapes alike.
@@ -1625,9 +1649,17 @@ export default function RankActions() {
   }, [screen, step]);
 
   // ── Auto-generate summary when data is ready ──────────────
+  // dataLoading===false does NOT mean the data arrived — it is also false BEFORE
+  // the fetch starts. This effect used to fire on mount while siteData was still
+  // null, so the summary was written from the "not connected" branch and cached,
+  // leaving the dashboard telling the user to connect Search Console while the
+  // KPI cards beside it showed live GSC figures. Wait for the data to actually
+  // land before spending an AI call on it.
   useEffect(() => {
-    if (screen === "dashboard" && !aiSummary && !summaryLoading && !dataLoading) generateSummary();
-  }, [screen, siteData, dataLoading]);
+    if (screen !== "dashboard" || aiSummary || summaryLoading || dataLoading) return;
+    if (isConnected && !siteData) return;   // connected, data still on its way
+    generateSummary();
+  }, [screen, siteData, dataLoading, isConnected]);
 
   // ─────────────────────────────────────────────────────────────
   // Fetch real Search Console data from the Worker
@@ -1678,7 +1710,8 @@ export default function RankActions() {
     // like '"professional services" -jobs -careers ...' surface as HIGH IMPACT
     // actions, which aren't real keywords a user can target.
     const allOpps = (siteData.topOpportunities || []).filter((opp) => isUsableKeyword(opp.keyword));
-    const available = allOpps.filter((opp) => !doneFixes.has(`live-${raSlug(opp.keyword)}`));
+    const available = allOpps.filter((opp) =>
+      !doneFixes.has(`live-${raSlug(opp.keyword)}`) && !hiddenKws.has(opp.keyword));
     // If all top ones are done, pull from deeper in the list
     const opps = available.length > 0 ? available : allOpps.slice(3, 6);
     if (opps.length === 0) return [];                 // connected, nothing qualifying -> empty state
@@ -1949,6 +1982,10 @@ export default function RankActions() {
   };
   // ─────────────────────────────────────────────────────────────
   const generateSummary = async () => {
+    // Never write a "connect Search Console" summary for a site that IS connected
+    // — it contradicts the KPI cards and wastes an AI call. If the data has not
+    // arrived, leave the panel empty; the effect above re-runs when it does.
+    if (isConnected && !siteData) return;
     setSummaryLoading(true);
     try {
       const context = siteData
@@ -3092,6 +3129,17 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
                     <div style={{background:"rgba(245,166,35,.08)",border:"1px solid rgba(245,166,35,.2)",borderRadius:8,padding:".6rem .85rem",marginBottom:".75rem",fontSize:".75rem",color:"var(--amber)",lineHeight:1.6}}>
                       ⚠️ <strong>Always back up your website before making changes.</strong> Test changes in a staging environment where possible. RankActions provides suggestions only — you are responsible for reviewing and implementing them.
                     </div>
+                    {/* Which page does this apply to? Without it the advice
+                        ("add the keyword to your page title") is unactionable. */}
+                    {fix.page && (
+                      <div style={{marginBottom:".75rem",fontSize:".8rem",color:"var(--text2)"}}>
+                        <span style={{color:"var(--text3)"}}>Page to update: </span>
+                        {fix.pageUrl
+                          ? <a href={fix.pageUrl} target="_blank" rel="noopener noreferrer"
+                               style={{color:"var(--blue)",textDecoration:"none",fontFamily:"var(--mono)"}}>{fix.page} ↗</a>
+                          : <span style={{fontFamily:"var(--mono)"}}>{fix.page}</span>}
+                      </div>
+                    )}
                     <div className="fix-suggestion-box">
                       <div className="fix-sugg-label">Suggested Fix</div>
                       <div className="fix-sugg-text">{fix.suggestion}</div>
@@ -3173,7 +3221,16 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
             <div className="section-title"><Tip term="keyword">Keyword Opportunities</Tip></div>
             <div className="section-sub">{
               siteData?.keywords?.length >= 3
-                ? `${seoRows.length} keywords from Search Console`
+                ? <>
+                    {seoRows.filter(r=>!hiddenKws.has(r.kw)).length} keywords from Search Console
+                    {hiddenKws.size > 0 && <>
+                      {" · "}
+                      <span style={{color:"var(--blue)",cursor:"pointer"}}
+                            onClick={()=>{ hiddenKws.forEach(k=>unhideKeywordGlobal(k)); }}>
+                        restore {hiddenKws.size} hidden
+                      </span>
+                    </>}
+                  </>
                 : siteData
                   ? "Search Console connected — waiting for data"
                   : "Demo keywords"
@@ -3303,9 +3360,9 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
           ) : (
             <div className="table-wrap">
               <table className="data-table">
-                <thead><tr><th><Tip term="keyword">Keyword</Tip></th><th><Tip term="position">Position</Tip></th><th><Tip term="impressions">Impressions/mo</Tip></th><th>What to do</th><th>Action</th></tr></thead>
+                <thead><tr><th><Tip term="keyword">Keyword</Tip></th><th><Tip term="position">Position</Tip></th><th><Tip term="impressions">Impressions/mo</Tip></th><th>What to do</th><th>Action</th><th style={{width:"1%"}}></th></tr></thead>
                 <tbody>
-                  {seoRows.map((row,i)=>{
+                  {seoRows.filter(row => !hiddenKws.has(row.kw)).map((row,i)=>{
                     const isWriteAction = row.action==="write_blog"||row.action==="write_page";
                     const btnLabel = row.action==="fix_title"   ? "✨ Fix title tag"
                                    : row.action==="write_page"  ? "✍ Write page"
@@ -3350,6 +3407,19 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
                               </span>
                             </span>
                           )}
+                        </td>
+                        <td>
+                          {/* Real-but-irrelevant queries (personal names, domain-history
+                              noise) can't be filtered reliably, so let the user dismiss
+                              them. Shared with the Rank Tracker's hidden list. */}
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            title="Not relevant — hide this keyword"
+                            onClick={()=>hideKeywordGlobal(row.kw)}
+                            onKeyDown={(e)=>{ if(e.key==="Enter"||e.key===" ") hideKeywordGlobal(row.kw); }}
+                            style={{cursor:"pointer",color:"var(--text3)",padding:"0 .35rem",fontSize:".9rem",lineHeight:1}}
+                          >✕</span>
                         </td>
                       </tr>
                     );
@@ -8098,26 +8168,14 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
     // Manually hidden keywords — for relevance junk no syntax filter can catch
     // (e.g. construction queries appearing on a GDPR consultancy's GSC data,
     // usually from domain history or stray indexed pages). Persisted per-site.
-    const [hiddenKws, setHiddenKws] = useState(() => {
-      try { return new Set(JSON.parse(localStorage.getItem(`ra_hidden_kw_${selectedSite}`) || "[]")); }
-      catch { return new Set(); }
-    });
+    // Uses the app-level hidden set so hiding here also removes the keyword from
+    // Priority Actions and Keyword Opportunities (and vice versa).
     const [showHidden, setShowHidden] = useState(false);
     const hideKeyword = (keyword) => {
-      setHiddenKws(prev => {
-        const next = new Set(prev); next.add(keyword);
-        try { localStorage.setItem(`ra_hidden_kw_${selectedSite}`, JSON.stringify([...next])); } catch {}
-        return next;
-      });
+      hideKeywordGlobal(keyword);
       if (selectedKw === keyword) setSelectedKw(null);
     };
-    const unhideKeyword = (keyword) => {
-      setHiddenKws(prev => {
-        const next = new Set(prev); next.delete(keyword);
-        try { localStorage.setItem(`ra_hidden_kw_${selectedSite}`, JSON.stringify([...next])); } catch {}
-        return next;
-      });
-    };
+    const unhideKeyword = (keyword) => unhideKeywordGlobal(keyword);
     const loadedSite = useRef(null);
 
     const siteUrl = (() => {
@@ -8130,9 +8188,7 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
     useEffect(() => {
       if (loadedSite.current === selectedSite) return;
       loadedSite.current = selectedSite;
-      // Reload this site's hidden-keyword set alongside its data.
-      try { setHiddenKws(new Set(JSON.parse(localStorage.getItem(`ra_hidden_kw_${selectedSite}`) || "[]"))); }
-      catch { setHiddenKws(new Set()); }
+      // Hidden keywords are reloaded app-side when the site changes.
       setShowHidden(false);
       const load = async () => {
         setLoading(true);
