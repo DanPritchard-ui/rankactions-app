@@ -279,7 +279,12 @@ const CSS = `
 .site-selector{position:relative;}
 .site-btn{display:flex;align-items:center;gap:.5rem;background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:.5rem .85rem;cursor:pointer;font-family:var(--font);font-size:.875rem;color:var(--text);user-select:none;}
 .site-btn:hover{border-color:var(--border2);}
-.site-dropdown{position:absolute;top:calc(100% + 6px);left:0;background:var(--s2);border:1px solid var(--border);border-radius:10px;min-width:190px;z-index:100;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.4);}
+/* max-height + overflow-y are essential: agencies can have 100+ Search Console
+   properties. With overflow:hidden and no height cap the list ran off the bottom
+   of the viewport and could not be scrolled — the page scrolled behind it instead,
+   so only the first dozen sites were ever reachable. overscroll-behavior stops the
+   scroll chaining to the page once the list hits its end. */
+.site-dropdown{position:absolute;top:calc(100% + 6px);left:0;background:var(--s2);border:1px solid var(--border);border-radius:10px;min-width:190px;max-width:min(420px,90vw);z-index:100;max-height:min(60vh,440px);overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;box-shadow:0 8px 24px rgba(0,0,0,.4);}
 .site-opt{padding:.65rem 1rem;font-size:.875rem;color:var(--text2);cursor:pointer;}
 .site-opt:hover{background:var(--s3);color:var(--text);}
 .site-opt.sel{color:var(--blue);}
@@ -2568,7 +2573,12 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
     try {
       const res = await authFetch(`${WORKER_URL}/api/gsc-sites`);
       const data = await res.json();
-      const available = (data.sites || []).filter(s => !sites.includes(s.siteUrl) && !sites.includes(s.displayUrl));
+      // Google's webmasters/v3/sites gives no ordering guarantee, so the list came
+      // back in a different order on every fetch — with 100+ properties that makes
+      // finding a specific site pure luck. Sort alphabetically for a stable list.
+      const available = (data.sites || [])
+        .filter(s => !sites.includes(s.siteUrl) && !sites.includes(s.displayUrl))
+        .sort((a, b) => (a.displayUrl || "").localeCompare(b.displayUrl || "", undefined, { sensitivity: "base" }));
       setAvailableGscSites(available);
     } catch { setAvailableGscSites([]); }
     setGscSitesLoading(false);
@@ -2649,7 +2659,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
         </div>
         {siteOpen && (
           <div className="site-dropdown">
-            {sites.map(s=>(
+            {[...sites].sort((a,b)=>displaySite(a).localeCompare(displaySite(b), undefined, {sensitivity:"base"})).map(s=>(
               <div key={s} className={`site-opt ${s===selectedSite?"sel":""}`}
                 onClick={()=>{
                   setSelectedSite(s);
@@ -2671,13 +2681,20 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
                 {gscSitesLoading ? (
                   <div style={{padding:".6rem .85rem",fontSize:".8rem",color:"var(--text3)",textAlign:"center"}}>Loading your Search Console sites…</div>
                 ) : availableGscSites.length > 0 ? (
-                  availableGscSites.map(s => (
+                  <>
+                  {availableGscSites.length > 12 && (
+                    <div style={{padding:".4rem .85rem",fontSize:".7rem",color:"var(--text3)",borderBottom:"1px solid var(--b2)"}}>
+                      {availableGscSites.length} sites available · scroll to browse · A–Z
+                    </div>
+                  )}
+                  {availableGscSites.map(s => (
                     <div key={s.siteUrl} className="site-opt" style={{display:"flex",flexDirection:"column",gap:".1rem",cursor:"pointer"}}
                       onClick={e=>{e.stopPropagation();selectGscSite(s.siteUrl, s.displayUrl);}}>
                       <span>{s.displayUrl}</span>
                       <span style={{fontSize:".65rem",color:"var(--text3)"}}>{s.siteUrl.startsWith("sc-domain:")?"Domain property":"URL prefix"}</span>
                     </div>
-                  ))
+                  ))}
+                  </>
                 ) : (
                   <div style={{padding:".6rem .85rem",fontSize:".78rem",color:"var(--text3)"}}>
                     {userId ? "No additional sites found in your Search Console" : "Connect Google to see available sites"}
