@@ -6390,8 +6390,28 @@ Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource
       try { return JSON.parse(localStorage.getItem(`ra_strategy_${selectedSite}`) || "null") ? "planner" : "suggestions"; } catch { return "suggestions"; }
     });
     const [generating, setGenerating] = useState(false);
-    const [suggestions, setSuggestions] = useState(null);
+    // Recover a strategy that finished while the user was on another screen.
+    // Session-scoped and short-lived: anything older than SUGG_TTL_MS is ignored,
+    // and it is cleared once a strategy is accepted or a new run starts.
+    const SUGG_TTL_MS = 60 * 60 * 1000; // 1 hour
+    const [recoveredSugg, setRecoveredSugg] = useState(false);
+    const [suggestions, setSuggestions] = useState(() => {
+      try {
+        const raw = JSON.parse(localStorage.getItem(`ra_sugg_pending_${selectedSite}`) || "null");
+        if (raw?.strategies?.length && Date.now() - (raw.ts || 0) < SUGG_TTL_MS) return raw.strategies;
+      } catch {}
+      return null;
+    });
     const [customTopic, setCustomTopic] = useState("");
+
+    // Flag the restored state once, on mount, so we can tell the user where it came from.
+    useEffect(() => {
+      try {
+        const raw = JSON.parse(localStorage.getItem(`ra_sugg_pending_${selectedSite}`) || "null");
+        setRecoveredSugg(!!(raw?.strategies?.length && Date.now() - (raw.ts || 0) < SUGG_TTL_MS));
+      } catch { setRecoveredSugg(false); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Load saved strategy for this site
     const [strategy, setStrategy] = useState(() => {
@@ -6537,6 +6557,8 @@ Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource
     const generateSuggestions = async (topic) => {
       setGenerating(true);
       setSuggestions(null);
+      setRecoveredSugg(false);
+      try { localStorage.removeItem(`ra_sugg_pending_${selectedSite}`); } catch {}
       try {
         const kwData = siteData?.keywords?.slice(0, 30).map(k => `"${k.keyword}" (pos #${k.position}, ${k.impressions} impressions, ${k.clicks} clicks)`).join("\n") || "No keyword data available";
         const pages = siteData?.pages?.slice(0, 10).map(p => p.page).join("\n") || "No page data";
@@ -6642,7 +6664,20 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
         const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
         if (jsonMatch) cleaned = jsonMatch[0];
         const data = JSON.parse(cleaned);
-        setSuggestions(data.strategies || [data]); // handle single strategy response too
+        const result = data.strategies || [data]; // handle single strategy response too
+        // Write to localStorage BEFORE touching React state. The AI call completes
+        // server-side even if the user navigates away, but by then this component
+        // has unmounted and setSuggestions() lands nowhere — so the strategy (and
+        // the AI credit spent on it) was silently lost. localStorage doesn't care
+        // whether the component is mounted, so the work survives the navigation.
+        try {
+          localStorage.setItem(`ra_sugg_pending_${selectedSite}`, JSON.stringify({
+            ts: Date.now(),
+            topic: topic || "",
+            strategies: result,
+          }));
+        } catch {}
+        setSuggestions(result);
       } catch (err) {
         console.error("Strategy generation error:", err.message);
         if (err.message?.startsWith("UPGRADE_REQUIRED")) {
@@ -6678,6 +6713,10 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
         clusters: s.clusters.map((c, i) => ({ ...c, id: `cluster-${i}`, status: "not_started", url: "" })),
       };
       saveStrategy(newStrategy);
+      // The suggestion set has served its purpose — drop the recovery copy so it
+      // can't reappear later looking like a fresh result.
+      try { localStorage.removeItem(`ra_sugg_pending_${selectedSite}`); } catch {}
+      setRecoveredSugg(false);
       setView("planner");
     };
 
@@ -6833,6 +6872,21 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
                 <div className="spinner" style={{ width: 24, height: 24, margin: "0 auto .75rem" }}/>
                 <div style={{ fontSize: ".85rem", color: "var(--text2)" }}>Analysing your keywords and building strategies...</div>
                 <div style={{ fontSize: ".75rem", color: "var(--text3)", marginTop: ".35rem" }}>This can take up to a minute</div>
+                {/* The request completes server-side even if the user navigates away.
+                    The result is now written to localStorage on arrival, so it survives
+                    the component unmounting and is restored when they return. */}
+                <div style={{ fontSize: ".75rem", color: "var(--text3)", marginTop: ".6rem" }}>
+                  You can navigate away — we'll save the result and show it when you come back.
+                </div>
+              </div>
+            )}
+
+            {recoveredSugg && suggestions?.length > 0 && !generating && (
+              <div style={{ ...cardStyle, marginBottom: "1rem", borderLeft: "3px solid var(--green)" }}>
+                <div style={{ fontSize: ".82rem", color: "var(--text2)", lineHeight: 1.6 }}>
+                  ✓ <strong>These strategies finished while you were away.</strong> They're held temporarily
+                  in this browser only — pick one below to save it properly, or generate again to replace them.
+                </div>
               </div>
             )}
 
