@@ -6578,6 +6578,15 @@ ${contentHistory.map(h => `- Blog already written: "${h.keyword}" (${h.date})`).
 Suggest DIFFERENT topics, keywords, and angles from the above.\n`
           : "";
 
+        // Titles generated here are passed verbatim into the content generator via
+        // the preset, so a stale year here ends up published in a real article. The
+        // model has no idea what today is and defaults to its training cutoff — it
+        // produced "…Complete Guide to Computer Aided Design in 2024" for an article
+        // written in 2026. A year in a title also dates the page the moment it's
+        // published, so the default is to leave it out entirely.
+        const currentYear = new Date().getFullYear();
+        const dateRule = `\nDATE RULE: today's date is ${new Date().toISOString().slice(0,10)} (year ${currentYear}). Do NOT put a year in any title unless the topic genuinely requires one (e.g. an annual statistics roundup). If a year is truly needed it MUST be ${currentYear} — never an earlier year. Titles without years stay accurate for longer.\n`;
+
         const prompt = topic
           ? `I want to build a pillar content strategy around this topic: "${topic}".
 
@@ -6614,7 +6623,8 @@ Based on this data, suggest a pillar + cluster strategy. Return ONLY valid JSON,
   ]
 }
 
-Generate exactly 1 strategy with 6-8 cluster posts. Make sure keywords are specific and realistic for a UK audience.`
+Generate exactly 1 strategy with 6-8 cluster posts. Make sure keywords are specific and realistic for a UK audience.
+${dateRule}`
 
           : `Analyse my website data and suggest 3 pillar content strategies I should build.
 
@@ -6652,7 +6662,8 @@ Group my keywords into topic clusters. For each cluster, suggest a pillar + supp
   ]
 }
 
-Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the highest combined impression volume where I'm currently underperforming. Target UK audience. Be specific — use my actual keywords.`;
+Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the highest combined impression volume where I'm currently underperforming. Target UK audience. Be specific — use my actual keywords.
+${dateRule}`;
 
         const txt = await callClaude(prompt,
           "You are an expert SEO content strategist. You specialise in pillar/cluster content strategies for small businesses. Return valid JSON only. No markdown backticks. No text before or after the JSON. Be specific and actionable.",
@@ -6664,7 +6675,34 @@ Generate exactly 3 strategies, each with 6-8 cluster posts. Pick topics with the
         const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
         if (jsonMatch) cleaned = jsonMatch[0];
         const data = JSON.parse(cleaned);
-        const result = data.strategies || [data]; // handle single strategy response too
+        let result = data.strategies || [data]; // handle single strategy response too
+
+        // Backstop for the date rule above. Prompt instructions are not guarantees,
+        // and a wrong year in a title is both embarrassing and bad for rankings, so
+        // remove any past year from generated titles rather than trusting compliance.
+        // Future years are left alone (a legitimate forward-looking title), as is
+        // the current year.
+        const stripStaleYear = (s) => {
+          if (typeof s !== "string") return s;
+          return s
+            .replace(/\s+in\s+(19|20)\d{2}\b/g, (m, _p, o) => {
+              const yr = parseInt(m.match(/(19|20)\d{2}/)[0], 10);
+              return yr < currentYear ? "" : m;
+            })
+            .replace(/\s*\((19|20)\d{2}\)\s*/g, (m) => {
+              const yr = parseInt(m.match(/(19|20)\d{2}/)[0], 10);
+              return yr < currentYear ? " " : m;
+            })
+            .replace(/\s{2,}/g, " ")
+            .trim();
+        };
+        result = result.map(st => ({
+          ...st,
+          pillar: st.pillar ? { ...st.pillar, title: stripStaleYear(st.pillar.title) } : st.pillar,
+          clusters: Array.isArray(st.clusters)
+            ? st.clusters.map(c => ({ ...c, title: stripStaleYear(c.title) }))
+            : st.clusters,
+        }));
         // Write to localStorage BEFORE touching React state. The AI call completes
         // server-side even if the user navigates away, but by then this component
         // has unmounted and setSuggestions() lands nowhere — so the strategy (and
