@@ -8268,8 +8268,12 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
         const data = await res.json();
         if (res.ok) {
           setTracked(prev => ({...prev, [lookup]: true}));
-          // Switch to Tracked tab after a brief delay so user sees the success state
-          setTimeout(() => setActiveTab('tracked'), 600);
+          // Deliberately DO NOT switch tabs here. This used to jump to the Tracked
+          // tab 600ms after each success, so users could only add one keyword per
+          // visit and had to navigate back for the next — painful for agencies
+          // working through a long Discovered list. The button's own "✓ Tracked"
+          // state is sufficient confirmation; staying put lets them add several
+          // in a row and switch tabs when they choose.
         } else if (res.status === 403 && data.upgrade) {
           setShowUpgrade(true);
         } else if (res.status === 409) {
@@ -11873,10 +11877,13 @@ Return ONLY valid JSON — no markdown:
         <Sidebar/>
         <div className="main-area">
           <TopBar/>
-          {/* Test wizard entry point — only shown when site has no meaningful
-              GSC data (fewer than 3 keywords). Mirrors the dashboard wizard
-              CTA visibility so the two appear and disappear together. */}
-          {currentView !== "portfolio" && (siteData?.keywords?.length || 0) < 3 && (
+          {/* Test wizard entry point — ADMIN ONLY. This is an internal shortcut for
+              reaching the wizard while testing; the flask emoji and the word "Test"
+              read as debug tooling. It was previously ungated, so any customer whose
+              site returned fewer than 3 keywords saw it pinned to their screen —
+              i.e. exactly the new users forming a first impression of the product.
+              Customers reach the wizard through the dashboard CTA instead. */}
+          {isAdmin && currentView !== "portfolio" && (siteData?.keywords?.length || 0) < 3 && (
             <button onClick={()=>setScreen("startingOut")}
               style={{position:"fixed",bottom:20,right:20,zIndex:9999,background:"#0fdb8a",color:"#000",border:"none",borderRadius:8,padding:".6rem 1rem",fontSize:".8rem",fontWeight:700,cursor:"pointer",boxShadow:"0 4px 12px rgba(0,0,0,.4)",fontFamily:"inherit"}}>
               🧪 Test wizard
