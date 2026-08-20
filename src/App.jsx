@@ -1110,9 +1110,12 @@ export default function RankActions() {
   const [showPlan,  setShowPlan]  = useState(false);
   const [showSupport, setShowSupport] = useState(false);
   // RankActions Assist — guided weekly-action state. "Done" and "visited" are
-  // persisted per-site in localStorage (keys ra_assist_done_<site> /
-  // ra_assist_visited_<site>) so progress survives refresh and is separate
-  // per site. A reset control lets the user show all tasks again.
+  // persisted per-site via the userdata layer (types assist_done /
+  // assist_visited, which write the same ra_assist_*_<site> localStorage keys
+  // as a cache) so progress survives refresh, a browser clear and a change of
+  // machine, and is separate per site. A reset control shows all tasks again.
+  // The useState initialisers below read the local cache for an instant first
+  // paint; the effect further down reconciles against the server.
   const [sproutOpen, setSproutOpen] = useState(false);
   const [sproutDismissed, setSproutDismissed] = useState(false);
   const loadAssistSet = (prefix) => {
@@ -1625,28 +1628,53 @@ export default function RankActions() {
   // Tracks which site the in-memory sets belong to, so the save effect below
   // doesn't clobber a site's stored data with another site's keys during the
   // render where selectedSite has just changed.
-  const assistLoadedSite = useRef(localStorage.getItem("rankactions_selectedSite") || "mywebsite.com");
+  // Seeded null (not the stored site) so this effect also runs on first mount.
+  // Previously it matched immediately and returned early, which was harmless
+  // while the data was local-only but would skip the server read entirely.
+  const assistLoadedSite = useRef(null);
   useEffect(() => {
     if (!selectedSite) return;
     if (assistLoadedSite.current === selectedSite) return;
     assistLoadedSite.current = selectedSite;
-    try {
-      setSproutDoneKeys(new Set(JSON.parse(localStorage.getItem(`ra_assist_done_${selectedSite}`) || "[]")));
-      setSproutVisitedKeys(new Set(JSON.parse(localStorage.getItem(`ra_assist_visited_${selectedSite}`) || "[]")));
-    } catch {
-      setSproutDoneKeys(new Set());
-      setSproutVisitedKeys(new Set());
-    }
+    const site = selectedSite;
+    let cancelled = false;
+    // Apply the local cache synchronously so the previous site's progress is
+    // never on screen while the server read is in flight.
+    let localDone, localVisited;
+    try { localDone = new Set(JSON.parse(localStorage.getItem(`ra_assist_done_${site}`) || "[]")); }
+    catch { localDone = new Set(); }
+    try { localVisited = new Set(JSON.parse(localStorage.getItem(`ra_assist_visited_${site}`) || "[]")); }
+    catch { localVisited = new Set(); }
+    setSproutDoneKeys(localDone);
+    setSproutVisitedKeys(localVisited);
+    // Then reconcile. A null payload means no server row yet — adopt whatever
+    // is local and push it up rather than blanking the user's progress.
+    (async () => {
+      const [rawDone, rawVisited] = await Promise.all([
+        loadUserData(site, 'assist_done'),
+        loadUserData(site, 'assist_visited'),
+      ]);
+      if (cancelled || site !== assistLoadedSite.current) return;
+      if (Array.isArray(rawDone)) setSproutDoneKeys(new Set(rawDone));
+      else if (localDone.size > 0) saveUserData(site, 'assist_done', [...localDone]);
+      if (Array.isArray(rawVisited)) setSproutVisitedKeys(new Set(rawVisited));
+      else if (localVisited.size > 0) saveUserData(site, 'assist_visited', [...localVisited]);
+    })();
+    return () => { cancelled = true; };
   }, [selectedSite]);
 
   // ── RankActions Assist: persist progress whenever it changes ──
+  // saveUserData writes the same localStorage key immediately and the server on
+  // a 500ms debounce. Applying a server read re-triggers these effects and
+  // writes the value straight back — idempotent, and the same behaviour the
+  // `done` type has had since it moved server-side.
   useEffect(() => {
     if (!selectedSite || assistLoadedSite.current !== selectedSite) return;
-    try { localStorage.setItem(`ra_assist_done_${selectedSite}`, JSON.stringify([...sproutDoneKeys])); } catch {}
+    saveUserData(selectedSite, 'assist_done', [...sproutDoneKeys]);
   }, [sproutDoneKeys, selectedSite]);
   useEffect(() => {
     if (!selectedSite || assistLoadedSite.current !== selectedSite) return;
-    try { localStorage.setItem(`ra_assist_visited_${selectedSite}`, JSON.stringify([...sproutVisitedKeys])); } catch {}
+    saveUserData(selectedSite, 'assist_visited', [...sproutVisitedKeys]);
   }, [sproutVisitedKeys, selectedSite]);
 
   // ── Show onboarding tour on first dashboard visit ──────────
