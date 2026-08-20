@@ -1356,10 +1356,37 @@ export default function RankActions() {
           }
           // Check admin flag
           if (data.isAdmin) setIsAdminFlag(true);
-          // Restore sites if server has more
-          if (data.sites?.length > 0 && data.sites.length >= sites.length) {
-            setSites(data.sites);
-            localStorage.setItem("rankactions_sites", JSON.stringify(data.sites));
+          // ── Restore the site list from the server ──────────────────────
+          // The server profile is the durable copy; localStorage is a cache. On a
+          // new browser (or after clearing site data) the cache is empty and this
+          // is the ONLY way the user gets their sites back.
+          //
+          // The old condition was `data.sites.length >= sites.length`, which is
+          // fragile: it silently declines to restore whenever the local list
+          // happens to be longer, leaving the user staring at a subset of their
+          // own account. Merge instead — union of server and local, so neither
+          // source can erase the other.
+          if (data.sites?.length > 0) {
+            const merged = Array.from(new Set([
+              ...data.sites,
+              ...sites.filter(s => s && s !== "mywebsite.com"),
+            ]));
+            setSites(merged);
+            localStorage.setItem("rankactions_sites", JSON.stringify(merged));
+
+            // CRITICAL: also move the SELECTION off the placeholder.
+            // Restoring the list alone was not enough. `selectedSite` defaults to
+            // the literal "mywebsite.com" when localStorage is empty, so the app
+            // stayed pointed at a site the user does not own — every request came
+            // back 403 site_not_owned and the account looked completely empty.
+            // That is the bug that made a cleared browser look like lost data.
+            const current = localStorage.getItem("rankactions_selectedSite");
+            const currentIsUsable = current && current !== "mywebsite.com" && merged.includes(current);
+            if (!currentIsUsable) {
+              const next = merged[0];
+              setSelectedSite(next);
+              localStorage.setItem("rankactions_selectedSite", next);
+            }
           }
           // Mark plan as chosen so selection screen doesn't show
           if (data.plan && data.plan !== "free") {
