@@ -52,6 +52,9 @@ const ALLOWED_TYPES = new Set([
   'link_history',
   'starting_out',
   'kw_enrich',
+  'hidden_kw',
+  'assist_done',
+  'assist_visited',
 ]);
 
 // ── localStorage key (matches existing convention used pre-migration) ──

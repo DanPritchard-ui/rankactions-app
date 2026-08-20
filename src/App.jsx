@@ -1186,8 +1186,10 @@ export default function RankActions() {
       return new Set(JSON.parse(localStorage.getItem(`ra_hidden_kw_${site}`) || "[]"));
     } catch { return new Set(); }
   });
+  // saveUserData writes the same `ra_hidden_kw_<site>` key immediately and the
+  // server on a 500ms debounce, so hidden keywords now survive a browser clear.
   const persistHidden = (next, site) => {
-    try { localStorage.setItem(`ra_hidden_kw_${site}`, JSON.stringify([...next])); } catch {}
+    saveUserData(site, 'hidden_kw', [...next]);
   };
   const hideKeywordGlobal = (keyword) => {
     setHiddenKws(prev => { const next = new Set(prev); next.add(keyword); persistHidden(next, selectedSite); return next; });
@@ -1536,10 +1538,6 @@ export default function RankActions() {
     // guard drops stale results if the site changes again before these resolve.
     (async () => {
       // doneFixes — load, then apply Option B legacy-id migration.
-      // Hidden keywords are per-site; reload alongside the rest of this site's data.
-      try { setHiddenKws(new Set(JSON.parse(localStorage.getItem(`ra_hidden_kw_${site}`) || "[]"))); }
-      catch { setHiddenKws(new Set()); }
-
       const rawDone = await loadUserData(site, 'done');
       if (cancelled || site !== selectedSite) return;
       // Accept legacy (string[]) and current ({id,ts,kw}[]) shapes alike.
@@ -1567,6 +1565,21 @@ export default function RankActions() {
       const rawProspects = await loadUserData(site, 'prospects');
       if (cancelled || site !== selectedSite) return;
       setLinkProspects(Array.isArray(rawProspects) ? rawProspects : []);
+    })();
+    // Hidden keywords. Seeded synchronously from the local cache so the
+    // previous site's hidden set is never applied while the server read is in
+    // flight, then reconciled. A null payload means no server row yet (every
+    // user, first load after this ships) — adopt the local set and push it up
+    // rather than blanking it.
+    (async () => {
+      let localHidden;
+      try { localHidden = new Set(JSON.parse(localStorage.getItem(`ra_hidden_kw_${site}`) || "[]")); }
+      catch { localHidden = new Set(); }
+      setHiddenKws(localHidden);
+      const rawHidden = await loadUserData(site, 'hidden_kw');
+      if (cancelled || site !== selectedSite) return;
+      if (Array.isArray(rawHidden)) setHiddenKws(new Set(rawHidden));
+      else if (localHidden.size > 0) saveUserData(site, 'hidden_kw', [...localHidden]);
     })();
     // Snapshots power the completed-action impact panel (Reports). Best-effort:
     // a failure just means the panel shows nothing, never blocks the dashboard.
@@ -6765,7 +6778,6 @@ ${dateRule}`;
           hist.push({ topic: strategy.topic, date: strategy.createdAt?.slice(0,10) || new Date().toISOString().slice(0,10), clusters: strategy.clusters.map(c => c.keyword) });
           localStorage.setItem(histKey, JSON.stringify(hist.slice(-20)));
           saveUserData(selectedSite, 'strategy_history', hist.slice(-20)); // keep last 20
-          saveUserData(selectedSite, 'strategy_history', hist.slice(-20));
         } catch {}
       }
       const newStrategy = {
