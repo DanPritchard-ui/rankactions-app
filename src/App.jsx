@@ -1025,11 +1025,37 @@ async function startGoogleOAuth() {
   window.location.href = `${WORKER_URL}/auth/google?token=${encodeURIComponent(token)}`;
 }
 
+// ── Freshness registry ────────────────────────────────────────────
+// Volatile SEO facts. Models trained before these changes confidently teach the
+// retired versions, which is a credibility problem in an SEO product.
+//
+// This is injected into EVERY AI call from callClaude below rather than pasted
+// into individual prompts. It previously existed inline in the content
+// generator only, so the fix modal, strategy planner, weekly summary and Page
+// Audit could all still teach retired facts. Injecting at the chokepoint means
+// a prompt added later inherits it automatically and cannot silently miss it.
+//
+// Keep this list SHORT. It costs tokens on every call, and a long list dilutes
+// the instructions that follow it. Add a fact when Google changes something
+// that a pre-cutoff model would state wrongly; remove it once it is old enough
+// that models reliably get it right.
+//
+// Last reviewed: 21 August 2026.
+const SEO_FRESHNESS = `FACTUAL ACCURACY — these SEO facts changed recently and MUST be stated correctly:
+- Core Web Vitals are LCP, INP (Interaction to Next Paint) and CLS. INP replaced First Input Delay (FID) in March 2024. Never present FID as a current Core Web Vital. Targets: INP under 200ms, LCP under 2.5s, CLS under 0.1.
+- Search Console's "Coverage" report is now "Page indexing". The standalone "Mobile Usability" report was retired — assess mobile experience via Core Web Vitals and PageSpeed Insights / Lighthouse.
+- "Page Experience" is a set of signals, not a single ranking factor or score.
+- Do not cite specific ranking-factor percentages or algorithm weightings; they are not published. Do not invent statistics, study results or dates. If you are not confident a number is accurate, describe the effect qualitatively instead.`;
+
 async function callClaude(userMsg, systemMsg, mode = 'standard') {
+  // Facts first, the caller's role and output-format instructions last, so the
+  // format rule ("return valid JSON only", "output ONLY raw HTML") stays the
+  // nearest instruction to the response and is not diluted by the registry.
+  const systemWithFreshness = `${SEO_FRESHNESS}\n\n${systemMsg || ''}`;
   const res = await authFetch(`${WORKER_URL}/api/ai`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ userMsg, systemMsg, mode }),
+    body: JSON.stringify({ userMsg, systemMsg: systemWithFreshness, mode }),
   });
   if (res.status === 403) {
     const d = await res.json();
@@ -1178,6 +1204,22 @@ export default function RankActions() {
     } catch { return {}; }
   });
   const [copiedId,     setCopiedId]     = useState(null);
+  // Rank Tracker tab selection. Held at App level, NOT inside RankTracker.
+  //
+  // RankTracker is declared inside this component, so every App-level state
+  // change produces a new component identity and React unmounts and remounts
+  // the whole subtree. Any state local to RankTracker is therefore discarded on
+  // each App render. Hiding a keyword from the Discovered tab calls
+  // hideKeywordGlobal, which sets hiddenKws here — so the tab reset to its
+  // 'tracked' default and the view jumped away mid-task.
+  //
+  // Holding it here survives the remount because App's own state does. The
+  // remount itself still happens and still discards the tracker's other local
+  // state (tracked, tracking, selectedKw, scroll position) and re-runs its
+  // mount fetch. The real fix is moving RankTracker, RankTrackerTrackedTab and
+  // RankTrackerDiscoveredTab out of App to module scope — a large refactor,
+  // deliberately not attempted here.
+  const [trackerTab, setTrackerTab] = useState('tracked');
   // Manually hidden keywords, shared across Site Detail and the Rank Tracker.
   // Some GSC queries are real but useless — personal names, domain-history noise —
   // and no syntax filter can reliably catch them, so the user decides. Previously
@@ -4960,14 +5002,9 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
       const todayIso   = new Date().toISOString().slice(0, 10);
       const todayHuman = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 
-      // Volatile SEO facts. Models trained before these changes confidently
-      // teach the retired versions, which is a credibility problem in an SEO
-      // product. Keep this list short and update it when Google changes things.
-      const freshnessContext = `\nFACTUAL ACCURACY — these SEO facts changed recently and MUST be stated correctly:
-- Core Web Vitals are LCP, INP (Interaction to Next Paint) and CLS. INP replaced First Input Delay (FID) in March 2024. Never present FID as a current Core Web Vital. Targets: INP under 200ms, LCP under 2.5s, CLS under 0.1.
-- Search Console's "Coverage" report is now "Page indexing". The standalone "Mobile Usability" report was retired - assess mobile experience via Core Web Vitals and PageSpeed Insights / Lighthouse.
-- "Page Experience" is a set of signals, not a single ranking factor or score.
-- Do not cite specific ranking-factor percentages or algorithm weightings; they are not published. Do not invent statistics, study results or dates. If you are not confident a number is accurate, describe the effect qualitatively instead.\n`;
+      // The volatile-SEO-facts block that used to sit here is now the
+      // SEO_FRESHNESS registry, injected into every AI call by callClaude.
+      // Do not re-add it to this prompt — it would be sent twice.
 
       try {
         const prompt = `You are an expert SEO content writer. Generate a complete, production-ready HTML blog post styled with RankActions branding.
@@ -4982,7 +5019,7 @@ INPUTS:
 - Primary CTA: ${cta.trim() || "Contact us to find out more"}
 - Additional notes: ${notes.trim() || "none"}
 - Client website: ${displaySite(selectedSite)}
-${linkPoolContext}${pillarContext}${freshnessContext}
+${linkPoolContext}${pillarContext}
 TODAY'S DATE IS ${todayHuman} (${todayIso}). Any date shown anywhere in the article — the visible byline, the meta block, JSON-LD datePublished and dateModified — MUST be this exact date. Never output a date from memory.
 ${historyContext}
 
@@ -8611,7 +8648,10 @@ ${strat ? `<h3 style="font-size:.85rem;margin:.75rem 0 .3rem">Content Strategy</
 
   // Parent — owns tab state, renders page header and tab switcher
   const RankTracker = () => {
-    const [activeTab, setActiveTab] = useState('tracked');
+    // Aliased to the App-level state so the rest of this component is unchanged.
+    // Do NOT reintroduce a local useState here — see the note on trackerTab.
+    const activeTab    = trackerTab;
+    const setActiveTab = setTrackerTab;
     return (
       <div className="content" style={{padding:"1.5rem 2rem",maxWidth:1100}}>
         <div style={{marginBottom:"1rem"}}>
