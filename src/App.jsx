@@ -1047,6 +1047,94 @@ const SEO_FRESHNESS = `FACTUAL ACCURACY — these SEO facts changed recently and
 - "Page Experience" is a set of signals, not a single ranking factor or score.
 - Do not cite specific ranking-factor percentages or algorithm weightings; they are not published. Do not invent statistics, study results or dates. If you are not confident a number is accurate, describe the effect qualitatively instead.`;
 
+// ── Output guards ────────────────────────────────────────────────
+// Deterministic checks applied to generated output before a customer sees it.
+// Module scope on purpose: stripStaleYear previously lived inside the strategy
+// handler's closure, so the content generator — the surface customers actually
+// publish from — could not reach it and shipped stale years in titles.
+
+// Remove a past year from a title. Future years and the current year are left
+// alone: a forward-looking title is legitimate, a stale one is not.
+function stripStaleYear(s, currentYear = new Date().getFullYear()) {
+  if (typeof s !== "string") return s;
+  return s
+    .replace(/\s+in\s+(19|20)\d{2}\b/g, (m) => {
+      const yr = parseInt(m.match(/(19|20)\d{2}/)[0], 10);
+      return yr < currentYear ? "" : m;
+    })
+    .replace(/\s*\((19|20)\d{2}\)\s*/g, (m) => {
+      const yr = parseInt(m.match(/(19|20)\d{2}/)[0], 10);
+      return yr < currentYear ? " " : m;
+    })
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+// stripStaleYear trims, which is correct for a whole title but fuses words
+// together when a title is split across inline tags (<h1>SAR <span>Guide</span>).
+// Preserve the whitespace at the edges of each text run.
+function stripStaleYearFragment(txt, currentYear) {
+  const m = String(txt).match(/^(\s*)([\s\S]*?)(\s*)$/);
+  if (!m) return txt;
+  return m[1] + stripStaleYear(m[2], currentYear) + m[3];
+}
+
+// Title-bearing surfaces ONLY — <title>, <h1>, og:title/twitter:title and the
+// JSON-LD headline.
+//
+// Do NOT widen this to the whole document. Article bodies contain legitimate
+// past-year prose, including the Core Web Vitals fact in SEO_FRESHNESS above
+// ("INP replaced First Input Delay (FID) in March 2024"). Running stripStaleYear
+// over the full HTML would delete it and turn a fact we deliberately protect
+// into a broken sentence. h2/h3 are deliberately excluded for the same reason —
+// a section heading is prose, not the page title.
+function stripStaleYearInTitles(html, currentYear = new Date().getFullYear()) {
+  if (!html || typeof html !== "string") return html;
+  // Rewrite each text run, leaving nested tags intact.
+  const fixInner = (inner) => inner.replace(/[^<>]+/g, (txt) => stripStaleYearFragment(txt, currentYear));
+  let out = html;
+  out = out.replace(/(<title[^>]*>)([\s\S]*?)(<\/title>)/gi, (m, o, i, c) => o + fixInner(i) + c);
+  out = out.replace(/(<h1[^>]*>)([\s\S]*?)(<\/h1>)/gi,       (m, o, i, c) => o + fixInner(i) + c);
+  out = out.replace(/(<meta[^>]*(?:property|name)=["'](?:og:title|twitter:title)["'][^>]*content=["'])([^"']*)(["'])/gi,
+    (m, o, i, c) => o + stripStaleYearFragment(i, currentYear) + c);
+  out = out.replace(/("headline"\s*:\s*")([^"]*)(")/g,
+    (m, o, i, c) => o + stripStaleYearFragment(i, currentYear) + c);
+  return out;
+}
+
+// A stored strategy payload is only usable if it has the shape the planner
+// renders: an object with a `pillar` object and a `clusters` array. Anything
+// else is treated as "no strategy", which shows the normal empty state.
+//
+// This is not hypothetical. On 21 Aug 2026 the site-key migration made a row
+// containing {"n":1,"test":"hello"} — left over from testing the userdata
+// endpoint — reachable for the first time. It is truthy, so the `strategy ? ...`
+// guards all passed, and `strategy.clusters.length` took down the whole screen.
+// Six separate call sites read this cache and three of them dereferenced
+// .clusters/.pillar without checking.
+//
+// Discarding an unrecognisable payload rather than trying to repair it is
+// deliberate: a strategy with no pillar cannot be rendered, and inventing one
+// would put fabricated content in front of the customer.
+function normaliseStrategy(s) {
+  if (!s || typeof s !== "object" || Array.isArray(s)) return null;
+  const pillar = (s.pillar && typeof s.pillar === "object" && !Array.isArray(s.pillar)) ? s.pillar : null;
+  if (!pillar) return null;
+  const clusters = Array.isArray(s.clusters) ? s.clusters.filter(c => c && typeof c === "object") : [];
+  return { ...s, pillar, clusters };
+}
+
+// Single entry point for reading the cached strategy. Every reader must use
+// this rather than parsing the key directly, so the shape check cannot be
+// skipped at a call site added later.
+function readStrategyCache(site) {
+  try {
+    return normaliseStrategy(JSON.parse(localStorage.getItem(`ra_strategy_${site}`) || "null"));
+  } catch {
+    return null;
+  }
+}
+
 async function callClaude(userMsg, systemMsg, mode = 'standard') {
   // Facts first, the caller's role and output-format instructions last, so the
   // format rule ("return valid JSON only", "output ONLY raw HTML") stays the
@@ -5074,8 +5162,11 @@ IMPORTANT — The keyword "${kw.trim()}" MUST appear verbatim in the title, meta
         );
         clearInterval(iv);
         let clean = text.replace(/^```html\s*/i,"").replace(/^```\s*/i,"").replace(/```\s*$/i,"").trim();
-        clean = enforceLinkRelevance(clean, siteBase, linkPool);
-        clean = ensureCtaButton(clean, homepageUrl, cta);
+        // Every deterministic guard the generated article passes through, in one
+        // place. A second generation path added later should call this rather
+        // than re-listing the guards — that omission is exactly how
+        // stripStaleYear ended up protecting strategy titles but not articles.
+        clean = runOutputGuards(clean, { siteBase, linkPool, homepageUrl, cta });
 
         // Completeness check. Longform generations can hit the token ceiling and
         // stop mid-sentence; the HTML still previews fine until you reach the end.
@@ -5111,6 +5202,21 @@ IMPORTANT — The keyword "${kw.trim()}" MUST appear verbatim in the title, meta
     // link for non-technical users. They are an editing aid, not content, and they
     // used to ship into whatever the customer published — leaving instructions like
     // "link to your homepage" in their page source. Strip them on the way out.
+    // Ordered deliberately:
+    //  1. link relevance — may remove anchors, so run before anything that
+    //     inspects or inserts links
+    //  2. CTA button — inserts an anchor; must not then be judged by the
+    //     relevance guard, which would strip a CTA pointing at the homepage
+    //  3. stale year — pure text substitution on title surfaces, order-neutral,
+    //     so it runs last where it cannot disturb the two structural passes
+    const runOutputGuards = (html, { siteBase, linkPool, homepageUrl, cta }) => {
+      let out = html;
+      out = enforceLinkRelevance(out, siteBase, linkPool);
+      out = ensureCtaButton(out, homepageUrl, cta);
+      out = stripStaleYearInTitles(out);
+      return out;
+    };
+
     const publishableHtml = (html) =>
       String(html || "")
         // Comment sitting on its own line: remove the whole line.
@@ -5761,7 +5867,7 @@ Write 3-4 short paragraphs: overall performance, biggest opportunities, what to 
       const strikingKws = siteData?.keywords?.filter(k => k.position > 10 && k.position <= 20) || [];
       let stratHtml = "";
       try {
-        const strat = JSON.parse(localStorage.getItem(`ra_strategy_${selectedSite}`) || "null");
+        const strat = readStrategyCache(selectedSite);
         if (strat) {
           const pub = strat.clusters.filter(c=>c.status==="published").length + (strat.pillar.status==="published"?1:0);
           const total = strat.clusters.length + 1;
@@ -6182,7 +6288,7 @@ ${stratHtml}${contentHtml}
         {/* Strategy Progress */}
         {(() => {
           let strat = null;
-          try { strat = JSON.parse(localStorage.getItem(`ra_strategy_${selectedSite}`) || "null"); } catch {}
+          strat = readStrategyCache(selectedSite);
           if (!strat) return null;
           const published = strat.clusters.filter(c=>c.status==="published").length + (strat.pillar.status==="published"?1:0);
           const drafted = strat.clusters.filter(c=>c.status==="drafted").length + (strat.pillar.status==="drafted"?1:0);
@@ -6492,7 +6598,7 @@ Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource
   // ─────────────────────────────────────────────────────────────
   const StrategyPlanner = () => {
     const [view, setView] = useState(() => {
-      try { return JSON.parse(localStorage.getItem(`ra_strategy_${selectedSite}`) || "null") ? "planner" : "suggestions"; } catch { return "suggestions"; }
+      return readStrategyCache(selectedSite) ? "planner" : "suggestions";
     });
     const [generating, setGenerating] = useState(false);
     // Recover a strategy that finished while the user was on another screen.
@@ -6520,7 +6626,7 @@ Include a mix of: 2 easy/quick wins (directories, citations), 3 medium (resource
 
     // Load saved strategy for this site
     const [strategy, setStrategy] = useState(() => {
-      try { return JSON.parse(localStorage.getItem(`ra_strategy_${selectedSite}`) || "null"); } catch { return null; }
+      return readStrategyCache(selectedSite);
     });
 
     // Keyword enrichment via DataForSEO. Map of normalised keyword → { volume, cpc, competition, ... }
@@ -6787,25 +6893,15 @@ ${dateRule}`;
         // remove any past year from generated titles rather than trusting compliance.
         // Future years are left alone (a legitimate forward-looking title), as is
         // the current year.
-        const stripStaleYear = (s) => {
-          if (typeof s !== "string") return s;
-          return s
-            .replace(/\s+in\s+(19|20)\d{2}\b/g, (m, _p, o) => {
-              const yr = parseInt(m.match(/(19|20)\d{2}/)[0], 10);
-              return yr < currentYear ? "" : m;
-            })
-            .replace(/\s*\((19|20)\d{2}\)\s*/g, (m) => {
-              const yr = parseInt(m.match(/(19|20)\d{2}/)[0], 10);
-              return yr < currentYear ? " " : m;
-            })
-            .replace(/\s{2,}/g, " ")
-            .trim();
-        };
+        // stripStaleYear is now module scope (see Output guards, top of file).
+        // It used to be defined here, which is why the content generator could
+        // not use it. Behaviour is unchanged — currentYear is passed explicitly
+        // rather than captured from this closure.
         result = result.map(st => ({
           ...st,
-          pillar: st.pillar ? { ...st.pillar, title: stripStaleYear(st.pillar.title) } : st.pillar,
+          pillar: st.pillar ? { ...st.pillar, title: stripStaleYear(st.pillar.title, currentYear) } : st.pillar,
           clusters: Array.isArray(st.clusters)
-            ? st.clusters.map(c => ({ ...c, title: stripStaleYear(c.title) }))
+            ? st.clusters.map(c => ({ ...c, title: stripStaleYear(c.title, currentYear) }))
             : st.clusters,
         }));
         // Write to localStorage BEFORE touching React state. The AI call completes
@@ -7648,7 +7744,7 @@ ${dateRule}`;
         try { prospectData[s] = JSON.parse(localStorage.getItem(`ra_prospects_${s}`) || "[]"); } catch {}
         try { fixData[s] = JSON.parse(localStorage.getItem(`ra_done_${s}`) || "[]"); } catch {}
         try { contentData[s] = JSON.parse(localStorage.getItem(`ra_content_history_${s}`) || "[]"); } catch {}
-        try { strategyData[s] = JSON.parse(localStorage.getItem(`ra_strategy_${s}`) || "null"); } catch {}
+        strategyData[s] = readStrategyCache(s);
       });
       const realSites = sites.filter(s => s && s !== "mywebsite.com");
 
@@ -10102,8 +10198,8 @@ Return ONLY valid JSON — no markdown:
 
       // Backup any existing strategy to history before replacing
       try {
-        const existing = JSON.parse(localStorage.getItem(`ra_strategy_${selectedSite}`) || "null");
-        if (existing && (existing.clusters || []).length > 0) {
+        const existing = readStrategyCache(selectedSite);
+        if (existing && existing.clusters.length > 0) {
           const histKey = `ra_strategy_history_${selectedSite}`;
           const hist = JSON.parse(localStorage.getItem(histKey) || "[]");
           hist.push({
