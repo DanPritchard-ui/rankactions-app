@@ -578,6 +578,9 @@ const CSS = `
 .cg-code{flex:1;background:#0d1117;padding:1rem;overflow:auto;}
 .cg-code pre{font-family:var(--mono);font-size:.75rem;color:#a8d8d0;line-height:1.65;white-space:pre-wrap;word-break:break-word;}
 .cg-error{margin:1rem;padding:.85rem 1rem;background:var(--rdim);border:1px solid var(--red);border-radius:8px;font-size:.83rem;color:var(--red);line-height:1.6;}
+/* Advisory, not an error: amber rather than red, because the article is still
+   usable and the user decides whether each point matters. */
+.cg-warn{margin:1rem;padding:.85rem 1rem;background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.5);border-radius:8px;font-size:.83rem;color:var(--text);line-height:1.6;}
 .cg-tip{font-size:.75rem;color:var(--text2);line-height:1.5;padding:.65rem .85rem;background:var(--s3);border-radius:7px;border-left:2px solid var(--blue);margin-top:.25rem;}
 .cg-loading-msgs{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.75rem;padding:3rem;}
 .cg-loading-msgs .spinner{width:22px;height:22px;}
@@ -1133,6 +1136,86 @@ function readStrategyCache(site) {
   } catch {
     return null;
   }
+}
+
+// ── Generation validation ────────────────────────────────────────────
+// Checks run after generation and surfaced as warnings above the preview, so
+// problems are found before publishing rather than after. These never block or
+// modify the article — runOutputGuards does the modifying; this only reports.
+//
+// Every check below came from a real defect in a real generation, not a generic
+// checklist. Deliberately absent: a title-vs-H1 similarity check. A title
+// written for the SERP click and an H1 written for the page are legitimately
+// different, and warning on that would fire on almost every article and train
+// the user to ignore the panel entirely.
+
+function articleText(html) {
+  return String(html || "")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ");
+}
+
+function tagInner(html, tag) {
+  const m = String(html || "").match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`, "i"));
+  return m ? m[1].replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim() : "";
+}
+
+// Shares the punctuation/case-insensitive matching used elsewhere, so
+// "SAR-Support-Services" counts as containing "SAR Support Services".
+function kwPresent(kw, text) {
+  if (!kw || !text) return false;
+  const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const k = norm(kw), t = norm(text);
+  return !!k && !!t && t.includes(k);
+}
+
+function escapeRe(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+
+function validateGeneratedHtml(html, { keyword, targetWords } = {}) {
+  const warnings = [];
+  if (!html || typeof html !== "string") return warnings;
+  const kw = String(keyword || "").trim();
+
+  if (kw) {
+    const title = tagInner(html, "title");
+    const h1 = tagInner(html, "h1");
+    if (title && !kwPresent(kw, title)) warnings.push(`The title tag doesn't contain "${kw}".`);
+    if (h1 && !kwPresent(kw, h1)) warnings.push(`The H1 doesn't contain "${kw}".`);
+
+    // Case drift. Only meaningful when the keyword itself carries capitals —
+    // an all-lowercase keyword has nothing to drift from. Threshold of 3 keeps
+    // a single stylistic lowercase from raising a warning.
+    if (/[A-Z]/.test(kw)) {
+      const all = articleText(html).match(new RegExp(escapeRe(kw).replace(/\s+/g, "\\s+"), "gi")) || [];
+      const wrong = all.filter(m => m.replace(/\s+/g, " ") !== kw.replace(/\s+/g, " "));
+      if (wrong.length >= 3) {
+        warnings.push(`"${kw}" appears ${wrong.length} times with different capitalisation (e.g. "${wrong[0]}") — it reads as machine-written.`);
+      }
+    }
+  }
+
+  // Schema author/publisher naming the domain rather than the business. Tested
+  // by shape rather than by knowing the real name: a value that looks like a
+  // hostname and contains no spaces is a domain, not a company.
+  const names = [...String(html).matchAll(/"name"\s*:\s*"([^"]+)"/g)].map(m => m[1]);
+  const domainish = names.filter(n => /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(n.trim()) && !/\s/.test(n.trim()));
+  if (domainish.length > 0) {
+    warnings.push(`Schema author/publisher is set to "${domainish[0]}" rather than your business name.`);
+  }
+
+  // Word count band. Tight (±10%) by choice — observed drift has run
+  // 691 / 847 / 950 against various targets, in both directions.
+  const target = Number(targetWords);
+  if (target > 0) {
+    const words = articleText(html).split(/\s+/).filter(Boolean).length;
+    const lo = Math.round(target * 0.9), hi = Math.round(target * 1.1);
+    if (words < lo || words > hi) {
+      warnings.push(`Article is ${words} words against a ${target}-word target (outside ${lo}–${hi}).`);
+    }
+  }
+
+  return warnings;
 }
 
 async function callClaude(userMsg, systemMsg, mode = 'standard') {
@@ -4834,6 +4917,9 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
     const [copied,    setCopied]    = useState(false);
     const [loadMsg,   setLoadMsg]   = useState("Researching your keyword…");
     const [annotated, setAnnotated] = useState(false);
+    // Post-generation warnings. Advisory only — the article is still shown and
+    // still publishable; these tell the user what to look at first.
+    const [warnings,  setWarnings]  = useState([]);
 
     const loadMsgs = [
       "Researching your keyword…",
@@ -5021,7 +5107,7 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
 
     const generate = async () => {
       if (!kw.trim()) return;
-      setLoading(true); setError(null); setOutput(null);
+      setLoading(true); setError(null); setOutput(null); setWarnings([]);
       let mi = 0;
       const iv = setInterval(()=>{ mi=(mi+1)%loadMsgs.length; setLoadMsg(loadMsgs[mi]); }, 3200);
 
@@ -5167,6 +5253,10 @@ IMPORTANT — The keyword "${kw.trim()}" MUST appear verbatim in the title, meta
         // than re-listing the guards — that omission is exactly how
         // stripStaleYear ended up protecting strategy titles but not articles.
         clean = runOutputGuards(clean, { siteBase, linkPool, homepageUrl, cta });
+
+        // Report what the guards can't fix. Runs before the completeness check
+        // so a truncated article still reports its other problems.
+        setWarnings(validateGeneratedHtml(clean, { keyword: kw.trim(), targetWords: Number(wordCount) || 0 }));
 
         // Completeness check. Longform generations can hit the token ceiling and
         // stop mid-sentence; the HTML still previews fine until you reach the end.
@@ -5450,6 +5540,16 @@ IMPORTANT — The keyword "${kw.trim()}" MUST appear verbatim in the title, meta
               </div>
             )}
             {!loading && error && <div className="cg-error">⚠ {error}</div>}
+            {!loading && output && warnings.length > 0 && (
+              <div className="cg-warn">
+                <div style={{fontWeight:600,marginBottom:".35rem"}}>
+                  {warnings.length === 1 ? "1 thing to check before publishing" : `${warnings.length} things to check before publishing`}
+                </div>
+                <ul style={{margin:0,paddingLeft:"1.1rem"}}>
+                  {warnings.map((w, i) => <li key={i} style={{marginBottom:".2rem"}}>{w}</li>)}
+                </ul>
+              </div>
+            )}
             {!loading && !output && !error && (
               <div className="cg-empty">
                 <div className="cg-empty-icon">✍</div>
