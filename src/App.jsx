@@ -3,9 +3,10 @@ import {
   SignIn, SignUp, UserButton,
   useUser, useClerk, SignedIn, SignedOut
 } from "@clerk/clerk-react";
-import { sanitizeAiHtml, sanitizeAiPreview } from "./utils/sanitize";
+import { sanitizeAiHtml, sanitizeAiPreview, stripAllHtml } from "./utils/sanitize";
 import { loadUserData, saveUserData, setUserDataTokenGetter } from "./utils/userData";
 import { exportAuditPdf } from "./utils/exportAuditPdf";
+import { exportReportPdf } from "./utils/exportReportPdf";
 
 // ─────────────────────────────────────────────────────────────
 // ⚙️  CONFIG — paste your Worker URL here after deploying it
@@ -917,7 +918,7 @@ const DEMO_FIXES = [
 ];
 
 const DEMO_SEO = [
-  { page:"/",        kw:"your main keyword",       pos:7,  vol:"connect GSC", gap:"Add keyword to title tag and H1",      opp:true  },
+  { page:"/",        kw:"your main keyword",       pos:7,  vol:"connect GSC", gap:"Add this phrase to the page title and main heading",      opp:true  },
   { page:"/services",kw:"your service keyword",    pos:18, vol:"connect GSC", gap:"Rewrite H1 and meta title",            opp:true  },
   { page:"/about",   kw:"your brand keyword",      pos:24, vol:"connect GSC", gap:"Expand page content to 800+ words",    opp:false },
   { page:"/contact", kw:"local service keyword",   pos:31, vol:"connect GSC", gap:"Add location-specific content",        opp:false },
@@ -2033,7 +2034,7 @@ export default function RankActions() {
     return usable.slice(0,15).map(k => {
       let gap, action;
       if (k.position <= 10) {
-        gap    = "Add keyword to title tag and H1";
+        gap    = "Add this phrase to the page title and main heading";
         action = "fix_title";
       } else if (k.position <= 20) {
         gap    = "Create a dedicated page for this keyword";
@@ -5960,88 +5961,40 @@ Write 3-4 short paragraphs: overall performance, biggest opportunities, what to 
       setSummaryGen(false);
     };
 
-    // Export report as formatted PDF (via print)
+    // Export the report as a real PDF.
+    //
+    // This used to build an HTML string and document.write() it into a new tab.
+    // Two faults: the HTML went through sanitizeAiHtml(), which strips <style>
+    // by design, so the report arrived completely unstyled; and the button said
+    // "Export as PDF" while actually producing a page with its own print button,
+    // leaving the customer to do the export. Drawing the PDF directly fixes both
+    // and removes the sanitiser from the path entirely.
     const exportReport = () => {
-      const t = siteData?.totals;
-      const kwData = siteData?.keywords?.slice(0,20) || [];
-      const strikingKws = siteData?.keywords?.filter(k => k.position > 10 && k.position <= 20) || [];
-      let stratHtml = "";
+      const strat = readStrategyCache(selectedSite);
+      let contentHist = [];
       try {
-        const strat = readStrategyCache(selectedSite);
-        if (strat) {
-          const pub = strat.clusters.filter(c=>c.status==="published").length + (strat.pillar.status==="published"?1:0);
-          const total = strat.clusters.length + 1;
-          stratHtml = `<div class="section"><h3>Strategy Progress</h3><p><strong>${strat.topic}</strong></p><p>Pillar: ${strat.pillar.title}</p><p>Progress: ${pub}/${total} published (${Math.round((pub/total)*100)}%)</p></div>`;
-        }
+        const raw = JSON.parse(localStorage.getItem(`ra_content_history_${selectedSite}`) || "[]");
+        if (Array.isArray(raw)) contentHist = raw;
       } catch {}
-      let contentHtml = "";
-      try {
-        const hist = JSON.parse(localStorage.getItem(`ra_content_history_${selectedSite}`) || "[]");
-        if (hist.length > 0) {
-          contentHtml = `<div class="section"><h3>Content Generated</h3><p>${hist.length} blog posts</p><table><tr><th>Keyword</th><th>Date</th></tr>${hist.slice(-8).reverse().map(h=>`<tr><td>"${h.keyword}"</td><td>${h.date}</td></tr>`).join("")}</table></div>`;
-        }
-      } catch {}
-
-      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>RankActions Report — ${displaySite(selectedSite)}</title>
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1a1a2e;padding:2rem;max-width:800px;margin:0 auto;font-size:14px;line-height:1.6}
-.header{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #0fdb8a;padding-bottom:1rem;margin-bottom:2rem}
-.logo{font-size:1.4rem;font-weight:800;letter-spacing:-.03em;color:#1a1a2e}
-.logo em{color:#0fdb8a;font-style:normal}
-.date{color:#666;font-size:.85rem}
-.kpi-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:2rem}
-.kpi{background:#f8f9fa;border-radius:8px;padding:1rem;text-align:center}
-.kpi-val{font-size:1.5rem;font-weight:800;font-family:monospace}
-.kpi-label{font-size:.7rem;color:#666;text-transform:uppercase;letter-spacing:.06em;margin-top:.25rem}
-.kpi-good{color:#0a7c4e} .kpi-warn{color:#c77d15} .kpi-bad{color:#c0392b}
-.section{margin-bottom:1.5rem}
-h2{font-size:1.1rem;font-weight:700;margin-bottom:.75rem;padding-bottom:.35rem;border-bottom:1px solid #eee}
-h3{font-size:.95rem;font-weight:700;margin-bottom:.5rem}
-table{width:100%;border-collapse:collapse;font-size:.82rem;margin-top:.5rem}
-th{text-align:left;padding:.5rem;border-bottom:2px solid #ddd;color:#666;font-size:.7rem;text-transform:uppercase;letter-spacing:.04em}
-td{padding:.4rem .5rem;border-bottom:1px solid #eee}
-.pos{font-weight:700;font-family:monospace}
-.p1{color:#0a7c4e} .p2{color:#c77d15} .p3{color:#c0392b}
-.badge{display:inline-block;font-size:.65rem;font-weight:700;padding:.15rem .4rem;border-radius:4px}
-.badge-high{background:#fde8ec;color:#c0392b} .badge-med{background:#fef3e2;color:#c77d15} .badge-low{background:#e8f8ef;color:#0a7c4e}
-.summary-box{background:#f0faf5;border-left:3px solid #0fdb8a;padding:1rem;border-radius:0 8px 8px 0;margin-bottom:1.5rem;white-space:pre-line}
-.footer{text-align:center;color:#999;font-size:.75rem;padding-top:1rem;border-top:1px solid #eee;margin-top:2rem}
-.print-btn{background:#0fdb8a;color:#000;border:none;padding:.6rem 1.5rem;border-radius:8px;font-weight:700;font-size:.85rem;cursor:pointer;margin-bottom:1.5rem}
-@media print{.print-btn{display:none!important} body{padding:1rem}}
-</style></head><body>
-<button class="print-btn" onclick="window.print()">📥 Save as PDF</button>
-<div class="header">
-  <div class="logo">Rank<em>Actions</em></div>
-  <div class="date">Weekly Report · ${displaySite(selectedSite)} · ${new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}</div>
-</div>
-${t ? `<div class="kpi-strip">
-  <div class="kpi"><div class="kpi-val">${t.clicks.toLocaleString()}</div><div class="kpi-label">Clicks (28d)</div></div>
-  <div class="kpi"><div class="kpi-val">${t.impressions.toLocaleString()}</div><div class="kpi-label">Impressions</div></div>
-  <div class="kpi"><div class="kpi-val ${parseFloat(t.avgPosition)<=10?"kpi-good":"kpi-warn"}">${t.avgPosition}</div><div class="kpi-label">Avg Position</div></div>
-  <div class="kpi"><div class="kpi-val ${parseFloat(t.avgCtr)>=4?"kpi-good":"kpi-warn"}">${t.avgCtr}</div><div class="kpi-label">Click Rate</div></div>
-</div>` : `<p style="color:#999;margin-bottom:1.5rem">No live data — connect Google Search Console</p>`}
-${reportSummary ? `<div class="summary-box"><strong>AI Summary</strong>\n${reportSummary}</div>` : ""}
-<div class="section"><h2>Keyword Rankings</h2>
-<p style="margin-bottom:.5rem;font-size:.85rem;color:#666">Page 1: ${kwPage1.length} · Striking distance: ${kwStriking.length} · Page 2+: ${kwPage2Plus.length}</p>
-${kwData.length > 0 ? `<table><tr><th>Keyword</th><th>Position</th><th>Clicks</th><th>Impressions</th></tr>
-${kwData.map(k=>`<tr><td>${k.keyword}</td><td class="pos ${k.position<=10?"p1":k.position<=20?"p2":"p3"}">#${k.position}</td><td>${k.clicks}</td><td>${k.impressions}</td></tr>`).join("")}
-</table>` : `<p style="color:#999">Connect GSC to see keywords</p>`}
-</div>
-<div class="section"><h2>Priority Actions</h2>
-${fixes.map(f=>`<div style="display:flex;align-items:center;gap:.5rem;padding:.4rem 0;border-bottom:1px solid #eee"><span class="badge ${f.level==="high"?"badge-high":f.level==="medium"?"badge-med":"badge-low"}">${f.label}</span> ${f.title}</div>`).join("")}
-</div>
-${strikingKws.length > 0 ? `<div class="section"><h2>Striking Distance Keywords</h2><p style="font-size:.82rem;color:#666;margin-bottom:.5rem">Positions 11-20 — close to page 1</p><table><tr><th>Keyword</th><th>Position</th><th>Impressions</th></tr>${strikingKws.slice(0,10).map(k=>`<tr><td>${k.keyword}</td><td class="pos p2">#${k.position}</td><td>${k.impressions}</td></tr>`).join("")}</table></div>` : ""}
-<div class="section"><h2>Link Building Pipeline</h2>
-<p>Identified: ${linkStats.identified} · Contacted: ${linkStats.contacted} · Replied: ${linkStats.replied} · Secured: ${linkStats.secured}</p>
-</div>
-${stratHtml}${contentHtml}
-<div class="footer">Report generated by RankActions · rankactions.com · ${new Date().toLocaleDateString("en-GB")}</div>
-</body></html>`;
-
-      const w = window.open("", "_blank");
-      w.document.write(sanitizeAiHtml(html));
-      w.document.close();
+      exportReportPdf({
+        site:     displaySite(selectedSite),
+        totals:   siteData?.totals || null,
+        keywords: siteData?.keywords || [],
+        // getPriorityFixes returns rich objects; the PDF only needs the sentence.
+        fixes:    (fixes || []).map(f => ({ text: f.suggestion || f.title || "" })),
+        // reportSummary is AI output. Strip all markup rather than trusting it —
+        // jsPDF renders text, so any HTML would appear as literal tags.
+        summary:  reportSummary ? stripAllHtml(reportSummary) : "",
+        strategy: strat,
+        content:  contentHist,
+        links: {
+          identified: linkProspects.length,
+          contacted:  linkProspects.filter(p => p.status === "contacted").length,
+          replied:    linkProspects.filter(p => p.status === "replied").length,
+          secured:    linkProspects.filter(p => p.status === "secured").length,
+        },
+        tier: plan,
+      });
     };
 
     const cardStyle = {background:"var(--card)",border:"1px solid var(--b2)",borderRadius:12,padding:"1.25rem"};
