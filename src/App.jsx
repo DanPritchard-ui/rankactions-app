@@ -47,10 +47,12 @@ function normaliseDoneRecords(raw) {
     if (typeof entry === "string") {
       if (!entry) continue;
       ids.push(entry);
-      meta[entry] = { ts: null, kw: null };
+      meta[entry] = { ts: null, kw: null, type: null };
     } else if (entry && typeof entry === "object" && entry.id) {
       ids.push(entry.id);
-      meta[entry.id] = { ts: entry.ts || null, kw: entry.kw || null };
+      // `type` is read back so it survives a reload. Records written before
+      // 27 Aug 2026 have none; that is expected, not a fault.
+      meta[entry.id] = { ts: entry.ts || null, kw: entry.kw || null, type: entry.type || null };
     }
   }
   return { ids, meta };
@@ -68,9 +70,22 @@ function normaliseDoneRecords(raw) {
 //
 // Returns { measured: [...], pending: n, unmeasurable: n }
 const IMPACT_MIN_DAYS = 14;
+// Positions from Search Console are averages and drift by a few tenths without
+// anything changing. Movement smaller than this is not a result.
+const IMPACT_NOISE_BAND = 0.5;
+// After this long with no movement, an action has had its chance — say so and
+// suggest something else rather than leaving it looking like it is still working.
+const IMPACT_STALE_DAYS = 30;
 
 function computeActionImpact(doneMeta, snapshots, minDays = IMPACT_MIN_DAYS) {
-  const empty = { measured: [], pending: 0, unmeasurable: 0 };
+  // Must carry the SAME keys as the success path. The dashboard reads
+  // .improved/.stale/.declined, and although those accesses currently sit
+  // behind a measured.length check, a shape that differs by return path is a
+  // white screen waiting for the next edit.
+  const empty = {
+    measured: [], pending: 0, unmeasurable: 0,
+    improved: [], declined: [], stale: [], avgGain: 0,
+  };
   if (!doneMeta || typeof doneMeta !== "object") return empty;
   const snaps = (Array.isArray(snapshots) ? snapshots : [])
     .filter(s => s && typeof s.date === "string" && Array.isArray(s.keywords))
@@ -110,11 +125,23 @@ function computeActionImpact(doneMeta, snapshots, minDays = IMPACT_MIN_DAYS) {
     const posBefore = Number(b.position), posAfter = Number(a.position);
     if (!isFinite(posBefore) || !isFinite(posAfter)) { pending++; continue; }
 
+    // Classification. "Worked" needs a real move, not noise: GSC positions are
+    // averages and wobble by a few tenths week to week, so anything inside
+    // IMPACT_NOISE_BAND is treated as flat rather than as a win or a loss.
+    const rawDelta = posBefore - posAfter;
+    const outcome = Math.abs(rawDelta) < IMPACT_NOISE_BAND ? 'flat'
+                  : rawDelta > 0 ? 'improved' : 'declined';
     measured.push({
       id,
       kw: meta.kw,
+      // Recorded from 27 Aug 2026 onward. Older completions have no type, which
+      // is why the per-action-type scorecard can only cover recent work.
+      type: meta.type || null,
       doneDate,
       daysApart,
+      outcome,
+      // Long enough to conclude nothing happened, rather than still waiting.
+      stale: daysApart >= IMPACT_STALE_DAYS && Math.abs(rawDelta) < IMPACT_NOISE_BAND,
       posBefore: Math.round(posBefore * 10) / 10,
       posAfter:  Math.round(posAfter  * 10) / 10,
       // Positive = moved UP the results (position number fell).
@@ -127,13 +154,26 @@ function computeActionImpact(doneMeta, snapshots, minDays = IMPACT_MIN_DAYS) {
   }
 
   measured.sort((x, y) => y.posDelta - x.posDelta);
-  return { measured, pending, unmeasurable };
+  const improved = measured.filter(m => m.outcome === 'improved');
+  const declined = measured.filter(m => m.outcome === 'declined');
+  const stale    = measured.filter(m => m.stale);
+  return {
+    measured, pending, unmeasurable,
+    improved, declined, stale,
+    // Average positions gained across actions that moved at all. Deliberately
+    // excludes flat ones so a long tail of no-changes can't dilute a real gain
+    // into looking like nothing happened.
+    avgGain: improved.length
+      ? Math.round((improved.reduce((t, m) => t + m.posDelta, 0) / improved.length) * 10) / 10
+      : 0,
+  };
 }
 
 // Serialise back to the stored shape. Entries without metadata still round-trip.
 function serialiseDoneRecords(idSet, meta) {
   return [...idSet].map((id) => ({
     id,
+    type: meta?.[id]?.type || null,
     ts: meta?.[id]?.ts || null,
     kw: meta?.[id]?.kw || null,
   }));
@@ -1423,8 +1463,16 @@ export default function RankActions() {
     const kw = (fix && typeof fix === "object")
       ? (fix.kw || (String(fix.title || "").match(/"([^"]+)"/) || [])[1] || null)
       : null;
+    // Recording WHICH KIND of fix this was, so measured outcomes can eventually
+    // be ranked by action type ("title rewrites move rankings more often than
+    // H1 tweaks"). Until 27 Aug 2026 only { ts, kw } was stored, so that
+    // comparison is impossible for anything completed before then. Starting the
+    // record now is what makes it possible later.
+    const type = (fix && typeof fix === "object")
+      ? (fix.action || fix.type || null)
+      : null;
     setDoneFixes(prev => new Set([...prev, id]));
-    setDoneMeta(prev => (prev[id]?.ts ? prev : { ...prev, [id]: { ts: new Date().toISOString(), kw } }));
+    setDoneMeta(prev => (prev[id]?.ts ? prev : { ...prev, [id]: { ts: new Date().toISOString(), kw, type } }));
   };
   const [aiSummary,    setAiSummary]    = useState(null);
   const [summaryLoading,setSummaryLoading] = useState(false);
@@ -1768,7 +1816,7 @@ export default function RankActions() {
       );
       // Carry metadata across the id migration where the id is unchanged.
       const migratedMeta = {};
-      for (const id of migrated) migratedMeta[id] = loadedMeta[id] || { ts: null, kw: null };
+      for (const id of migrated) migratedMeta[id] = loadedMeta[id] || { ts: null, kw: null, type: null };
       setDoneFixes(new Set(migrated));
       setDoneMeta(migratedMeta);
       // Persist back if ids changed OR the stored shape was still legacy.
@@ -3301,6 +3349,9 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
   const DashboardContent = () => {
     const kpis  = getKpiData();
     const fixes = getPriorityFixes();
+    // Phase 2: results belong on the dashboard, not buried in Reports. This is
+    // the answer to "what did RankActions actually get me?".
+    const impact = computeActionImpact(doneMeta, snapshots);
     return (
       <div className="content">
         <DataBanner/>
@@ -3314,6 +3365,57 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
             </div>
           ))}
         </div>
+
+        {/* Measured results. Shown only when there is something real to show —
+            an action with a snapshot either side and enough time elapsed.
+            Otherwise a quiet one-line state, never an empty panel. */}
+        {impact.measured.length > 0 && (
+          <div className="ai-card" style={{marginBottom:"1rem"}}>
+            <div className="ai-card-header">
+              <div className="ai-card-title">What your fixes did</div>
+            </div>
+            <div style={{display:"flex",gap:"1.5rem",flexWrap:"wrap",marginBottom:".85rem"}}>
+              <div>
+                <div style={{fontSize:"1.6rem",fontWeight:800,fontFamily:"var(--mono)",color:"var(--green)"}}>{impact.improved.length}</div>
+                <div style={{fontSize:".72rem",color:"var(--text3)"}}>moved up{impact.avgGain > 0 ? ` · avg ${impact.avgGain} places` : ""}</div>
+              </div>
+              {impact.stale.length > 0 && (
+                <div>
+                  <div style={{fontSize:"1.6rem",fontWeight:800,fontFamily:"var(--mono)",color:"var(--text2)"}}>{impact.stale.length}</div>
+                  <div style={{fontSize:".72rem",color:"var(--text3)"}}>no change after a month</div>
+                </div>
+              )}
+              {impact.declined.length > 0 && (
+                <div>
+                  <div style={{fontSize:"1.6rem",fontWeight:800,fontFamily:"var(--mono)",color:"var(--text2)"}}>{impact.declined.length}</div>
+                  <div style={{fontSize:".72rem",color:"var(--text3)"}}>slipped back</div>
+                </div>
+              )}
+            </div>
+            {impact.measured.slice(0,3).map((m) => (
+              <div key={m.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:".5rem",padding:".3rem 0",fontSize:".8rem",borderTop:"1px solid var(--border)"}}>
+                <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:"var(--text2)"}} title={`Marked done ${m.doneDate}`}>"{m.kw}"</span>
+                <span style={{fontFamily:"var(--mono)",whiteSpace:"nowrap",color:m.outcome==="improved"?"var(--green)":m.outcome==="declined"?"var(--red)":"var(--text3)"}}>#{m.posBefore} → #{m.posAfter}</span>
+              </div>
+            ))}
+            {/* The honest half of measurement: name what did NOT work, and say
+                what to try instead. A tool that only reports wins is marketing. */}
+            {impact.stale.length > 0 && (
+              <div style={{marginTop:".7rem",padding:".6rem .7rem",background:"rgba(245,166,35,.08)",border:"1px solid rgba(245,166,35,.4)",borderRadius:8,fontSize:".76rem",color:"var(--text2)",lineHeight:1.55}}>
+                <strong>"{impact.stale[0].kw}"</strong> hasn't moved in {impact.stale[0].daysApart} days since you fixed it.
+                That change hasn't worked — worth trying something different, like building links to that page or writing a page dedicated to it.
+              </div>
+            )}
+            <div style={{fontSize:".7rem",color:"var(--text3)",marginTop:".5rem"}}>
+              Position change since each action was marked done. Correlation, not proof of cause.
+            </div>
+          </div>
+        )}
+        {impact.measured.length === 0 && impact.pending > 0 && (
+          <div style={{fontSize:".78rem",color:"var(--text3)",marginBottom:"1rem"}}>
+            {impact.pending} completed action{impact.pending === 1 ? "" : "s"} awaiting results — rankings usually take about two weeks to respond, and we won't guess before then.
+          </div>
+        )}
 
         <div className="ai-card">
           <div className="ai-card-header">
