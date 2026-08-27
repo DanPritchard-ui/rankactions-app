@@ -3416,6 +3416,15 @@ Generate specific, ready-to-use form improvements. Return ONLY valid JSON:
             {impact.pending} completed action{impact.pending === 1 ? "" : "s"} awaiting results — rankings usually take about two weeks to respond, and we won't guess before then.
           </div>
         )}
+        {/* Actions completed before results tracking existed carry no date, so
+            they can never be measured. Saying so is the point: an empty space
+            here reads exactly like a broken feature, which is what it looked
+            like on the preview build. */}
+        {impact.measured.length === 0 && impact.pending === 0 && impact.unmeasurable > 0 && (
+          <div style={{fontSize:".78rem",color:"var(--text3)",marginBottom:"1rem"}}>
+            Results tracking starts from now. {impact.unmeasurable} earlier action{impact.unmeasurable === 1 ? "" : "s"} can't be measured because {impact.unmeasurable === 1 ? "it wasn't" : "they weren't"} dated — anything you complete from here on will be.
+          </div>
+        )}
 
         <div className="ai-card">
           <div className="ai-card-header">
