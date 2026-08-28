@@ -5750,6 +5750,22 @@ h1, h2, h3, h4, h5, h6 {
     const [filter,     setFilter]     = useState("all");
     const [selected,   setSelected]   = useState(null);
     const [saving,     setSaving]     = useState(false);
+    // Trial setup form. Held here rather than on `selected` so half-filled input
+    // is never mistaken for a configured trial.
+    const [trialOpen,  setTrialOpen]  = useState(false);
+    const [trialForm,  setTrialForm]  = useState({ plan: "business", after: "free", days: 90 });
+    // Display names for the plan keys stored on the profile. Ordered to match
+    // the pricing page; pro and starter are legacy and marked as such so they
+    // are not picked for a new trial by mistake.
+    const PLAN_OPTIONS = [
+      ["free",       "Free"],
+      ["individual", "Individual"],
+      ["business",   "Business"],
+      ["agency",     "Agency"],
+      ["pro",        "Pro (legacy)"],
+      ["starter",    "Starter (legacy)"],
+    ];
+    const planLabel = (k) => (PLAN_OPTIONS.find(o => o[0] === k) || [k, k])[1];
 
     const fetchUsers = async () => {
       setLoading(true); setError(null);
@@ -5997,6 +6013,97 @@ h1, h2, h3, h4, h5, h6 {
                     ↓ Downgrade to Free
                   </button>
                 )}
+                {/* Free trial. Ticking the box reveals the three fields; nothing is
+                    written until Start is pressed, so a mis-click cannot put an
+                    account on a trial. The end date is computed from days so it can be
+                    set on signup day without doing date arithmetic. */}
+                <div style={{marginTop:".75rem",padding:".75rem",border:"1px solid var(--border)",borderRadius:8}}>
+                  {selected.trialEndsAt ? (
+                    <>
+                      <div style={{fontSize:".8rem",fontWeight:600,marginBottom:".4rem"}}>Free trial active</div>
+                      <div style={{fontSize:".78rem",color:"var(--text2)",lineHeight:1.6,marginBottom:".6rem"}}>
+                        On <b>{planLabel(selected.trialPlan || selected.plan)}</b> until{" "}
+                        <b>{new Date(selected.trialEndsAt).toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}</b>
+                        {" "}({Math.max(0, Math.ceil((Date.parse(selected.trialEndsAt) - Date.now())/86400000))} days left),
+                        then drops to <b>{planLabel(selected.trialAfterPlan || "free")}</b>.
+                        {selected.trialWarnedAt ? " Warning email sent." : ""}
+                      </div>
+                      <div style={{display:"flex",gap:".4rem",flexWrap:"wrap"}}>
+                        <button className="drawer-btn" disabled={saving} onClick={()=>{
+                          const extra = parseInt(prompt("Extend trial by how many days?","30")||"0",10);
+                          if (!extra || extra < 1) return;
+                          const base = Math.max(Date.now(), Date.parse(selected.trialEndsAt));
+                          updateUser(selected._id, {
+                            trialEndsAt: new Date(base + extra*86400000).toISOString(),
+                            trialWarnedAt: null,
+                          });
+                        }}>Extend trial</button>
+                        <button className="drawer-btn downgrade" disabled={saving} onClick={()=>{
+                          if (!confirm("End the trial now and move this account to " + planLabel(selected.trialAfterPlan||"free") + "?")) return;
+                          updateUser(selected._id, {
+                            plan: selected.trialAfterPlan || "free",
+                            trialPlan: null, trialAfterPlan: null, trialEndsAt: null, trialWarnedAt: null,
+                          });
+                        }}>End trial now</button>
+                        <button className="drawer-btn" disabled={saving} onClick={()=>{
+                          if (!confirm("Cancel the trial but leave the account on its current plan?")) return;
+                          updateUser(selected._id, { trialPlan:null, trialAfterPlan:null, trialEndsAt:null, trialWarnedAt:null });
+                        }}>Cancel trial</button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <label style={{display:"flex",alignItems:"center",gap:".5rem",fontSize:".82rem",cursor:"pointer"}}>
+                        <input type="checkbox" checked={trialOpen} onChange={e=>setTrialOpen(e.target.checked)}/>
+                        Free trial
+                      </label>
+                      {trialOpen ? (
+                        <div style={{marginTop:".6rem",display:"flex",flexDirection:"column",gap:".5rem"}}>
+                          <label style={{fontSize:".72rem",color:"var(--text3)"}}>
+                            Plan during trial
+                            <select className="admin-filter" style={{width:"100%",marginTop:".2rem"}}
+                              value={trialForm.plan} onChange={e=>setTrialForm(f=>({...f,plan:e.target.value}))}>
+                              {PLAN_OPTIONS.map(([v,label])=>(<option key={v} value={v}>{label}</option>))}
+                            </select>
+                          </label>
+                          <label style={{fontSize:".72rem",color:"var(--text3)"}}>
+                            Plan after trial
+                            <select className="admin-filter" style={{width:"100%",marginTop:".2rem"}}
+                              value={trialForm.after} onChange={e=>setTrialForm(f=>({...f,after:e.target.value}))}>
+                              {PLAN_OPTIONS.map(([v,label])=>(<option key={v} value={v}>{label}</option>))}
+                            </select>
+                          </label>
+                          <label style={{fontSize:".72rem",color:"var(--text3)"}}>
+                            Trial length (days)
+                            <input className="admin-search" type="number" min="1" max="730"
+                              style={{width:"100%",marginTop:".2rem"}}
+                              value={trialForm.days}
+                              onChange={e=>setTrialForm(f=>({...f,days:e.target.value}))}/>
+                          </label>
+                          <div style={{fontSize:".72rem",color:"var(--text3)"}}>
+                            Ends {(() => {
+                              const d = parseInt(trialForm.days,10);
+                              if (!d || d < 1) return "-";
+                              return new Date(Date.now()+d*86400000).toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"});
+                            })()}. Warning email 7 days before.
+                          </div>
+                          <button className="drawer-btn upgrade" disabled={saving} onClick={()=>{
+                            const d = parseInt(trialForm.days,10);
+                            if (!d || d < 1 || d > 730) { alert("Trial length must be between 1 and 730 days."); return; }
+                            updateUser(selected._id, {
+                              plan: trialForm.plan,
+                              trialPlan: trialForm.plan,
+                              trialAfterPlan: trialForm.after,
+                              trialEndsAt: new Date(Date.now()+d*86400000).toISOString(),
+                              trialWarnedAt: null,
+                            });
+                            setTrialOpen(false);
+                          }}>Start free trial</button>
+                        </div>
+                      ) : null}
+                    </>
+                  )}
+                </div>
                 {selected.disabled
                   ? <button className="drawer-btn enable" disabled={saving} onClick={()=>updateUser(selected._id,{disabled:false})}>
                       ✓ Re-enable account
