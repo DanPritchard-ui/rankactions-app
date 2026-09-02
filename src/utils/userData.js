@@ -27,6 +27,20 @@
 
 const WORKER_URL = import.meta.env.VITE_WORKER_URL || 'https://api.rankactions.com';
 
+// The app holds "mywebsite.com" as the selected site before a real one exists —
+// a brand new account, or any account whose Search Console connection hasn't
+// resolved yet. It is a placeholder, not a site: nothing is ever stored against
+// it and the worker rejects it as not-owned.
+//
+// Guarding here rather than at each call site because every one of the nine
+// userdata types flows through loadUserData/saveUserData, so one check covers
+// them all and a type added later inherits it. Before this, a first visit fired
+// nine pointless requests for a site that does not exist.
+const PLACEHOLDER_SITE = 'mywebsite.com';
+export function isPlaceholderSite(site) {
+  return !site || String(site).trim().toLowerCase() === PLACEHOLDER_SITE;
+}
+
 // Token getter. App.jsx wires this in a useEffect, but that effect runs AFTER
 // our first hook mount, which races with the initial load. So we default to
 // reading from window.Clerk directly — App.jsx's wiring then overrides this
@@ -88,7 +102,9 @@ export async function loadUserData(site, type) {
     console.warn(`[userData] Invalid type: ${type}`);
     return null;
   }
-  if (!site) return null;
+  // Returning null, not throwing: callers already treat null as "nothing saved
+  // yet", which is exactly true of the placeholder.
+  if (isPlaceholderSite(site)) return null;
 
   const key = `${site}|${type}`;
 
@@ -160,7 +176,9 @@ export function saveUserData(site, type, value) {
     console.warn(`[userData] Invalid type: ${type}`);
     return Promise.resolve({ ok: false, error: 'invalid_type' });
   }
-  if (!site) return Promise.resolve({ ok: false, error: 'no_site' });
+  // No local write either. Caching under the placeholder key would leave data
+  // stranded there once a real site is connected.
+  if (isPlaceholderSite(site)) return Promise.resolve({ ok: false, error: 'placeholder_site' });
 
   // Immediate local write — guarantees no data loss if the page reloads
   // before the debounced server write fires.
@@ -189,6 +207,7 @@ export function saveUserData(site, type, value) {
  * navigation away from a page that has unsaved changes.
  */
 export async function flushUserData(site, type) {
+  if (isPlaceholderSite(site)) return { ok: true, nothing: true };
   const key = `${site}|${type}`;
   if (!writeTimers.has(key)) return { ok: true, nothing: true };
   clearTimeout(writeTimers.get(key));

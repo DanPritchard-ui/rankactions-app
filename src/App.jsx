@@ -4,7 +4,7 @@ import {
   useUser, useClerk, SignedIn, SignedOut
 } from "@clerk/clerk-react";
 import { sanitizeAiHtml, sanitizeAiPreview, stripAllHtml } from "./utils/sanitize";
-import { loadUserData, saveUserData, setUserDataTokenGetter } from "./utils/userData";
+import { loadUserData, saveUserData, setUserDataTokenGetter, isPlaceholderSite } from "./utils/userData";
 import { exportAuditPdf } from "./utils/exportAuditPdf";
 import { exportReportPdf } from "./utils/exportReportPdf";
 
@@ -1790,7 +1790,11 @@ export default function RankActions() {
 
   // ── Fetch data when userId or site changes ──────────────────
   useEffect(() => {
-    if (userId && selectedSite && screen !== "onboarding") fetchSiteData();
+    // isPlaceholderSite: before a real site is connected, selectedSite holds
+    // "mywebsite.com". Search Console returns nothing for it and the worker
+    // refuses it as not-owned, so the request is pure waste on the very first
+    // visit — the one visit where speed matters most.
+    if (userId && selectedSite && !isPlaceholderSite(selectedSite) && screen !== "onboarding") fetchSiteData();
   }, [userId, selectedSite]);
 
   // ── Reload per-site state when site changes ─────────────────
@@ -1849,6 +1853,8 @@ export default function RankActions() {
     // Snapshots power the completed-action impact panel (Reports). Best-effort:
     // a failure just means the panel shows nothing, never blocks the dashboard.
     (async () => {
+      // Snapshots are keyed by site; a placeholder has none.
+      if (isPlaceholderSite(site)) { setSnapshots([]); setSnapshotsLoading(false); return; }
       setSnapshotsLoading(true);
       try {
         // MUST match the normalisation the Rank Tracker uses when SAVING, because
